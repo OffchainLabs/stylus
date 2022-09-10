@@ -994,8 +994,10 @@ version = "0.1.0"
 dependencies = [
  "eyre",
  "loupe",
+ "parking_lot 0.12.1",
  "wasmer",
  "wasmer-compiler-singlepass",
+ "wasmer-types",
  "wasmparser 0.83.0",
 ]
 

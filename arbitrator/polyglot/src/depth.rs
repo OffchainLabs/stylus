@@ -12,12 +12,14 @@ use wasmer::{
 use wasmer_types::{GlobalIndex, ModuleInfo};
 use wasmparser::Operator;
 
+use crate::meter::add_global;
+
 #[derive(Debug)]
-pub struct Meter {
+pub struct DepthChecker {
     global: Mutex<Option<GlobalIndex>>,
 }
 
-impl Meter {
+impl DepthChecker {
     pub fn new() -> Self {
         Self {
             global: Mutex::new(None),
@@ -25,70 +27,44 @@ impl Meter {
     }
 }
 
-impl MemoryUsage for Meter {
+impl MemoryUsage for DepthChecker {
     fn size_of_val(&self, _: &mut dyn MemoryUsageTracker) -> usize {
         mem::size_of_val(self) + mem::size_of::<Option<GlobalIndex>>()
     }
 }
 
-impl ModuleMiddleware for Meter {
+impl ModuleMiddleware for DepthChecker {
     fn transform_module_info(&self, module_info: &mut ModuleInfo) {
-        let gas = add_global(module_info, "fuel_left");
+        let depth = add_global(module_info, "stack_depth");
         let global = &mut *self.global.lock();
         assert_eq!(*global, None, "meter already set");
-        *global = Some(gas);
+        *global = Some(depth);
     }
 
     fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
         let global = self.global.lock().expect("no global");
-        Box::new(FunctionMeter::new(global))
+        Box::new(FunctionDepthChecker::new(global))
     }
-}
-
-pub fn add_global(module: &mut ModuleInfo, name: &str) -> GlobalIndex {
-    let name = format!("polyglot_{name}");
-    let global_type = GlobalType::new(Type::I32, Mutability::Var);
-
-    let index = module.globals.push(global_type);
-    module.exports.insert(name, ExportIndex::Global(index));
-    module.global_initializers.push(GlobalInit::I32Const(0));
-    index
 }
 
 #[derive(Debug)]
-struct FunctionMeter {
+struct FunctionDepthChecker {
     global: GlobalIndex,
-    block_cost: usize,
 }
 
-impl FunctionMeter {
+impl FunctionDepthChecker {
     fn new(global: GlobalIndex) -> Self {
-        let block_cost = 0;
-        Self { global, block_cost }
+        Self { global }
     }
 }
 
-impl FunctionMiddleware for FunctionMeter {
+impl FunctionMiddleware for FunctionDepthChecker {
     fn feed<'a>(
         &mut self,
         operator: Operator<'a>,
         state: &mut MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
-
-        self.block_cost += operator_cost(&operator);
-
-        use Operator::*;
-        let end = match operator {
-            _ => true,
-        };
-        
         state.push_operator(operator);
         Ok(())
-    }
-}
-
-fn operator_cost(operator: &Operator<'_>) -> usize {
-    match operator {
-        _ => 1
     }
 }

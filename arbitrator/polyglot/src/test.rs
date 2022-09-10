@@ -3,30 +3,15 @@
 
 #![cfg(test)]
 
-use crate::meter::Meter;
-
-use wasmer::{imports, CompilerConfig, Instance, Module, Store, Universal, Value};
-use wasmer_compiler_singlepass::Singlepass;
+use crate::machine;
 
 use eyre::Result;
-
-use std::sync::Arc;
+use wasmer::Value;
 
 #[test]
-fn test_fuel() -> Result<()> {
+fn test_gas() -> Result<()> {
     let wasm = std::fs::read("../jit/programs/pure/main.wat")?;
-
-    let mut compiler = Singlepass::new();
-    compiler.canonicalize_nans(true);
-
-    // add the instrumentation
-    compiler.push_middleware(Arc::new(Meter::new()));
-
-    let engine = Universal::new(compiler).engine();
-    let store = Store::new(&engine);
-    let module = Module::new(&store, &wasm)?;
-    let imports = imports! {};
-    let instance = Instance::new(&module, &imports)?;
+    let instance = machine::create(&wasm)?;
 
     let add_one = instance.exports.get_function("add_one")?;
     let result = add_one.call(&[Value::I32(42)])?;
