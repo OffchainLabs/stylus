@@ -1,94 +1,175 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use std::mem;
+use crate::util::{self, add_global};
 
 use loupe::{MemoryUsage, MemoryUsageTracker};
 use parking_lot::Mutex;
 use wasmer::{
-    ExportIndex, FunctionMiddleware, GlobalInit, GlobalType, LocalFunctionIndex, MiddlewareError,
-    MiddlewareReaderState, ModuleMiddleware, Mutability, Type,
+    FunctionMiddleware, GlobalInit, Instance, LocalFunctionIndex, MiddlewareError,
+    MiddlewareReaderState, ModuleMiddleware, Type,
 };
 use wasmer_types::{GlobalIndex, ModuleInfo};
-use wasmparser::Operator;
+use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 
-#[derive(Debug)]
-pub struct Meter {
-    global: Mutex<Option<GlobalIndex>>,
+use std::{fmt::Debug, mem, sync::Arc};
+
+pub struct Meter<F: Fn(&Operator) -> u64 + Send + Sync> {
+    globals: Mutex<Option<(GlobalIndex, GlobalIndex)>>,
+    costs: Arc<F>,
 }
 
-impl Meter {
-    pub fn new() -> Self {
+impl<F: Fn(&Operator) -> u64 + Send + Sync> Meter<F> {
+    pub fn new(costs: F) -> Self {
+        let globals = Mutex::new(None);
+        let costs = Arc::new(costs);
+        Self { globals, costs }
+    }
+}
+
+impl<F: Fn(&Operator) -> u64 + Send + Sync> Debug for Meter<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Meter")
+            .field("globals", &self.globals)
+            .field("costs", &"<function>")
+            .finish()
+    }
+}
+
+impl<F: Fn(&Operator) -> u64 + Send + Sync> MemoryUsage for Meter<F> {
+    fn size_of_val(&self, _: &mut dyn MemoryUsageTracker) -> usize {
+        mem::size_of_val(self) + mem::size_of::<Option<(GlobalIndex, GlobalIndex)>>()
+    }
+}
+
+impl<F: Fn(&Operator) -> u64 + Send + Sync + 'static> ModuleMiddleware for Meter<F> {
+    fn transform_module_info(&self, module: &mut ModuleInfo) {
+        let gas = add_global(module, "gas_left", Type::I64, GlobalInit::I64Const(0));
+        let status = add_global(module, "gas_status", Type::I32, GlobalInit::I32Const(0));
+        let global = &mut *self.globals.lock();
+        assert_eq!(*global, None, "meter already set");
+        *global = Some((gas, status));
+    }
+
+    fn generate_function_middleware<'a>(
+        &self,
+        _: LocalFunctionIndex,
+    ) -> Box<dyn FunctionMiddleware<'a> + 'a> {
+        let (gas, status) = self.globals.lock().expect("no globals");
+        Box::new(FunctionMeter::new(gas, status, self.costs.clone()))
+    }
+}
+
+struct FunctionMeter<'a, F: Fn(&Operator) -> u64 + Send + Sync> {
+    /// Represents the amount of gas left for consumption
+    gas_global: GlobalIndex,
+    /// Represents whether the machine is out of gas
+    status_global: GlobalIndex,
+    /// Instructions of the current basic block
+    block: Vec<Operator<'a>>,
+    /// The accumulated cost of the current basic block
+    block_cost: u64,
+    /// Associates opcodes to their gas costs
+    costs: Arc<F>,
+}
+
+impl<'a, F: Fn(&Operator) -> u64 + Send + Sync> FunctionMeter<'a, F> {
+    fn new(gas_global: GlobalIndex, status_global: GlobalIndex, costs: Arc<F>) -> Self {
         Self {
-            global: Mutex::new(None),
+            gas_global,
+            status_global,
+            block: vec![],
+            block_cost: 0,
+            costs,
         }
     }
 }
 
-impl MemoryUsage for Meter {
-    fn size_of_val(&self, _: &mut dyn MemoryUsageTracker) -> usize {
-        mem::size_of_val(self) + mem::size_of::<Option<GlobalIndex>>()
+impl<F: Fn(&Operator) -> u64 + Send + Sync> Debug for FunctionMeter<'_, F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FunctionMeter")
+            .field("gas_global", &self.gas_global)
+            .field("status_global", &self.status_global)
+            .field("block", &self.block)
+            .field("block_cost", &self.block_cost)
+            .field("costs", &"<function>")
+            .finish()
     }
 }
 
-impl ModuleMiddleware for Meter {
-    fn transform_module_info(&self, module_info: &mut ModuleInfo) {
-        let gas = add_global(module_info, "fuel_left");
-        let global = &mut *self.global.lock();
-        assert_eq!(*global, None, "meter already set");
-        *global = Some(gas);
-    }
-
-    fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
-        let global = self.global.lock().expect("no global");
-        Box::new(FunctionMeter::new(global))
-    }
-}
-
-pub fn add_global(module: &mut ModuleInfo, name: &str) -> GlobalIndex {
-    let name = format!("polyglot_{name}");
-    let global_type = GlobalType::new(Type::I32, Mutability::Var);
-
-    let index = module.globals.push(global_type);
-    module.exports.insert(name, ExportIndex::Global(index));
-    module.global_initializers.push(GlobalInit::I32Const(0));
-    index
-}
-
-#[derive(Debug)]
-struct FunctionMeter {
-    global: GlobalIndex,
-    block_cost: usize,
-}
-
-impl FunctionMeter {
-    fn new(global: GlobalIndex) -> Self {
-        let block_cost = 0;
-        Self { global, block_cost }
-    }
-}
-
-impl FunctionMiddleware for FunctionMeter {
-    fn feed<'a>(
+impl<'a, F: Fn(&Operator) -> u64 + Send + Sync> FunctionMiddleware<'a> for FunctionMeter<'a, F> {
+    fn feed(
         &mut self,
         operator: Operator<'a>,
         state: &mut MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
-
-        self.block_cost += operator_cost(&operator);
-
         use Operator::*;
-        let end = match operator {
-            _ => true,
-        };
-        
-        state.push_operator(operator);
+
+        macro_rules! dot {
+            ($first:ident $(,$opcode:ident)*) => {
+                $first { .. } $(| $opcode { .. })*
+            };
+        }
+
+        let end = matches!(
+            operator,
+            End | Else | Return | dot!(Loop, Br, BrTable, BrIf, Call, CallIndirect)
+        );
+
+        let cost = self.block_cost.saturating_add((self.costs)(&operator));
+        self.block_cost = cost;
+        self.block.push(operator);
+
+        if end {
+            let gas = self.gas_global.as_u32();
+            let status = self.status_global.as_u32();
+
+            state.extend(&[
+                // if gas < cost => panic with status = 1
+                GlobalGet { global_index: gas },
+                I64Const { value: cost as i64 },
+                I64LtU,
+                If {
+                    ty: TypeOrFuncType::Type(WpType::EmptyBlockType),
+                },
+                I32Const { value: 1 },
+                GlobalSet {
+                    global_index: status,
+                },
+                Unreachable,
+                End,
+                // gas -= cost
+                GlobalGet { global_index: gas },
+                I64Const { value: cost as i64 },
+                I64Sub,
+                GlobalSet { global_index: gas },
+            ]);
+
+            state.extend(&self.block);
+            self.block.clear();
+            self.block_cost = 0;
+        }
         Ok(())
     }
 }
 
-fn operator_cost(operator: &Operator<'_>) -> usize {
-    match operator {
-        _ => 1
-    }
+#[derive(Debug, PartialEq)]
+pub enum MachineMeter {
+    Ready(u64),
+    Exhausted,
+}
+
+pub fn gas_left(instance: &Instance) -> MachineMeter {
+    let gas = util::get_global(instance, "polyglot_gas_left");
+    let status: i32 = util::get_global(instance, "polyglot_gas_status");
+
+    return match status == 1 {
+        true => MachineMeter::Exhausted,
+        false => MachineMeter::Ready(gas),
+    };
+}
+
+pub fn set_gas(instance: &Instance, gas: u64) {
+    util::set_global(instance, "polyglot_gas_left", gas);
+    util::set_global(instance, "polyglot_gas_status", 0);
 }
