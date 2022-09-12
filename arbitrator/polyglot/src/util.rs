@@ -26,7 +26,7 @@ where
 }
 
 pub fn set_global<T>(instance: &Instance, name: &str, value: T)
-where 
+where
     T: Into<Value<Function>>,
 {
     let error = format!("global {name} does not exist");
