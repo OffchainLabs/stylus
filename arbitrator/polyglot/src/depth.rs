@@ -9,22 +9,35 @@ use wasmer::{
     FunctionMiddleware, GlobalInit, Instance, LocalFunctionIndex, MiddlewareError,
     MiddlewareReaderState, ModuleMiddleware, Type,
 };
-use wasmer_types::{GlobalIndex, ModuleInfo};
+use wasmer_types::{FunctionIndex, GlobalIndex, ModuleInfo, SignatureIndex};
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 
-use std::mem;
+use std::{mem, sync::Arc};
 
 #[derive(Debug)]
+/// This middleware ensures stack overflows are deterministic across different compilers and targets.
+/// The internal notion of "stack space left" that makes this possible is strictly smaller than that of
+/// the real stack space consumed on any target platform and is formed by inspecting the contents of each
+/// function's frame.
+/// Setting a limit smaller than that of any native platform's ensures stack overflows will have the same,
+/// logical effect rather than actually exhausting the space provided by the OS.
 pub struct DepthChecker {
+    /// The amount of stack space left. Note, this is not the only global the depth checker installs.
+    /// One more for the initial limit is added but no handle to it is needed when instrumenting functions.
     global: Mutex<Option<GlobalIndex>>,
     /// The maximum size of the stack, measured in words
     limit: u32,
+    /// Info about the module being instrumented.
+    module: Mutex<Option<Arc<ModuleInfo>>>,
 }
 
 impl DepthChecker {
     pub fn new(limit: u32) -> Self {
-        let global = Mutex::new(None);
-        Self { global, limit }
+        Self {
+            global: Mutex::new(None),
+            limit,
+            module: Mutex::new(None),
+        }
     }
 }
 
@@ -45,6 +58,7 @@ impl ModuleMiddleware for DepthChecker {
         let global = &mut *self.global.lock();
         assert_eq!(*global, None, "meter already set");
         *global = Some(space);
+        *self.module.lock() = Some(Arc::new(module.clone()));
     }
 
     fn generate_function_middleware<'a>(
@@ -52,7 +66,8 @@ impl ModuleMiddleware for DepthChecker {
         _: LocalFunctionIndex,
     ) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         let global = self.global.lock().expect("no global");
-        Box::new(FunctionDepthChecker::new(global))
+        let module = self.module.lock().clone().expect("no module");
+        Box::new(FunctionDepthChecker::new(global, module))
     }
 }
 
@@ -60,16 +75,20 @@ impl ModuleMiddleware for DepthChecker {
 struct FunctionDepthChecker<'a> {
     /// Represets the amount of stack depth remaining
     space: GlobalIndex,
+    module: Arc<ModuleInfo>,
     code: Vec<Operator<'a>>,
-    scopes: usize,
+    scopes: isize,
+    done: bool,
 }
 
 impl<'a> FunctionDepthChecker<'a> {
-    fn new(space: GlobalIndex) -> Self {
+    fn new(space: GlobalIndex, module: Arc<ModuleInfo>) -> Self {
         Self {
             space,
+            module,
             code: vec![],
-            scopes: 0,
+            scopes: 1, // a function starts with an open scope
+            done: false,
         }
     }
 }
@@ -80,19 +99,43 @@ impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
         operator: Operator<'a>,
         state: &mut MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
-        let last = self.scopes == 0 && matches!(operator, Operator::End);
-        self.code.push(operator);
+        use Operator::*;
 
+        // Knowing when the feed ends requires detecting the final instruction, which is
+        // guaranteed to be an "End" opcode closing out function's initial opening scope.
+        if self.done {
+            return Err(MiddlewareError::new("Depth Checker", "Finalized too soon"));
+        }
+
+        let scopes = &mut self.scopes;
+        match operator {
+            Block { .. } | Loop { .. } | If { .. } => *scopes += 1,
+            End => *scopes -= 1,
+            _ => {}
+        };
+        if *scopes < 0 {
+            return Err(MiddlewareError::new(
+                "Depth Checker",
+                "Malformed scoping detected",
+            ));
+        }
+
+        let last = *scopes == 0 && matches!(operator, Operator::End);
+        self.code.push(operator);
         if !last {
             return Ok(());
         }
 
-        let global_index = self.space.as_u32();
-        let size = 1;
+        // We've reached the final instruction and can instrument the function as follows:
+        //   - When entering, check that the stack has sufficient space and deduct the amount used
+        //   - When returning, credit back the amount used as execution is returning to the caller
 
-        use Operator::*;
+        let code = std::mem::replace(&mut self.code, vec![]);
+        let size = worst_case_depth(&code, self.module.clone())? as i32;
+        let global_index = self.space.as_u32();
+
         state.extend(&[
-            // if space <= size => panic with status = 1
+            // if space <= size => panic with depth = 0
             GlobalGet { global_index },
             I32Const { value: size },
             I32LtU,
@@ -109,9 +152,6 @@ impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
             I32Sub,
             GlobalSet { global_index },
         ]);
-
-        println!("HERERERER");
-        let code = std::mem::replace(&mut self.code, vec![]);
 
         let reclaim = |state: &mut MiddlewareReaderState<'a>| {
             state.extend(&[
@@ -132,6 +172,7 @@ impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
         }
 
         reclaim(state);
+        self.done = true;
         Ok(())
     }
 }
@@ -162,14 +203,19 @@ pub fn set_stack_limit(instance: &Instance, new_limit: u32) {
     util::set_global(instance, "polyglot_stack_space_left", space);
 }
 
-fn worst_case_depth<'a>(code: &[Operator<'a>]) -> Result<u32, MiddlewareError> {
+fn worst_case_depth<'a>(
+    code: &[Operator<'a>],
+    module: Arc<ModuleInfo>,
+) -> Result<u32, MiddlewareError> {
     use Operator::*;
 
+    let mut worst: u32 = 0;
     let mut stack: u32 = 0;
 
     macro_rules! push {
         ($count:expr) => {{
             stack += $count;
+            worst = worst.max(stack);
         }};
         () => {
             push!(1)
@@ -195,24 +241,65 @@ fn worst_case_depth<'a>(code: &[Operator<'a>]) -> Result<u32, MiddlewareError> {
     }
     macro_rules! error {
         ($text:expr $(,$args:expr)*) => {{
-            let name = "depth-checker failure".to_owned();
             let message = format!($text $(,$args)*);
-            return Err(MiddlewareError{
-                name,
-                message,
-            });
+            return Err(MiddlewareError::new("Depth Checker", message))
         }}
     }
+
+    let mut scopes = vec![stack];
 
     for op in code {
         #[rustfmt::skip]
         match op {
+            dot!(Block) => {
+                scopes.push(stack);
+            }
+            dot!(If) => {
+                pop!(); // pop the conditional
+                scopes.push(stack);
+            }
+            Else => {
+                stack = match scopes.last() {
+                    Some(scope) => *scope,
+                    None => error!("Malformed if-else scope"),
+                };
+            }
+            End => {
+                stack = match scopes.pop() {
+                    Some(stack) => stack,
+                    None => error!("Malformed scoping detected at end of block"),
+                };
+            }
+
+            Call { function_index } => {
+                let index = FunctionIndex::from_u32(*function_index);
+                let sig = match module.functions.get(index) {
+                    Some(sig) => sig,
+                    None => error!("No function at index {:?}", index),
+                };
+                let (outs, ins) = match module.signatures.get(*sig) {
+                    Some(ty) => (ty.params().len() as u32, ty.results().len() as u32),
+                    None => error!("No function signature for call to {:?}", index),
+                };
+                push!(outs);
+                pop!(ins);
+            }
+            CallIndirect { index, .. } => {
+                let index = SignatureIndex::from_u32(*index);
+                let (outs, ins) = match module.signatures.get(index) {
+                    Some(ty) => (ty.params().len() as u32, ty.results().len() as u32),
+                    None => error!("No table at index {:?}", index),
+                };
+                push!(outs);
+                pop!(ins);
+            }
 
             op!(
-                Nop,
+                Nop, Unreachable,
                 I32Eqz, I64Eqz, I32Clz, I32Ctz, I32Popcnt, I64Clz, I64Ctz, I64Popcnt,
             )
             | dot!(
+                Br,
                 LocalTee, MemoryGrow,
                 I32Load, I64Load, F32Load, F64Load,
                 I32Load8S, I32Load8U, I32Load16S, I32Load16U, I64Load8S, I64Load8U,
@@ -237,7 +324,7 @@ fn worst_case_depth<'a>(code: &[Operator<'a>]) -> Result<u32, MiddlewareError> {
                 I32And, I32Or, I32Xor, I32Shl, I32ShrS, I32ShrU, I32Rotl, I32Rotr,
                 I64And, I64Or, I64Xor, I64Shl, I64ShrS, I64ShrU, I64Rotl, I64Rotr,
             )
-            | dot!(LocalSet, GlobalSet) => pop!(),
+            | dot!(BrIf, LocalSet, GlobalSet) => pop!(),
 
             dot!(
                 Select,
@@ -324,9 +411,9 @@ fn worst_case_depth<'a>(code: &[Operator<'a>]) -> Result<u32, MiddlewareError> {
                 )
             ) => error!("SIMD extension not supported {:?}", unsupported),
 
-            _ => unimplemented!(),
+            x => unimplemented!("{:?}", x),
         };
     }
 
-    Ok(stack + 4)
+    Ok(worst + 4)
 }
