@@ -5,7 +5,7 @@
         get_local $p0
         i32.const 1
         i32.add)
-    (func $recurse (export "recurse")
+    (func $recurse (export "recurse") ;; frame places at most 2 items on the stack
         global.get $depth
         i32.const 1
         i32.add

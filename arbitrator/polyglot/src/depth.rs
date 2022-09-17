@@ -67,7 +67,7 @@ impl ModuleMiddleware for DepthChecker {
     ) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         let global = self.global.lock().expect("no global");
         let module = self.module.lock().clone().expect("no module");
-        Box::new(FunctionDepthChecker::new(global, module))
+        Box::new(FunctionDepthChecker::new(global, self.limit, module))
     }
 }
 
@@ -75,6 +75,7 @@ impl ModuleMiddleware for DepthChecker {
 struct FunctionDepthChecker<'a> {
     /// Represets the amount of stack depth remaining
     space: GlobalIndex,
+    limit: u32,
     module: Arc<ModuleInfo>,
     code: Vec<Operator<'a>>,
     scopes: isize,
@@ -82,9 +83,10 @@ struct FunctionDepthChecker<'a> {
 }
 
 impl<'a> FunctionDepthChecker<'a> {
-    fn new(space: GlobalIndex, module: Arc<ModuleInfo>) -> Self {
+    fn new(space: GlobalIndex, limit: u32, module: Arc<ModuleInfo>) -> Self {
         Self {
             space,
+            limit,
             module,
             code: vec![],
             scopes: 1, // a function starts with an open scope
@@ -101,10 +103,17 @@ impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
     ) -> Result<(), MiddlewareError> {
         use Operator::*;
 
+        macro_rules! error {
+            ($text:expr $(,$args:expr)*) => {{
+                let message = format!($text $(,$args)*);
+                return Err(MiddlewareError::new("Depth Checker", message))
+            }}
+        }
+
         // Knowing when the feed ends requires detecting the final instruction, which is
         // guaranteed to be an "End" opcode closing out function's initial opening scope.
         if self.done {
-            return Err(MiddlewareError::new("Depth Checker", "Finalized too soon"));
+            error!("Finalized too soon");
         }
 
         let scopes = &mut self.scopes;
@@ -114,10 +123,7 @@ impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
             _ => {}
         };
         if *scopes < 0 {
-            return Err(MiddlewareError::new(
-                "Depth Checker",
-                "Malformed scoping detected",
-            ));
+            error!("Malformed scoping detected");
         }
 
         let last = *scopes == 0 && matches!(operator, Operator::End);
@@ -131,13 +137,17 @@ impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
         //   - When returning, credit back the amount used as execution is returning to the caller
 
         let code = std::mem::replace(&mut self.code, vec![]);
-        let size = worst_case_depth(&code, self.module.clone())? as i32;
+        let size = worst_case_depth(&code, self.module.clone())?;
         let global_index = self.space.as_u32();
+
+        if size >= self.limit / 2 {
+            error!("Frame too large: {size} vs {} maximum", self.limit / 2);
+        }
 
         state.extend(&[
             // if space <= size => panic with depth = 0
             GlobalGet { global_index },
-            I32Const { value: size },
+            I32Const { value: size as i32 },
             I32LtU,
             If {
                 ty: TypeOrFuncType::Type(WpType::EmptyBlockType),
@@ -148,7 +158,7 @@ impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
             End,
             // space -= size
             GlobalGet { global_index },
-            I32Const { value: size },
+            I32Const { value: size as i32 },
             I32Sub,
             GlobalSet { global_index },
         ]);
@@ -157,7 +167,7 @@ impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
             state.extend(&[
                 // space += size
                 GlobalGet { global_index },
-                I32Const { value: size },
+                I32Const { value: size as i32 },
                 I32Add,
                 GlobalSet { global_index },
             ])
