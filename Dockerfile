@@ -29,7 +29,7 @@ RUN apt-get update && \
     apt-get install -y git python3 make g++
 WORKDIR /workspace
 COPY contracts/package.json contracts/yarn.lock contracts/
-RUN cd contracts && yarn
+RUN cd contracts && yarn install --ignore-optional
 COPY contracts contracts/
 COPY Makefile .
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
@@ -55,6 +55,7 @@ COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
 COPY ./arbstate ./arbstate
+COPY ./arbutil ./arbutil
 COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/replay ./cmd/replay
 COPY ./das/dastree ./das/dastree
@@ -147,6 +148,7 @@ COPY ./testnode-scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v4 0xa24ccdb052d92c5847e8ea3ce722442358db4b00985a9ee737c4e601b6ed9876
 #RUN ./download-machine.sh consensus-v5 0x1e09e6d9e35b93f33ed22b2bc8dc10bbcf63fdde5e8a1fb8cc1bcd1a52f14bd0
 RUN ./download-machine.sh consensus-v6 0x3848eff5e0356faf1fc9cafecb789584c5e7f4f8f817694d842ada96613d8bab
+RUN ./download-machine.sh consensus-v7 0x53dd4b9a3d807a8cbb4d58fbfc6a0857c3846d46956848cae0a1cc7eca2bb5a8
 
 FROM golang:1.19-bullseye as node-builder
 WORKDIR /workspace
