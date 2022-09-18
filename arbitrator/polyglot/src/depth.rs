@@ -139,9 +139,10 @@ impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
         let code = std::mem::replace(&mut self.code, vec![]);
         let size = worst_case_depth(&code, self.module.clone())?;
         let global_index = self.space.as_u32();
+        let max_frame_size = self.limit / 2;
 
-        if size >= self.limit / 2 {
-            error!("Frame too large: {size} vs {} maximum", self.limit / 2);
+        if size >= max_frame_size {
+            error!("Frame too large: {size} exceeds {max_frame_size}-word maximum");
         }
 
         state.extend(&[
@@ -421,7 +422,7 @@ fn worst_case_depth<'a>(
                 )
             ) => error!("SIMD extension not supported {:?}", unsupported),
 
-            x => unimplemented!("{:?}", x),
+            x => error!("Unimplemented opcode {:?}", x),
         };
     }
 
