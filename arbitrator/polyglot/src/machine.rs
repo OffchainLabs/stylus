@@ -13,6 +13,7 @@ use std::sync::Arc;
 pub fn create(wasm: &[u8], costs: fn(&Operator) -> u64, max_depth: u32) -> Result<Instance> {
     let mut compiler = Singlepass::new();
     compiler.canonicalize_nans(true);
+    compiler.enable_verifier();
 
     // add the instrumentation
     compiler.push_middleware(Arc::new(Meter::new(costs)));

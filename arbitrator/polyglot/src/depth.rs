@@ -240,6 +240,14 @@ fn worst_case_depth<'a>(
             pop!(1)
         };
     }
+    macro_rules! ins_and_outs {
+        ($ty:expr) => {{
+            let ins = $ty.results().len() as u32;
+            let outs = $ty.params().len() as u32;
+            push!(outs);
+            pop!(ins);
+        }}
+    }
     macro_rules! op {
         ($first:ident $(,$opcode:ident)* $(,)?) => {
             $first $(| $opcode)*
@@ -256,17 +264,38 @@ fn worst_case_depth<'a>(
             return Err(MiddlewareError::new("Depth Checker", message))
         }}
     }
-
+    macro_rules! block_type {
+        ($ty:expr) => {{
+            // when upgrading to wasmparser 0.84, use BlockType instead of TypeOrFuncType
+            match $ty {
+                TypeOrFuncType::Type(WpType::EmptyBlockType) => {}
+                TypeOrFuncType::Type(_) => push!(1),
+                TypeOrFuncType::FuncType(id) => {
+                    match module.signatures.get(SignatureIndex::from_u32(*id)) {
+                        Some(ty) => ins_and_outs!(ty),
+                        None => error!("No function with id {id}"),
+                    }
+                }
+            }
+        }};
+    }
+    
     let mut scopes = vec![stack];
 
     for op in code {
         #[rustfmt::skip]
         match op {
-            dot!(Block) => {
+            Block { ty } => {
+                block_type!(ty); // we'll say any return slots have been pre-allocated
                 scopes.push(stack);
             }
-            dot!(If) => {
-                pop!(); // pop the conditional
+            Loop { ty } => {
+                block_type!(ty); // return slots
+                scopes.push(stack);
+            }
+            If { ty } => {
+                pop!();          // pop the conditional
+                block_type!(ty); // return slots
                 scopes.push(stack);
             }
             Else => {
@@ -288,21 +317,19 @@ fn worst_case_depth<'a>(
                     Some(sig) => sig,
                     None => error!("No function at index {:?}", index),
                 };
-                let (outs, ins) = match module.signatures.get(*sig) {
-                    Some(ty) => (ty.params().len() as u32, ty.results().len() as u32),
+                let ty = match module.signatures.get(*sig) {
+                    Some(ty) => ty,
                     None => error!("No function signature for call to {:?}", index),
                 };
-                push!(outs);
-                pop!(ins);
+                ins_and_outs!(ty)
             }
             CallIndirect { index, .. } => {
                 let index = SignatureIndex::from_u32(*index);
-                let (outs, ins) = match module.signatures.get(index) {
-                    Some(ty) => (ty.params().len() as u32, ty.results().len() as u32),
+                let ty = match module.signatures.get(index) {
+                    Some(ty) => ty,
                     None => error!("No table at index {:?}", index),
                 };
-                push!(outs);
-                pop!(ins);
+                ins_and_outs!(ty)
             }
 
             op!(
@@ -310,13 +337,22 @@ fn worst_case_depth<'a>(
                 I32Eqz, I64Eqz, I32Clz, I32Ctz, I32Popcnt, I64Clz, I64Ctz, I64Popcnt,
             )
             | dot!(
-                Br,
+                Br, Return,
                 LocalTee, MemoryGrow,
                 I32Load, I64Load, F32Load, F64Load,
                 I32Load8S, I32Load8U, I32Load16S, I32Load16U, I64Load8S, I64Load8U,
                 I64Load16S, I64Load16U, I64Load32S, I64Load32U,
                 I32WrapI64, I64ExtendI32S, I64ExtendI32U,
-                I32Extend8S, I32Extend16S, I64Extend8S, I64Extend16S, I64Extend32S
+                I32Extend8S, I32Extend16S, I64Extend8S, I64Extend16S, I64Extend32S,
+                F32Abs, F32Neg, F32Ceil, F32Floor, F32Trunc, F32Nearest, F32Sqrt,
+                F64Abs, F64Neg, F64Ceil, F64Floor, F64Trunc, F64Nearest, F64Sqrt,
+                I32TruncF32S, I32TruncF32U, I32TruncF64S, I32TruncF64U,
+                I64TruncF32S, I64TruncF32U, I64TruncF64S, I64TruncF64U,
+                F32ConvertI32S, F32ConvertI32U, F32ConvertI64S, F32ConvertI64U, F32DemoteF64,
+                F64ConvertI32S, F64ConvertI32U, F64ConvertI64S, F64ConvertI64U, F64PromoteF32,
+                I32ReinterpretF32, I64ReinterpretF64, F32ReinterpretI32, F64ReinterpretI64,
+                I32TruncSatF32S, I32TruncSatF32U, I32TruncSatF64S, I32TruncSatF64U,
+                I64TruncSatF32S, I64TruncSatF32U, I64TruncSatF64S, I64TruncSatF64U,
             ) => {}
 
             dot!(
@@ -334,8 +370,10 @@ fn worst_case_depth<'a>(
                 I64Add, I64Sub, I64Mul, I64DivS, I64DivU, I64RemS, I64RemU,
                 I32And, I32Or, I32Xor, I32Shl, I32ShrS, I32ShrU, I32Rotl, I32Rotr,
                 I64And, I64Or, I64Xor, I64Shl, I64ShrS, I64ShrU, I64Rotl, I64Rotr,
+                F32Add, F32Sub, F32Mul, F32Div, F32Min, F32Max, F32Copysign,
+                F64Add, F64Sub, F64Mul, F64Div, F64Min, F64Max, F64Copysign,
             )
-            | dot!(BrIf, LocalSet, GlobalSet) => pop!(),
+            | dot!(BrIf, BrTable, LocalSet, GlobalSet) => pop!(),
 
             dot!(
                 Select,
@@ -346,7 +384,15 @@ fn worst_case_depth<'a>(
                 error!("exception-handling extension not supported {:?}", unsupported)
             },
 
-            unsupported @ dot!(TypedSelect) => {
+            unsupported @ dot!(ReturnCall, ReturnCallIndirect) => {
+                error!("tail-call extension not supported {:?}", unsupported)
+            }
+
+            unsupported @ (dot!(Delegate) | op!(CatchAll)) => {
+                error!("exception-handling extension not supported {:?}", unsupported)
+            },
+
+            unsupported @ (op!(RefIsNull) | dot!(TypedSelect, RefNull, RefFunc)) => {
                 error!("reference-types extension not supported {:?}", unsupported)
             },
 
@@ -421,8 +467,6 @@ fn worst_case_depth<'a>(
                     F64x2RelaxedMin, F64x2RelaxedMax
                 )
             ) => error!("SIMD extension not supported {:?}", unsupported),
-
-            x => error!("Unimplemented opcode {:?}", x),
         };
     }
 

@@ -4,4 +4,4 @@
 pub mod depth;
 pub mod machine;
 pub mod meter;
-mod util;
+pub mod util;
