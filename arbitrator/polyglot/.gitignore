@@ -1,0 +1,2 @@
+fuzz*.log
+fuzz/coverage/

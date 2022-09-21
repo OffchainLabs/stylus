@@ -4,4 +4,7 @@
 pub mod depth;
 pub mod machine;
 pub mod meter;
+pub mod start;
 pub mod util;
+
+pub use meter::MachineMeter;

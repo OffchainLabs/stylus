@@ -78,6 +78,7 @@ struct FunctionDepthChecker<'a> {
     limit: u32,
     module: Arc<ModuleInfo>,
     code: Vec<Operator<'a>>,
+    locals: usize,
     scopes: isize,
     done: bool,
 }
@@ -89,6 +90,7 @@ impl<'a> FunctionDepthChecker<'a> {
             limit,
             module,
             code: vec![],
+            locals: 0,
             scopes: 1, // a function starts with an open scope
             done: false,
         }
@@ -96,6 +98,10 @@ impl<'a> FunctionDepthChecker<'a> {
 }
 
 impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
+    fn locals_info(&mut self, locals: &[WpType]) {
+        self.locals = locals.len()
+    }
+
     fn feed(
         &mut self,
         operator: Operator<'a>,
@@ -137,7 +143,7 @@ impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
         //   - When returning, credit back the amount used as execution is returning to the caller
 
         let code = std::mem::replace(&mut self.code, vec![]);
-        let size = worst_case_depth(&code, self.module.clone())?;
+        let size = worst_case_depth(&code, self.locals, self.module.clone())?;
         let global_index = self.space.as_u32();
         let max_frame_size = self.limit / 2;
 
@@ -216,6 +222,7 @@ pub fn set_stack_limit(instance: &Instance, new_limit: u32) {
 
 fn worst_case_depth<'a>(
     code: &[Operator<'a>],
+    locals: usize,
     module: Arc<ModuleInfo>,
 ) -> Result<u32, MiddlewareError> {
     use Operator::*;
@@ -246,7 +253,7 @@ fn worst_case_depth<'a>(
             let outs = $ty.params().len() as u32;
             push!(outs);
             pop!(ins);
-        }}
+        }};
     }
     macro_rules! op {
         ($first:ident $(,$opcode:ident)* $(,)?) => {
@@ -279,7 +286,7 @@ fn worst_case_depth<'a>(
             }
         }};
     }
-    
+
     let mut scopes = vec![stack];
 
     for op in code {
@@ -470,5 +477,5 @@ fn worst_case_depth<'a>(
         };
     }
 
-    Ok(worst + 4)
+    Ok(worst + locals as u32 + 4)
 }

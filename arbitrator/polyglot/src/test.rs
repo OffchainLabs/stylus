@@ -22,7 +22,7 @@ fn test_gas() -> Result<()> {
     };
 
     let wasm = std::fs::read("../jit/programs/pure/main.wat")?;
-    let instance = machine::create(&wasm, costs, 1024)?;
+    let instance = machine::create(&wasm, costs, 0, 1024)?;
     let add_one = instance.exports.get_function("add_one")?;
     let add_one = add_one.native::<i32, i32>().unwrap();
 
@@ -41,7 +41,7 @@ fn test_gas() -> Result<()> {
 fn test_depth() -> Result<()> {
     let wasm = std::fs::read("../jit/programs/pure/main.wat")?;
     let costs = |_: &Operator| 0;
-    let instance = machine::create(&wasm, costs, 32)?;
+    let instance = machine::create(&wasm, costs, 1024, 32)?;
     let recurse = instance.exports.get_function("recurse")?;
     let recurse = recurse.native::<(), ()>().unwrap();
 
@@ -64,5 +64,16 @@ fn test_depth() -> Result<()> {
     assert_eq!(depth::stack_space_remaining(&instance), 0);
     let program_depth: u32 = util::get_global(&instance, "depth");
     assert_eq!(program_depth, 5 + 10); // 64 more capacity / 6-word frame => 10 more calls
+    Ok(())
+}
+
+#[test]
+fn test_depth_temp() -> Result<()> {
+    let wasm = std::fs::read("../jit/programs/pure/main.wat")?;
+    let costs = |_: &Operator| 0;
+    let instance = machine::create(&wasm, costs, u64::MAX, u32::MAX)?;
+    let recurse = instance.exports.get_function("recurse")?;
+    let recurse = recurse.native::<(), ()>().unwrap();
+    recurse.call()?;
     Ok(())
 }

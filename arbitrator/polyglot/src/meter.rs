@@ -17,13 +17,16 @@ use std::{fmt::Debug, mem, sync::Arc};
 pub struct Meter<F: Fn(&Operator) -> u64 + Send + Sync> {
     globals: Mutex<Option<(GlobalIndex, GlobalIndex)>>,
     costs: Arc<F>,
+    start_gas: u64,
 }
 
 impl<F: Fn(&Operator) -> u64 + Send + Sync> Meter<F> {
-    pub fn new(costs: F) -> Self {
-        let globals = Mutex::new(None);
-        let costs = Arc::new(costs);
-        Self { globals, costs }
+    pub fn new(costs: F, start_gas: u64) -> Self {
+        Self {
+            globals: Mutex::new(None),
+            costs: Arc::new(costs),
+            start_gas,
+        }
     }
 }
 
@@ -44,7 +47,8 @@ impl<F: Fn(&Operator) -> u64 + Send + Sync> MemoryUsage for Meter<F> {
 
 impl<F: Fn(&Operator) -> u64 + Send + Sync + 'static> ModuleMiddleware for Meter<F> {
     fn transform_module_info(&self, module: &mut ModuleInfo) {
-        let gas = add_global(module, "gas_left", Type::I64, GlobalInit::I64Const(0));
+        let start = GlobalInit::I64Const(self.start_gas as i64);
+        let gas = add_global(module, "gas_left", Type::I64, start);
         let status = add_global(module, "gas_status", Type::I32, GlobalInit::I32Const(0));
         let global = &mut *self.globals.lock();
         assert_eq!(*global, None, "meter already set");

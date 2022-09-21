@@ -3,9 +3,11 @@ members = [
         "prover",
         "polyglot",
         "jit",
+        "common"
 ]
 exclude = [
         "polyglot/fuzz",
+        "polyglot/honggfuzz",
 ]
 
 [profile.release]
