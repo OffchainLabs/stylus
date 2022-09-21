@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::util::{self, add_global};
+use crate::middlewares::{add_global, get_global, set_global};
 
 use loupe::{MemoryUsage, MemoryUsageTracker};
 use parking_lot::Mutex;
@@ -164,8 +164,8 @@ pub enum MachineMeter {
 }
 
 pub fn gas_left(instance: &Instance) -> MachineMeter {
-    let gas = util::get_global(instance, "polyglot_gas_left");
-    let status: i32 = util::get_global(instance, "polyglot_gas_status");
+    let gas = get_global(instance, "polyglot_gas_left");
+    let status: i32 = get_global(instance, "polyglot_gas_status");
 
     return match status == 1 {
         true => MachineMeter::Exhausted,
@@ -174,6 +174,6 @@ pub fn gas_left(instance: &Instance) -> MachineMeter {
 }
 
 pub fn set_gas(instance: &Instance, gas: u64) {
-    util::set_global(instance, "polyglot_gas_left", gas);
-    util::set_global(instance, "polyglot_gas_status", 0);
+    set_global(instance, "polyglot_gas_left", gas);
+    set_global(instance, "polyglot_gas_status", 0);
 }

@@ -18,7 +18,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     let module = wasm::random(data);
-    if let Err(error) = polyglot::util::validate(&module) {
+    if let Err(error) = polyglot::machine::validate(&module) {
         warn!("Failed to validate wasm {}", error);
     }
 
@@ -63,10 +63,21 @@ fuzz_target!(|data: &[u8]| {
             left => left,
         };
 
-        if error.to_string().contains("RuntimeError: call stack exhausted") {
-            fail!("Fatal: {} {} words left with {} gas left", "stack overflow", left, gas)
+        if error
+            .to_string()
+            .contains("RuntimeError: call stack exhausted")
+        {
+            fail!(
+                "Fatal: {} {} words left with {} gas left",
+                "stack overflow",
+                left,
+                gas
+            )
         }
 
-        warn!("Call failed with {} words and {} gas left: {}", left, gas, error);
+        warn!(
+            "Call failed with {} words and {} gas left: {}",
+            left, gas, error
+        );
     }
 });

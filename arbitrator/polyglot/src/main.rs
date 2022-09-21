@@ -3,12 +3,11 @@
 
 use wasmparser::Operator;
 
-mod depth;
 mod machine;
-mod meter;
-mod start;
+mod middlewares;
+
+#[cfg(test)]
 mod test;
-mod util;
 
 fn main() {
     let costs = |_: &Operator| 1;

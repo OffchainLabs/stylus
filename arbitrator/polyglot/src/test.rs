@@ -4,9 +4,12 @@
 #![cfg(test)]
 
 use crate::{
-    depth, machine,
-    meter::{self, set_gas, MachineMeter},
-    util,
+    machine,
+    middlewares::depth,
+    middlewares::{
+        self,
+        meter::{self, set_gas, MachineMeter},
+    },
 };
 
 use eyre::Result;
@@ -49,7 +52,7 @@ fn test_depth() -> Result<()> {
     assert_eq!(depth::stack_space_remaining(&instance), 0);
     assert_eq!(depth::stack_size(&instance), 32);
 
-    let program_depth: u32 = util::get_global(&instance, "depth");
+    let program_depth: u32 = middlewares::get_global(&instance, "depth");
     assert_eq!(program_depth, 5); // 32 capacity / 6-word frame => 5 calls
 
     depth::set_stack_limit(&instance, 48);
@@ -62,18 +65,7 @@ fn test_depth() -> Result<()> {
 
     assert!(recurse.call().is_err());
     assert_eq!(depth::stack_space_remaining(&instance), 0);
-    let program_depth: u32 = util::get_global(&instance, "depth");
+    let program_depth: u32 = middlewares::get_global(&instance, "depth");
     assert_eq!(program_depth, 5 + 10); // 64 more capacity / 6-word frame => 10 more calls
-    Ok(())
-}
-
-#[test]
-fn test_depth_temp() -> Result<()> {
-    let wasm = std::fs::read("../jit/programs/pure/main.wat")?;
-    let costs = |_: &Operator| 0;
-    let instance = machine::create(&wasm, costs, u64::MAX, u32::MAX)?;
-    let recurse = instance.exports.get_function("recurse")?;
-    let recurse = recurse.native::<(), ()>().unwrap();
-    recurse.call()?;
     Ok(())
 }

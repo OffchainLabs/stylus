@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::util::{self, add_global};
+use crate::middlewares::{add_global, get_global, set_global};
 
 use loupe::{MemoryUsage, MemoryUsageTracker};
 use parking_lot::Mutex;
@@ -195,29 +195,29 @@ impl<'a> FunctionMiddleware<'a> for FunctionDepthChecker<'a> {
 }
 
 pub fn stack_space_remaining(instance: &Instance) -> u32 {
-    util::get_global(instance, "polyglot_stack_space_left")
+    get_global(instance, "polyglot_stack_space_left")
 }
 
 pub fn stack_size(instance: &Instance) -> u32 {
-    let limit: u32 = util::get_global(instance, "polyglot_stack_size_limit");
-    let space: u32 = util::get_global(instance, "polyglot_stack_space_left");
+    let limit: u32 = get_global(instance, "polyglot_stack_size_limit");
+    let space: u32 = get_global(instance, "polyglot_stack_space_left");
     return limit - space;
 }
 
 pub fn reset_stack(instance: &Instance) {
-    let limit: u32 = util::get_global(instance, "polyglot_stack_size_limit");
-    util::set_global(instance, "polyglot_stack_space_left", limit);
+    let limit: u32 = get_global(instance, "polyglot_stack_size_limit");
+    set_global(instance, "polyglot_stack_space_left", limit);
 }
 
 pub fn set_stack_limit(instance: &Instance, new_limit: u32) {
-    let limit: u32 = util::get_global(instance, "polyglot_stack_size_limit");
-    let space: u32 = util::get_global(instance, "polyglot_stack_space_left");
+    let limit: u32 = get_global(instance, "polyglot_stack_size_limit");
+    let space: u32 = get_global(instance, "polyglot_stack_space_left");
 
     // space += the difference in the limits
     let space = space.saturating_add(new_limit).saturating_sub(limit);
 
-    util::set_global(instance, "polyglot_stack_size_limit", new_limit);
-    util::set_global(instance, "polyglot_stack_space_left", space);
+    set_global(instance, "polyglot_stack_size_limit", new_limit);
+    set_global(instance, "polyglot_stack_space_left", space);
 }
 
 fn worst_case_depth<'a>(
