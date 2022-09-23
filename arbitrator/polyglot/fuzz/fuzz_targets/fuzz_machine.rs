@@ -4,7 +4,7 @@
 #![no_main]
 use common::color;
 use libfuzzer_sys::fuzz_target;
-use polyglot::{self, MachineMeter};
+use polyglot::{self, machine::MachineMeter};
 use wasmparser::Operator;
 
 mod wasm;
@@ -53,12 +53,12 @@ fuzz_target!(|data: &[u8]| {
     };
 
     if let Err(error) = start.call() {
-        let gas = match polyglot::meter::gas_left(&instance) {
+        let gas = match polyglot::machine::gas_left(&instance) {
             MachineMeter::Ready(gas) => gas,
             MachineMeter::Exhausted => warn!("Call failed: {}", "Out of gas"),
         };
 
-        let left = match polyglot::depth::stack_space_remaining(&instance) {
+        let left = match polyglot::machine::stack_space_remaining(&instance) {
             0 => warn!("Call failed: {}", "Out of stack"),
             left => left,
         };
