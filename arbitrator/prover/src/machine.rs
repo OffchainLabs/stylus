@@ -33,7 +33,9 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, TableType, TypeRef};
+use wasmer::wasmparser::{
+    DataKind, ElementItem, ElementKind, ExternalKind, ImportSectionEntryType, Operator, TableType,
+};
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -285,8 +287,12 @@ impl Module {
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
         for import in &bin.imports {
-            if let TypeRef::Func(ty) = import.ty {
-                let mut qualified_name = format!("{}__{}", import.module, import.name);
+            if let ImportSectionEntryType::Function(ty) = import.ty {
+                let import_name = match import.field {
+                    Some(name) => name,
+                    None => bail!("Missing name for import in {}", import.module),
+                };
+                let mut qualified_name = format!("{}__{}", import.module, import_name);
                 qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
                 let have_ty = &bin.types[ty as usize];
                 let func;
@@ -306,7 +312,7 @@ impl Module {
                     ];
                     func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
                 } else {
-                    func = get_host_impl(import.module, import.name)?;
+                    func = get_host_impl(import.module, import_name)?;
                     ensure!(
                         &func.ty == have_ty,
                         "Import has different function signature than host function. Expected {:?} but got {:?}",
@@ -315,12 +321,12 @@ impl Module {
                     ensure!(
                         allow_hostapi,
                         "Calling hostapi directly is not allowed. Function {}",
-                        import.name,
+                        import_name,
                     );
                 }
                 func_type_idxs.push(ty);
                 code.push(func);
-                host_call_hooks.push(Some((import.module.into(), import.name.into())));
+                host_call_hooks.push(Some((import.module.into(), import_name.into())));
             } else {
                 bail!("Unsupport import kind {:?}", import);
             }
@@ -388,8 +394,8 @@ impl Module {
         }
 
         for export in &bin.exports {
-            if let ExternalKind::Func = export.kind {
-                exports.insert(export.name.to_owned(), export.index);
+            if let ExternalKind::Function = export.kind {
+                exports.insert(export.field.to_owned(), export.index);
             }
         }
 
@@ -935,7 +941,7 @@ impl Machine {
         let mut floating_point_impls = HashMap::default();
 
         for export in &bin.exports {
-            if let ExternalKind::Func = export.kind {
+            if let ExternalKind::Function = export.kind {
                 if let Some(ty_idx) = usize::try_from(export.index)
                     .unwrap()
                     .checked_sub(bin.imports.len())
@@ -944,7 +950,7 @@ impl Machine {
                     let ty = &bin.types[usize::try_from(ty).unwrap()];
                     let module = u32::try_from(modules.len() + libraries.len()).unwrap();
                     available_imports.insert(
-                        format!("env__wavm_guest_call__{}", export.name),
+                        format!("env__wavm_guest_call__{}", export.field),
                         AvailableImport {
                             ty: ty.clone(),
                             module,

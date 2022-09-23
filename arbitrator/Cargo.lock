@@ -999,10 +999,11 @@ dependencies = [
  "eyre",
  "loupe",
  "parking_lot 0.12.1",
+ "prover",
  "wasmer 2.3.0",
  "wasmer-compiler-singlepass",
  "wasmer-types 2.3.0",
- "wasmparser 0.83.0",
+ "wasmparser",
 ]
 
 [[package]]
@@ -1049,9 +1050,11 @@ dependencies = [
  "fnv",
  "hex",
  "libc",
+ "loupe",
  "nom",
  "nom-leb128",
  "num",
+ "parking_lot 0.12.1",
  "rayon",
  "rustc-demangle",
  "serde",
@@ -1060,7 +1063,8 @@ dependencies = [
  "sha3",
  "static_assertions",
  "structopt",
- "wasmparser 0.84.0",
+ "wasmer 2.3.0",
+ "wasmer-types 2.3.0",
 ]
 
 [[package]]
@@ -1715,7 +1719,7 @@ dependencies = [
  "target-lexicon",
  "thiserror",
  "wasmer-types 2.3.0",
- "wasmparser 0.83.0",
+ "wasmparser",
 ]
 
 [[package]]
@@ -1733,7 +1737,7 @@ dependencies = [
  "target-lexicon",
  "thiserror",
  "wasmer-types 2.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "wasmparser 0.83.0",
+ "wasmparser",
 ]
 
 [[package]]
@@ -2111,15 +2115,6 @@ name = "wasmparser"
 version = "0.83.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "718ed7c55c2add6548cca3ddd6383d738cd73b892df400e96b9aa876f0141d7a"
-
-[[package]]
-name = "wasmparser"
-version = "0.84.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77dc97c22bb5ce49a47b745bed8812d30206eff5ef3af31424f2c1820c0974b2"
-dependencies = [
- "indexmap",
-]
 
 [[package]]
 name = "wast"

@@ -8,7 +8,7 @@ use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use wasmparser::{FuncType, Type};
+use wasmer::wasmparser::{FuncType, Type};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -41,6 +41,9 @@ impl TryFrom<Type> for ArbValueType {
             FuncRef => Self::FuncRef,
             ExternRef => Self::FuncRef,
             V128 => bail!("128-bit types are not supported"),
+            ExnRef => bail!("Type not used in newer versions of wasmparser"),
+            Func => bail!("Type not used in newer versions of wasmparser"),
+            EmptyBlockType => bail!("Type not used in newer versions of wasmparser"),
         })
     }
 }

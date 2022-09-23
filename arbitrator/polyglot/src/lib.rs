@@ -5,3 +5,6 @@ pub mod machine;
 pub mod middlewares;
 pub use middlewares::meter::MachineMeter;
 pub use middlewares::{depth, meter};
+
+#[cfg(test)]
+mod test;

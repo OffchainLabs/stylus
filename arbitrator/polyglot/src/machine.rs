@@ -4,10 +4,12 @@
 use crate::middlewares::{
     depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover,
 };
+use prover::middlewares::ModuleMod;
 
 use eyre::Result;
-use wasmer::{imports, CompilerConfig, Instance, Module, Store, Universal};
+use wasmer::{imports, CompilerConfig, Instance, Module, Store, Universal, ModuleMiddleware, FunctionMiddleware};
 use wasmer_compiler_singlepass::Singlepass;
+use wasmer_types::{LocalFunctionIndex, ModuleInfo};
 use wasmparser::Operator;
 
 use std::sync::Arc;

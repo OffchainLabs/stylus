@@ -11,6 +11,7 @@ pub mod machine;
 /// cbindgen:ignore
 mod memory;
 mod merkle;
+pub mod middlewares;
 mod reinterpret;
 pub mod utils;
 pub mod value;

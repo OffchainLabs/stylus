@@ -2,12 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use wasmparser::Operator;
-
-mod machine;
-mod middlewares;
-
-#[cfg(test)]
-mod test;
+use polyglot::machine;
 
 fn main() {
     let costs = |_: &Operator| 1;

@@ -12,9 +12,9 @@ use nom::{
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, hash::Hash, str::FromStr};
-use wasmparser::{
+use wasmer::wasmparser::{
     Data, Element, Export, Global, Import, MemoryType, Name, NameSectionReader, Naming, Operator,
-    Parser, Payload, TableType, TypeDef,
+    Parser, Payload, TableType, TypeDef, Validator, WasmFeatures,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -247,13 +247,14 @@ pub struct WasmBinary<'a> {
 }
 
 pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
-    let features = wasmparser::WasmFeatures {
+    let features = WasmFeatures {
         mutable_global: true,
         saturating_float_to_int: true,
         sign_extension: true,
         reference_types: false,
         multi_value: true,
         bulk_memory: false,
+        module_linking: false,
         simd: false,
         relaxed_simd: false,
         threads: false,
@@ -263,9 +264,10 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         exceptions: false,
         memory64: false,
         extended_const: false,
-        component_model: false,
     };
-    wasmparser::Validator::new_with_features(features).validate_all(input)?;
+    let mut validator = Validator::new();
+    validator.wasm_features(features);
+    validator.validate_all(input)?;
 
     let sections: Vec<_> = Parser::new(0)
         .parse_all(input)
@@ -289,7 +291,10 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         match &mut section {
             TypeSection(type_section) => {
                 for _ in 0..type_section.get_count() {
-                    let TypeDef::Func(ty) = type_section.read()?;
+                    let ty = match type_section.read()? {
+                        TypeDef::Func(ty) => ty,
+                        x => bail!("Unsupported type section {:?}", x),
+                    };
                     binary.types.push(ty.try_into()?);
                 }
             }
@@ -354,7 +359,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
             }
             Version { num, .. } => ensure!(*num == 1, "wasm format version not supported {}", num),
             UnknownSection { id, .. } => bail!("unsupported unknown section type {}", id),
-            End(_offset) => {}
+            End => {}
             x => bail!("unsupported section type {:?}", x),
         }
     }

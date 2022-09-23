@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+prover = { path = "../prover/" }
 wasmer = { path = "/home/rachel/Documents/upstream/wasmer/lib/api/" }
 wasmer-compiler-singlepass = { path = "/home/rachel/Documents/upstream/wasmer/lib/compiler-singlepass" }
 wasmer-types = { path = "/home/rachel/Documents/upstream/wasmer/lib/types" }

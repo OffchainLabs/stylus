@@ -12,7 +12,7 @@ use fnv::FnvHashMap as HashMap;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
-use wasmparser::{BlockType, Operator};
+use wasmer::wasmparser::{Operator, Type, TypeOrFuncType};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IRelOpType {
@@ -593,31 +593,37 @@ pub fn wasm_to_wavm<'a>(
     #[derive(Debug)]
     enum Scope {
         /// block type, jumps, and height afterward
-        Simple(BlockType, Vec<usize>, StackState),
+        Simple(TypeOrFuncType, Vec<usize>, StackState),
         /// block type, start, height before, and height afterward
-        Loop(BlockType, usize, StackState, StackState),
+        Loop(TypeOrFuncType, usize, StackState, StackState),
         /// block type, jumps, start, height before, and height afterward
-        IfElse(BlockType, Vec<usize>, Option<usize>, StackState, StackState),
+        IfElse(
+            TypeOrFuncType,
+            Vec<usize>,
+            Option<usize>,
+            StackState,
+            StackState,
+        ),
     }
     let mut scopes = vec![Scope::Simple(
-        BlockType::FuncType(all_types_func_idx),
+        TypeOrFuncType::FuncType(all_types_func_idx),
         vec![],
         StackState::Reachable(func_ty.outputs.len()),
     )]; // start with the func's scope
 
-    let block_type_params = |ty: BlockType| -> usize {
+    let block_type_params = |ty: TypeOrFuncType| -> usize {
         match ty {
-            BlockType::Empty => 0,
-            BlockType::Type(_) => 0,
-            BlockType::FuncType(idx) => all_types[idx as usize].inputs.len(),
+            TypeOrFuncType::Type(Type::EmptyBlockType) => 0,
+            TypeOrFuncType::Type(_) => 0,
+            TypeOrFuncType::FuncType(idx) => all_types[idx as usize].inputs.len(),
         }
     };
 
-    let block_type_results = |ty: BlockType| -> usize {
+    let block_type_results = |ty: TypeOrFuncType| -> usize {
         match ty {
-            BlockType::Empty => 0,
-            BlockType::Type(_) => 1,
-            BlockType::FuncType(idx) => all_types[idx as usize].outputs.len(),
+            TypeOrFuncType::Type(Type::EmptyBlockType) => 0,
+            TypeOrFuncType::Type(_) => 1,
+            TypeOrFuncType::FuncType(idx) => all_types[idx as usize].outputs.len(),
         }
     };
 
