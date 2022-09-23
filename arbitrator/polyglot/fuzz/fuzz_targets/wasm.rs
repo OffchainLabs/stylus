@@ -16,13 +16,16 @@ impl Config for WasmConfig {
     fn canonicalize_nans(&self) -> bool {
         false
     }
+    fn max_memory_pages(&self, _is_64: bool) -> u64 {
+        17 // a little over 1 MB
+    }
     fn memory64_enabled(&self) -> bool {
         false
     }
-    /*fn memory_offset_choices(&self) -> (u32, u32, u32) {
+    fn memory_offset_choices(&self) -> (u32, u32, u32) {
         // ensure all memory accesses are in bounds
-        (1, 0, 0)
-    }*/
+        (95, 4, 1)
+    }
     fn multi_value_enabled(&self) -> bool {
         // research why Singlepass doesn't have this on by default before enabling
         false

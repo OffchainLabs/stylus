@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 pub mod depth;
+pub mod memory;
 pub mod meter;
 pub mod start;
 

@@ -1,7 +1,9 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::middlewares::{depth::DepthChecker, meter::Meter, start::StartMover};
+use crate::middlewares::{
+    depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover,
+};
 
 use eyre::Result;
 use wasmer::{imports, CompilerConfig, Instance, Module, Store, Universal};
@@ -23,6 +25,7 @@ pub fn create(
     // add the instrumentation
     compiler.push_middleware(Arc::new(Meter::new(costs, start_gas)));
     compiler.push_middleware(Arc::new(DepthChecker::new(max_depth)));
+    compiler.push_middleware(Arc::new(MemoryChecker::new(1024 * 1024)?)); // 1 MB memory limit
     compiler.push_middleware(Arc::new(StartMover::new("polyglot_moved_start")));
 
     let engine = Universal::new(compiler).engine();

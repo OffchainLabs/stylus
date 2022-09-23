@@ -63,10 +63,8 @@ fuzz_target!(|data: &[u8]| {
             left => left,
         };
 
-        if error
-            .to_string()
-            .contains("RuntimeError: call stack exhausted")
-        {
+        let error = error.to_string();
+        if error.contains("RuntimeError: call stack exhausted") {
             fail!(
                 "Fatal: {} {} words left with {} gas left",
                 "stack overflow",
