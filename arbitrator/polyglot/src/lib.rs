@@ -2,9 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 pub mod machine;
-pub mod middlewares;
-pub use middlewares::meter::MachineMeter;
-pub use middlewares::{depth, meter};
+pub use machine::MachineMeter;
 
 #[cfg(test)]
 mod test;

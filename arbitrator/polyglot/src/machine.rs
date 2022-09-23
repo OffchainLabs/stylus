@@ -7,12 +7,12 @@ use prover::middlewares::{
 };
 
 use eyre::Result;
-use wasmer::{imports, CompilerConfig, Instance, Module, Store, Universal};
+use wasmer::{imports, CompilerConfig, Function, Instance, Module, Store, Universal};
 use wasmer_compiler_singlepass::Singlepass;
-use wasmer_types::Bytes;
+use wasmer_types::{Bytes, Value};
 use wasmparser::Operator;
 
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 pub fn create(
     wasm: &[u8],
@@ -67,4 +67,70 @@ pub fn validate(wasm: &[u8]) -> Result<()> {
     validator.wasm_features(features);
     validator.validate_all(wasm)?;
     Ok(())
+}
+
+pub fn get_global<T>(instance: &Instance, name: &str) -> T
+where
+    T: TryFrom<Value<Function>>,
+    T::Error: Debug,
+{
+    let error = format!("global {name} does not exist");
+    let global = instance.exports.get_global(name).expect(&error);
+    global.get().try_into().expect("wrong type")
+}
+
+pub fn set_global<T>(instance: &Instance, name: &str, value: T)
+where
+    T: Into<Value<Function>>,
+{
+    let error = format!("global {name} does not exist");
+    let global = instance.exports.get_global(name).expect(&error);
+    global.set(value.into()).expect("failed to write global");
+}
+
+pub fn stack_space_remaining(instance: &Instance) -> u32 {
+    get_global(instance, "polyglot_stack_space_left")
+}
+
+pub fn stack_size(instance: &Instance) -> u32 {
+    let limit: u32 = get_global(instance, "polyglot_stack_size_limit");
+    let space: u32 = get_global(instance, "polyglot_stack_space_left");
+    return limit - space;
+}
+
+pub fn reset_stack(instance: &Instance) {
+    let limit: u32 = get_global(instance, "polyglot_stack_size_limit");
+    set_global(instance, "polyglot_stack_space_left", limit);
+}
+
+pub fn set_stack_limit(instance: &Instance, new_limit: u32) {
+    let limit: u32 = get_global(instance, "polyglot_stack_size_limit");
+    let space: u32 = get_global(instance, "polyglot_stack_space_left");
+
+    // space += the difference in the limits
+    let space = space.saturating_add(new_limit).saturating_sub(limit);
+
+    set_global(instance, "polyglot_stack_size_limit", new_limit);
+    set_global(instance, "polyglot_stack_space_left", space);
+}
+
+#[derive(Debug, PartialEq)]
+pub enum MachineMeter {
+    Ready(u64),
+    Exhausted,
+}
+
+pub fn gas_left(instance: &Instance) -> MachineMeter {
+    let gas = get_global(instance, "polyglot_gas_left");
+    let status: i32 = get_global(instance, "polyglot_gas_status");
+
+    return match status == 1 {
+        true => MachineMeter::Exhausted,
+        false => MachineMeter::Ready(gas),
+    };
+}
+
+pub fn set_gas(instance: &Instance, gas: u64) {
+    set_global(instance, "polyglot_gas_left", gas);
+    set_global(instance, "polyglot_gas_status", 0);
 }

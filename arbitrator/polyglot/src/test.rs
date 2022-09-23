@@ -3,13 +3,7 @@
 
 #![cfg(test)]
 
-use crate::{
-    machine,
-    middlewares::{
-        self, depth,
-        meter::{self, set_gas, MachineMeter},
-    },
-};
+use crate::machine::{self, MachineMeter};
 
 use eyre::Result;
 use wasmparser::Operator;
@@ -28,14 +22,14 @@ fn test_gas() -> Result<()> {
     let add_one = instance.exports.get_function("add_one")?;
     let add_one = add_one.native::<i32, i32>().unwrap();
 
-    assert_eq!(meter::gas_left(&instance), MachineMeter::Ready(0));
+    assert_eq!(machine::gas_left(&instance), MachineMeter::Ready(0));
     assert!(add_one.call(32).is_err());
-    assert_eq!(meter::gas_left(&instance), MachineMeter::Exhausted);
+    assert_eq!(machine::gas_left(&instance), MachineMeter::Exhausted);
 
-    set_gas(&instance, 1000);
-    assert_eq!(meter::gas_left(&instance), MachineMeter::Ready(1000));
+    machine::set_gas(&instance, 1000);
+    assert_eq!(machine::gas_left(&instance), MachineMeter::Ready(1000));
     assert_eq!(add_one.call(32)?, 33);
-    assert_eq!(meter::gas_left(&instance), MachineMeter::Ready(900));
+    assert_eq!(machine::gas_left(&instance), MachineMeter::Ready(900));
     Ok(())
 }
 
@@ -48,23 +42,23 @@ fn test_depth() -> Result<()> {
     let recurse = recurse.native::<(), ()>().unwrap();
 
     assert!(recurse.call().is_err());
-    assert_eq!(depth::stack_space_remaining(&instance), 0);
-    assert_eq!(depth::stack_size(&instance), 32);
+    assert_eq!(machine::stack_space_remaining(&instance), 0);
+    assert_eq!(machine::stack_size(&instance), 32);
 
-    let program_depth: u32 = middlewares::get_global(&instance, "depth");
+    let program_depth: u32 = machine::get_global(&instance, "depth");
     assert_eq!(program_depth, 5); // 32 capacity / 6-word frame => 5 calls
 
-    depth::set_stack_limit(&instance, 48);
-    assert_eq!(depth::stack_space_remaining(&instance), 16);
-    assert_eq!(depth::stack_size(&instance), 32);
+    machine::set_stack_limit(&instance, 48);
+    assert_eq!(machine::stack_space_remaining(&instance), 16);
+    assert_eq!(machine::stack_size(&instance), 32);
 
-    depth::reset_stack(&instance);
-    depth::set_stack_limit(&instance, 64);
-    assert_eq!(depth::stack_space_remaining(&instance), 64);
+    machine::reset_stack(&instance);
+    machine::set_stack_limit(&instance, 64);
+    assert_eq!(machine::stack_space_remaining(&instance), 64);
 
     assert!(recurse.call().is_err());
-    assert_eq!(depth::stack_space_remaining(&instance), 0);
-    let program_depth: u32 = middlewares::get_global(&instance, "depth");
+    assert_eq!(machine::stack_space_remaining(&instance), 0);
+    let program_depth: u32 = machine::get_global(&instance, "depth");
     assert_eq!(program_depth, 5 + 10); // 64 more capacity / 6-word frame => 10 more calls
     Ok(())
 }
