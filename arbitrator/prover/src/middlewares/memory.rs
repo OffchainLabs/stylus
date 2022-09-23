@@ -4,13 +4,21 @@
 use super::{DefaultFunctionMiddleware, Middleware, ModuleMod};
 
 use eyre::Result;
+use loupe::MemoryUsage;
 use wasmer_types::{Bytes, LocalFunctionIndex, Pages};
 
-use std::convert::TryFrom;
+use std::{convert::TryFrom, mem};
 
+#[derive(Debug)]
 pub struct MemoryChecker {
     /// Upper bound on the amount of memory a module may use
     limit: Bytes,
+}
+
+impl MemoryUsage for MemoryChecker {
+    fn size_of_val(&self, _: &mut dyn loupe::MemoryUsageTracker) -> usize {
+        mem::size_of::<Bytes>()
+    }
 }
 
 impl MemoryChecker {
@@ -20,10 +28,10 @@ impl MemoryChecker {
     }
 }
 
-impl<'a> Middleware<'a> for MemoryChecker {
-    type M = DefaultFunctionMiddleware;
+impl<'a, M: ModuleMod> Middleware<'a, M> for MemoryChecker {
+    type FM = DefaultFunctionMiddleware;
 
-    fn update_module(&self, module: &mut dyn ModuleMod) {
+    fn update_module(&self, module: &mut M) {
         let Bytes(table_bytes) = module.table_bytes();
         let Bytes(limit) = self.limit;
         let limit = limit.saturating_sub(table_bytes);
@@ -31,7 +39,7 @@ impl<'a> Middleware<'a> for MemoryChecker {
         module.limit_memory(limit);
     }
 
-    fn instrument(&self, _: LocalFunctionIndex) -> Self::M {
+    fn instrument(&self, _: LocalFunctionIndex) -> Self::FM {
         DefaultFunctionMiddleware
     }
 }

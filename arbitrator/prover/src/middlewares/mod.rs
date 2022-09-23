@@ -7,30 +7,35 @@ use wasmer::{
     MiddlewareError, ModuleMiddleware,
 };
 use wasmer_types::{
-    Bytes, ExportIndex, GlobalIndex, GlobalInit, GlobalType, LocalFunctionIndex, ModuleInfo,
-    Mutability, Pages, Type as WpType,
+    Bytes, ExportIndex, FunctionIndex, FunctionType, GlobalIndex, GlobalInit, GlobalType,
+    LocalFunctionIndex, ModuleInfo, Mutability, Pages, SignatureIndex, Type as WpType,
 };
 
-use std::{fmt::Debug, marker::PhantomData};
+use std::{
+    fmt::Debug,
+    marker::{PhantomData, Send, Sync},
+};
 
-mod depth;
-mod memory;
-mod meter;
-mod start;
+pub mod depth;
+pub mod memory;
+pub mod meter;
+pub mod start;
 
-pub trait ModuleMod {
+pub trait ModuleMod: Clone + Debug + Send + Sync {
     fn move_start_function(&mut self, name: &str);
     fn table_bytes(&self) -> Bytes;
     fn limit_memory(&mut self, limit: Pages);
     fn add_global(&mut self, name: &str, ty: WpType, init: GlobalInit) -> GlobalIndex;
+    fn get_signature(&self, sig: SignatureIndex) -> Option<&'_ FunctionType>;
+    fn get_function(&self, func: FunctionIndex) -> Option<&'_ FunctionType>;
 }
 
 // when GAT's are stabalized, move 'a to instrument
-pub trait Middleware<'a> {
-    type M: FunctionMiddleware<'a> + Debug + 'a;
+pub trait Middleware<'a, M: ModuleMod> {
+    type FM: FunctionMiddleware<'a> + Debug + 'a;
 
-    fn update_module(&self, module: &mut dyn ModuleMod);
-    fn instrument(&self, func_index: LocalFunctionIndex) -> Self::M;
+    fn update_module(&self, module: &mut M);
+    fn instrument(&self, func_index: LocalFunctionIndex) -> Self::FM;
 }
 
 pub trait FunctionMiddleware<'a> {
@@ -93,16 +98,38 @@ impl ModuleMod for ModuleInfo {
         self.global_initializers.push(init);
         index
     }
+
+    fn get_signature(&self, sig: SignatureIndex) -> Option<&'_ FunctionType> {
+        self.signatures.get(sig)
+    }
+
+    fn get_function(&self, func: FunctionIndex) -> Option<&'_ FunctionType> {
+        match self.functions.get(func) {
+            Some(sig) => self.get_signature(*sig),
+            None => return None,
+        }
+    }
 }
 
 #[derive(Debug, MemoryUsage)]
-pub struct WasmerMiddlewareWrapper<T>(T)
+pub struct WasmerMiddlewareWrapper<T, M>(pub T, PhantomData<M>)
 where
-    T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<'a>;
+    M: ModuleMod,
+    T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<'a, M>;
 
-impl<T> ModuleMiddleware for WasmerMiddlewareWrapper<T>
+impl<T, M> WasmerMiddlewareWrapper<T, M>
 where
-    T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<'a>,
+    M: ModuleMod,
+    T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<'a, M>,
+{
+    pub fn new(middleware: T) -> Self {
+        WasmerMiddlewareWrapper(middleware, PhantomData)
+    }
+}
+
+impl<T> ModuleMiddleware for WasmerMiddlewareWrapper<T, ModuleInfo>
+where
+    T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<'a, ModuleInfo>,
 {
     fn transform_module_info(&self, module: &mut ModuleInfo) {
         self.0.update_module(module);

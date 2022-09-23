@@ -45,20 +45,24 @@ impl<F: Fn(&Operator) -> u64 + Send + Sync> Meter<F> {
     }
 }
 
-impl<'a, F: Fn(&Operator) -> u64 + Send + Sync + 'static> Middleware<'a> for Meter<F> {
-    type M = FunctionMeter<'a, F>;
+impl<'a, M, F> Middleware<'a, M> for Meter<F>
+where
+    M: ModuleMod,
+    F: Fn(&Operator) -> u64 + Send + Sync + 'static,
+{
+    type FM = FunctionMeter<'a, F>;
 
-    fn update_module(&self, module: &mut dyn ModuleMod) {
+    fn update_module(&self, module: &mut M) {
         let start = GlobalInit::I64Const(self.start_gas as i64);
-        let gas = module.add_global("gas_left", Type::I64, start);
-        let status = module.add_global("gas_status", Type::I32, GlobalInit::I32Const(0));
+        let gas = module.add_global("polyglot_gas_left", Type::I64, start);
+        let status = module.add_global("polyglot_gas_status", Type::I32, GlobalInit::I32Const(0));
         *self.gas_global.lock() = Some(gas);
         *self.status_global.lock() = Some(status);
     }
 
-    fn instrument(&self, _: LocalFunctionIndex) -> Self::M {
+    fn instrument(&self, _: LocalFunctionIndex) -> Self::FM {
         let gas = self.gas_global.lock().expect("no global");
-        let status = self.gas_global.lock().expect("no global");
+        let status = self.status_global.lock().expect("no global");
         FunctionMeter::new(gas, status, self.costs.clone())
     }
 }

@@ -6,8 +6,7 @@
 use crate::{
     machine,
     middlewares::{
-        self,
-        depth,
+        self, depth,
         meter::{self, set_gas, MachineMeter},
     },
 };
