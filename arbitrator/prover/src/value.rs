@@ -8,7 +8,8 @@ use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use wasmer::wasmparser::{FuncType, Type};
+use wasmer::wasmparser::{FuncType, Type as WpType};
+use wasmer_types::Type;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -28,11 +29,11 @@ impl ArbValueType {
     }
 }
 
-impl TryFrom<Type> for ArbValueType {
+impl TryFrom<WpType> for ArbValueType {
     type Error = eyre::Error;
 
-    fn try_from(ty: Type) -> Result<ArbValueType> {
-        use Type::*;
+    fn try_from(ty: WpType) -> Result<Self> {
+        use WpType::*;
         Ok(match ty {
             I32 => Self::I32,
             I64 => Self::I64,
@@ -44,6 +45,23 @@ impl TryFrom<Type> for ArbValueType {
             ExnRef => bail!("Type not used in newer versions of wasmparser"),
             Func => bail!("Type not used in newer versions of wasmparser"),
             EmptyBlockType => bail!("Type not used in newer versions of wasmparser"),
+        })
+    }
+}
+
+impl TryFrom<Type> for ArbValueType {
+    type Error = eyre::Error;
+
+    fn try_from(ty: Type) -> Result<Self> {
+        use Type::*;
+        Ok(match ty {
+            I32 => Self::I32,
+            I64 => Self::I64,
+            F32 => Self::F32,
+            F64 => Self::F64,
+            ExternRef => Self::FuncRef,
+            FuncRef => Self::FuncRef,
+            V128 => bail!("128-bit types are not supported"),
         })
     }
 }
@@ -282,7 +300,23 @@ impl TryFrom<FuncType> for FunctionType {
         for output in func.returns.iter() {
             outputs.push(ArbValueType::try_from(*output)?)
         }
+        Ok(Self { inputs, outputs })
+    }
+}
 
+impl TryFrom<wasmer_types::FunctionType> for FunctionType {
+    type Error = eyre::Error;
+
+    fn try_from(func: wasmer_types::FunctionType) -> Result<Self> {
+        let mut inputs: Vec<ArbValueType> = vec![];
+        let mut outputs = vec![];
+
+        for input in func.params() {
+            inputs.push(ArbValueType::try_from(*input)?)
+        }
+        for output in func.results() {
+            outputs.push(ArbValueType::try_from(*output)?)
+        }
         Ok(Self { inputs, outputs })
     }
 }

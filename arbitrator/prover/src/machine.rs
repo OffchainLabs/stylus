@@ -34,7 +34,7 @@ use std::{
     sync::Arc,
 };
 use wasmer::wasmparser::{
-    DataKind, ElementItem, ElementKind, ExternalKind, ImportSectionEntryType, Operator, TableType,
+    DataKind, ElementItem, ElementKind, ImportSectionEntryType, Operator, TableType,
 };
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
@@ -283,7 +283,6 @@ impl Module {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
         let mut memory = Memory::default();
-        let mut exports = HashMap::default();
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
         for import in &bin.imports {
@@ -380,23 +379,6 @@ impl Module {
             let size = initial * page_size;
 
             memory = Memory::new(size as usize, max_size);
-        }
-
-        let mut globals = vec![];
-        for global in &bin.globals {
-            let mut init = global.init_expr.get_operators_reader();
-
-            let value = match (init.read()?, init.read()?, init.eof()) {
-                (op, Operator::End, true) => crate::binary::op_as_const(op)?,
-                _ => bail!("Non-constant global initializer"),
-            };
-            globals.push(value);
-        }
-
-        for export in &bin.exports {
-            if let ExternalKind::Function = export.kind {
-                exports.insert(export.field.to_owned(), export.index);
-            }
         }
 
         for data in &bin.datas {
@@ -541,7 +523,7 @@ impl Module {
 
         Ok(Module {
             memory,
-            globals,
+            globals: bin.globals.clone(),
             tables_merkle: Merkle::new(MerkleType::Table, tables_hashes?),
             tables,
             funcs_merkle: Arc::new(Merkle::new(
@@ -555,7 +537,7 @@ impl Module {
             host_call_hooks: Arc::new(host_call_hooks),
             start_function: bin.start,
             func_types: Arc::new(func_types),
-            exports: Arc::new(exports),
+            exports: Arc::new(bin.exports.clone()),
         })
     }
 
@@ -940,24 +922,18 @@ impl Machine {
         let mut available_imports = HashMap::default();
         let mut floating_point_impls = HashMap::default();
 
-        for export in &bin.exports {
-            if let ExternalKind::Function = export.kind {
-                if let Some(ty_idx) = usize::try_from(export.index)
-                    .unwrap()
-                    .checked_sub(bin.imports.len())
-                {
-                    let ty = bin.functions[ty_idx];
-                    let ty = &bin.types[usize::try_from(ty).unwrap()];
-                    let module = u32::try_from(modules.len() + libraries.len()).unwrap();
-                    available_imports.insert(
-                        format!("env__wavm_guest_call__{}", export.field),
-                        AvailableImport {
-                            ty: ty.clone(),
-                            module,
-                            func: export.index,
-                        },
-                    );
-                }
+        for (name, &func) in &bin.exports {
+            if let Some(ty_idx) = usize::try_from(func)
+                .unwrap()
+                .checked_sub(bin.imports.len())
+            {
+                let ty = bin.functions[ty_idx];
+                let ty = bin.types[usize::try_from(ty).unwrap()].clone();
+                let module = u32::try_from(modules.len() + libraries.len()).unwrap();
+                available_imports.insert(
+                    format!("env__wavm_guest_call__{name}"),
+                    AvailableImport { ty, module, func },
+                );
             }
         }
 

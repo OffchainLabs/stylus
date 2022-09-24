@@ -7,13 +7,19 @@ use wasmer::{
     MiddlewareError, ModuleMiddleware,
 };
 use wasmer_types::{
-    Bytes, ExportIndex, FunctionIndex, FunctionType, GlobalIndex, GlobalInit, GlobalType,
+    Bytes, ExportIndex, FunctionIndex, GlobalIndex, GlobalInit, GlobalType,
     LocalFunctionIndex, ModuleInfo, Mutability, Pages, SignatureIndex, Type as WpType,
 };
 
 use std::{
+    convert::TryInto,
     fmt::Debug,
     marker::{PhantomData, Send, Sync},
+};
+
+use crate::{
+    binary::WasmBinary,
+    value::{FunctionType as ArbFunctionType, Value},
 };
 
 pub mod depth;
@@ -26,8 +32,8 @@ pub trait ModuleMod: Clone + Debug + Send + Sync {
     fn table_bytes(&self) -> Bytes;
     fn limit_memory(&mut self, limit: Pages);
     fn add_global(&mut self, name: &str, ty: WpType, init: GlobalInit) -> GlobalIndex;
-    fn get_signature(&self, sig: SignatureIndex) -> Option<&'_ FunctionType>;
-    fn get_function(&self, func: FunctionIndex) -> Option<&'_ FunctionType>;
+    fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType, String>;
+    fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType, String>;
 }
 
 // when GAT's are stabalized, move 'a to instrument
@@ -99,14 +105,77 @@ impl ModuleMod for ModuleInfo {
         index
     }
 
-    fn get_signature(&self, sig: SignatureIndex) -> Option<&'_ FunctionType> {
-        self.signatures.get(sig)
+    fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType, String> {
+        let index = sig.as_u32();
+        let error = || format!("missing signature {index}");
+        let ty = self.signatures.get(sig).ok_or_else(error)?;
+        ty.clone().try_into().map_err(|_| error())
     }
 
-    fn get_function(&self, func: FunctionIndex) -> Option<&'_ FunctionType> {
+    fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType, String> {
         match self.functions.get(func) {
             Some(sig) => self.get_signature(*sig),
-            None => return None,
+            None => return Err(format!("missing func with id {}", func.as_u32())),
+        }
+    }
+}
+
+impl<'a> ModuleMod for WasmBinary<'a> {
+    fn move_start_function(&mut self, name: &str) {
+        self.exports.remove(name);
+
+        if let Some(start) = self.start.take() {
+            self.exports.insert(name.to_owned(), start);
+            self.names.functions.insert(start, name.to_owned());
+        }
+    }
+
+    fn table_bytes(&self) -> Bytes {
+        let mut total: u32 = 0;
+        for table in &self.tables {
+            // We don't support `TableGrow`, so the minimum is the size a table will always be.
+            // We also don't support the 128-bit extension, so we'll say a `type` is at most 8 bytes.
+            total = total.saturating_add(table.initial.saturating_mul(8));
+        }
+        Bytes(total as usize)
+    }
+
+    fn limit_memory(&mut self, limit: Pages) {
+        for memory in &mut self.memories {
+            let Pages(limit) = limit;
+            let limit = memory.maximum.unwrap_or(limit.into());
+            let pages = limit.min(limit);
+            memory.maximum = Some(pages);
+        }
+    }
+
+    fn add_global(&mut self, name: &str, _ty: WpType, init: GlobalInit) -> GlobalIndex {
+        let global = match init {
+            GlobalInit::I32Const(x) => Value::I32(x as u32),
+            GlobalInit::I64Const(x) => Value::I64(x as u64),
+            GlobalInit::F32Const(x) => Value::F32(x),
+            GlobalInit::F64Const(x) => Value::F64(x),
+            x => panic!("cannot add global of type {:?}", x),
+        };
+
+        let index = GlobalIndex::from_u32(self.globals.len() as u32);
+        self.globals.push(global);
+        self.exports.insert(name.to_owned(), index.as_u32());
+        index
+    }
+
+    fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType, String> {
+        let index = sig.as_u32() as usize;
+        let error = || format!("missing signature {index}");
+        let ty = self.types.get(index).ok_or_else(error)?;
+        ty.clone().try_into().map_err(|_| error())
+    }
+
+    fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType, String> {
+        let index = func.as_u32() as usize;
+        match self.functions.get(index) {
+            Some(sig) => self.get_signature(SignatureIndex::from_u32(*sig)),
+            None => return Err(format!("missing func with id {}", func.as_u32())),
         }
     }
 }

@@ -218,8 +218,8 @@ fn worst_case_depth<'a, M: ModuleMod>(
     }
     macro_rules! ins_and_outs {
         ($ty:expr) => {{
-            let ins = $ty.results().len() as u32;
-            let outs = $ty.params().len() as u32;
+            let ins = $ty.inputs.len() as u32;
+            let outs = $ty.outputs.len() as u32;
             push!(outs);
             pop!(ins);
         }};
@@ -247,10 +247,8 @@ fn worst_case_depth<'a, M: ModuleMod>(
                 TypeOrFuncType::Type(WpType::EmptyBlockType) => {}
                 TypeOrFuncType::Type(_) => push!(1),
                 TypeOrFuncType::FuncType(id) => {
-                    match module.get_signature(SignatureIndex::from_u32(*id)) {
-                        Some(ty) => ins_and_outs!(ty),
-                        None => error!("No function with id {id}"),
-                    }
+                    let ty = module.get_signature(SignatureIndex::from_u32(*id))?;
+                    ins_and_outs!(ty);
                 }
             }
         }};
@@ -289,18 +287,12 @@ fn worst_case_depth<'a, M: ModuleMod>(
 
             Call { function_index } => {
                 let index = FunctionIndex::from_u32(*function_index);
-                let ty = match module.get_function(index) {
-                    Some(ty) => ty,
-                    None => error!("No function signature for call to {:?}", index),
-                };
+                let ty = module.get_function(index)?;
                 ins_and_outs!(ty)
             }
             CallIndirect { index, .. } => {
                 let index = SignatureIndex::from_u32(*index);
-                let ty = match module.get_signature(index) {
-                    Some(ty) => ty,
-                    None => error!("No table at index {:?}", index),
-                };
+                let ty = module.get_signature(index)?;
                 ins_and_outs!(ty)
             }
 

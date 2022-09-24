@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::value::{ArbValueType, FunctionType, IntegerValType, Value as LirValue};
+use crate::value::{ArbValueType, FunctionType, IntegerValType, Value};
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
 use nom::{
@@ -11,10 +11,11 @@ use nom::{
     sequence::{preceded, tuple},
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::TryInto, hash::Hash, str::FromStr};
+use std::{convert::TryInto, fmt::Debug, hash::Hash, str::FromStr};
 use wasmer::wasmparser::{
-    Data, Element, Export, Global, Import, MemoryType, Name, NameSectionReader, Naming, Operator,
-    Parser, Payload, TableType, TypeDef, Validator, WasmFeatures,
+    Data, Element, Export, ExternalKind, Global, Import, MemoryType, Name,
+    NameSectionReader, Naming, Operator, Parser, Payload, TableType, TypeDef, Validator,
+    WasmFeatures,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -202,12 +203,12 @@ impl FromStr for FloatInstruction {
     }
 }
 
-pub fn op_as_const(op: Operator) -> Result<LirValue> {
+pub fn op_as_const(op: Operator) -> Result<Value> {
     match op {
-        Operator::I32Const { value } => Ok(LirValue::I32(value as u32)),
-        Operator::I64Const { value } => Ok(LirValue::I64(value as u64)),
-        Operator::F32Const { value } => Ok(LirValue::F32(f32::from_bits(value.bits()))),
-        Operator::F64Const { value } => Ok(LirValue::F64(f64::from_bits(value.bits()))),
+        Operator::I32Const { value } => Ok(Value::I32(value as u32)),
+        Operator::I64Const { value } => Ok(Value::I64(value as u64)),
+        Operator::F32Const { value } => Ok(Value::F32(f32::from_bits(value.bits()))),
+        Operator::F64Const { value } => Ok(Value::F64(f64::from_bits(value.bits()))),
         _ => bail!("Opcode is not a constant"),
     }
 }
@@ -237,13 +238,32 @@ pub struct WasmBinary<'a> {
     pub functions: Vec<u32>,
     pub tables: Vec<TableType>,
     pub memories: Vec<MemoryType>,
-    pub globals: Vec<Global<'a>>,
-    pub exports: Vec<Export<'a>>,
+    pub globals: Vec<Value>,
+    pub exports: HashMap<String, u32>,
     pub start: Option<u32>,
     pub elements: Vec<Element<'a>>,
     pub codes: Vec<Code<'a>>,
     pub datas: Vec<Data<'a>>,
     pub names: NameCustomSection,
+}
+
+impl<'a> Debug for WasmBinary<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WasmBinary")
+            .field("types", &self.types)
+            .field("imports", &self.imports)
+            .field("functions", &self.functions)
+            .field("tables", &self.tables)
+            .field("memories", &self.memories)
+            .field("globals", &self.globals)
+            .field("exports", &self.exports)
+            .field("start", &self.start)
+            .field("elements", &format!("<{} elements>", self.elements.len()))
+            .field("codes", &self.codes)
+            .field("datas", &self.datas)
+            .field("names", &self.names)
+            .finish()
+    }
 }
 
 pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
@@ -287,6 +307,16 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                 }
             }};
         }
+        macro_rules! flatten {
+            ($ty:tt, $source:expr) => {{
+                let mut values: Vec<$ty> = Vec::new();
+                for _ in 0..$source.get_count() {
+                    let item = $source.read()?;
+                    values.push(item.into())
+                }
+                values
+            }};
+        }
 
         match &mut section {
             TypeSection(type_section) => {
@@ -302,7 +332,6 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                 let mut code = Code::default();
                 let mut locals = codes.get_locals_reader()?;
                 let mut ops = codes.get_operators_reader()?;
-
                 let mut index = 0;
 
                 for _ in 0..locals.get_count() {
@@ -321,12 +350,28 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
 
                 binary.codes.push(code);
             }
+            GlobalSection(globals) => {
+                for global in flatten!(Global, globals) {
+                    let mut init = global.init_expr.get_operators_reader();
+
+                    let value = match (init.read()?, init.read()?, init.eof()) {
+                        (op, Operator::End, true) => op_as_const(op)?,
+                        _ => bail!("Non-constant global initializer"),
+                    };
+                    binary.globals.push(value);
+                }
+            }
+            ExportSection(exports) => {
+                for export in flatten!(Export, exports) {
+                    if let ExternalKind::Function = export.kind {
+                        binary.exports.insert(export.field.to_owned(), export.index);
+                    }
+                }
+            }
             ImportSection(imports) => process!(binary.imports, imports),
             FunctionSection(functions) => process!(binary.functions, functions),
             TableSection(tables) => process!(binary.tables, tables),
             MemorySection(memories) => process!(binary.memories, memories),
-            GlobalSection(globals) => process!(binary.globals, globals),
-            ExportSection(exports) => process!(binary.exports, exports),
             StartSection { func, .. } => binary.start = Some(*func),
             ElementSection(elements) => process!(binary.elements, elements),
             DataSection(datas) => process!(binary.datas, datas),
@@ -363,6 +408,5 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
             x => bail!("unsupported section type {:?}", x),
         }
     }
-
     Ok(binary)
 }
