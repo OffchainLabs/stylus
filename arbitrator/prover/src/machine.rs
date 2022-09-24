@@ -6,6 +6,7 @@ use crate::{
     console::Color,
     host::get_host_impl,
     memory::Memory,
+    middlewares::{depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover, Middleware, FunctionMiddleware},
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
@@ -23,6 +24,10 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
+use wasmer_types::{Bytes, LocalFunctionIndex};
+use wasmer::wasmparser::{
+    DataKind, ElementItem, ElementKind, ImportSectionEntryType, Operator, TableType,
+};
 use std::{
     borrow::Cow,
     convert::TryFrom,
@@ -31,10 +36,7 @@ use std::{
     io::{BufReader, BufWriter, Write},
     num::Wrapping,
     path::{Path, PathBuf},
-    sync::Arc,
-};
-use wasmer::wasmparser::{
-    DataKind, ElementItem, ElementKind, ImportSectionEntryType, Operator, TableType,
+    sync::Arc, mem,
 };
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
@@ -274,6 +276,64 @@ struct Module {
 }
 
 impl Module {
+    fn from_polyglot_binary(
+        mut bin: WasmBinary,
+        costs: fn(&Operator) -> u64,
+        start_gas: u64,
+        max_depth: u32,
+    ) -> Result<Module> {
+        let meter = Meter::new(costs, start_gas);
+        let depth = DepthChecker::new(max_depth);
+        let memory = MemoryChecker::new(Bytes(1024 * 1024))?; // 1 MB memory limit
+        let start = StartMover::new("polyglot_moved_start");
+
+        meter.update_module(&mut bin);
+        depth.update_module(&mut bin);
+        memory.update_module(&mut bin);
+        start.update_module(&mut bin);
+
+        for (index, code) in bin.codes.iter_mut().enumerate() {
+            let index = LocalFunctionIndex::from_u32(index as u32);
+            let mut meter = Middleware::<WasmBinary>::instrument(&meter, index);
+            let mut depth = Middleware::<WasmBinary>::instrument(&depth, index);
+            let mut memory = Middleware::<WasmBinary>::instrument(&memory, index);
+            let mut start = Middleware::<WasmBinary>::instrument(&start, index);
+            
+            let mut locals = vec![];
+            for local in &code.locals {
+                locals.push(local.value.into())
+            }
+            
+            meter.locals_info(&locals);
+            depth.locals_info(&locals);
+            memory.locals_info(&locals);
+            start.locals_info(&locals);
+
+            let mut build = mem::replace(&mut code.expr, vec![]);
+            let mut input;
+
+            macro_rules! feed {
+                ($middleware:expr) => {{
+                    let length = build.len();
+                    input = mem::replace(&mut build, Vec::with_capacity(length));
+                    for op in input {
+                        if let Err(error) = $middleware.feed(op, &mut build) {
+                            bail!("Middleware failure: {}", error)
+                        }
+                    }
+                }};
+            }
+
+            feed!(meter);
+            feed!(depth);
+            feed!(memory);
+            feed!(start);            
+            code.expr = build;
+        }
+        
+        Self::from_binary(&bin, &HashMap::default(), &FloatingPointImpls::default(), false)
+    }
+    
     fn from_binary(
         bin: &WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
@@ -521,7 +581,7 @@ impl Module {
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
 
-        Ok(Module {
+        Ok(Self {
             memory,
             globals: bin.globals.clone(),
             tables_merkle: Merkle::new(MerkleType::Table, tables_hashes?),

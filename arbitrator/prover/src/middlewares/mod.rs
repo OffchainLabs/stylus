@@ -1,6 +1,10 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::{
+    binary::WasmBinary,
+    value::{FunctionType as ArbFunctionType, Value},
+};
 use loupe::MemoryUsage;
 use wasmer::{
     wasmparser::{Operator, Type},
@@ -10,16 +14,10 @@ use wasmer_types::{
     Bytes, ExportIndex, FunctionIndex, GlobalIndex, GlobalInit, GlobalType,
     LocalFunctionIndex, ModuleInfo, Mutability, Pages, SignatureIndex, Type as WpType,
 };
-
 use std::{
     convert::TryInto,
     fmt::Debug,
     marker::{PhantomData, Send, Sync},
-};
-
-use crate::{
-    binary::WasmBinary,
-    value::{FunctionType as ArbFunctionType, Value},
 };
 
 pub mod depth;
@@ -40,7 +38,7 @@ pub trait ModuleMod: Clone + Debug + Send + Sync {
 pub trait Middleware<'a, M: ModuleMod> {
     type FM: FunctionMiddleware<'a> + Debug + 'a;
 
-    fn update_module(&self, module: &mut M);
+    fn update_module(&self, module: &mut M); // not mutable due to wasmer
     fn instrument(&self, func_index: LocalFunctionIndex) -> Self::FM;
 }
 

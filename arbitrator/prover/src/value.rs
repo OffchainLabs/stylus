@@ -49,6 +49,19 @@ impl TryFrom<WpType> for ArbValueType {
     }
 }
 
+impl From<ArbValueType> for WpType {
+    fn from(ty: ArbValueType) -> Self {
+        use ArbValueType::*;
+        match ty {
+            I32 => Self::I32,
+            I64 => Self::I64,
+            F32 => Self::F32,
+            F64 => Self::F64,
+            FuncRef | RefNull | InternalRef => Self::FuncRef,
+        }
+    }
+}
+
 impl TryFrom<Type> for ArbValueType {
     type Error = eyre::Error;
 
