@@ -272,6 +272,18 @@ impl PartialEq for Value {
     }
 }
 
+impl From<u32> for Value {
+    fn from(value: u32) -> Self {
+        Value::I32(value as u32)
+    }
+}
+
+impl From<u64> for Value {
+    fn from(value: u64) -> Self {
+        Value::I64(value as u64)
+    }
+}
+
 impl Eq for Value {}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,11 +1,14 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{FunctionMiddleware, Middleware, ModuleMod};
+use crate::{Machine, Value};
+
+use super::{FunctionMiddleware, GlobalMod, Middleware, ModuleMod};
 
 use loupe::{MemoryUsage, MemoryUsageTracker};
 use parking_lot::Mutex;
 use wasmer::wasmparser::{Operator, Type as WpType, TypeOrFuncType};
+use wasmer::Instance;
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 
 use std::{fmt::Debug, mem, sync::Arc};
@@ -156,5 +159,59 @@ impl<'a, F: Fn(&Operator) -> u64 + Send + Sync> FunctionMiddleware<'a> for Funct
             self.block_cost = 0;
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum MachineMeter {
+    Ready(u64),
+    Exhausted,
+}
+
+pub trait MeteredMachine {
+    fn gas_left(&self) -> MachineMeter;
+    fn set_gas(&mut self, gas: u64);
+}
+
+const METER_ERROR: &str = "machine not instrumented with metering code";
+const TYPE_ERROR: &str = "wrong type for metering instrumentation";
+
+impl MeteredMachine for Machine {
+    fn gas_left(&self) -> MachineMeter {
+        let gas = self.get_global("polyglot_gas_left").expect(METER_ERROR);
+        let status = self.get_global("polyglot_gas_status").expect(METER_ERROR);
+        let gas = match gas {
+            Value::I64(gas) => gas,
+            _ => panic!("{}", TYPE_ERROR),
+        };
+        match status {
+            Value::I32(1) => MachineMeter::Exhausted,
+            Value::I32(0) => MachineMeter::Ready(gas),
+            _ => panic!("{}", TYPE_ERROR),
+        }
+    }
+
+    fn set_gas(&mut self, gas: u64) {
+        self.set_global("polyglot_gas_left", Value::I64(gas))
+            .expect(METER_ERROR);
+        self.set_global("polyglot_gas_status", Value::I32(0))
+            .expect(METER_ERROR);
+    }
+}
+
+impl MeteredMachine for Instance {
+    fn gas_left(&self) -> MachineMeter {
+        let gas = self.get_global("polyglot_gas_left");
+        let status: i32 = self.get_global("polyglot_gas_status");
+
+        match status == 1 {
+            true => MachineMeter::Exhausted,
+            false => MachineMeter::Ready(gas),
+        }
+    }
+
+    fn set_gas(&mut self, gas: u64) {
+        self.set_global("polyglot_gas_left", gas);
+        self.set_global("polyglot_gas_status", 0);
     }
 }

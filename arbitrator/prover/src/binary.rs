@@ -13,7 +13,7 @@ use nom::{
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, str::FromStr};
 use wasmer::wasmparser::{
-    Data, Element, Export, ExternalKind, Global, Import, MemoryType, Name,
+    Data, Element, Export as WpExport, ExternalKind, Global, Import, MemoryType, Name,
     NameSectionReader, Naming, Operator, Parser, Payload, TableType, TypeDef, Validator,
     WasmFeatures,
 };
@@ -213,6 +213,29 @@ pub fn op_as_const(op: Operator) -> Result<Value> {
     }
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExportKind {
+    Func,
+    Table,
+    Memory,
+    Global,
+    Tag,
+}
+
+impl From<ExternalKind> for ExportKind {
+    fn from(kind: ExternalKind) -> Self {
+        use ExternalKind::*;
+        match kind {
+            Function => Self::Func,
+            Table => Self::Table,
+            Memory => Self::Memory,
+            Global => Self::Global,
+            Tag => Self::Tag,
+            kind => panic!("unsupported kind {:?}", kind),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Code<'a> {
     pub locals: Vec<Local>,
@@ -231,6 +254,8 @@ pub struct NameCustomSection {
     pub functions: HashMap<u32, String>,
 }
 
+pub type ExportMap = HashMap<(String, ExportKind), u32>;
+
 #[derive(Clone, Default)]
 pub struct WasmBinary<'a> {
     pub types: Vec<FunctionType>,
@@ -240,6 +265,7 @@ pub struct WasmBinary<'a> {
     pub memories: Vec<MemoryType>,
     pub globals: Vec<Value>,
     pub exports: HashMap<String, u32>,
+    pub all_exports: ExportMap,
     pub start: Option<u32>,
     pub elements: Vec<Element<'a>>,
     pub codes: Vec<Code<'a>>,
@@ -362,9 +388,18 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                 }
             }
             ExportSection(exports) => {
-                for export in flatten!(Export, exports) {
-                    if let ExternalKind::Function = export.kind {
+                use ExternalKind::*;
+                for export in flatten!(WpExport, exports) {
+                    if let Function = export.kind {
                         binary.exports.insert(export.field.to_owned(), export.index);
+                    }
+                    match export.kind {
+                        kind @ (Function | Table | Memory | Global | Tag) => {
+                            // only the types also in wasmparser 0.91
+                            let name = export.field.to_owned();
+                            binary.all_exports.insert((name, kind.into()), export.index);
+                        }
+                        _ => {}
                     }
                 }
             }

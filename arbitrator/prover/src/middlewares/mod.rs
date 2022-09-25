@@ -2,22 +2,22 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    binary::WasmBinary,
+    binary::{ExportKind, WasmBinary},
     value::{FunctionType as ArbFunctionType, Value},
 };
 use loupe::MemoryUsage;
-use wasmer::{
-    wasmparser::{Operator, Type},
-    MiddlewareError, ModuleMiddleware,
-};
-use wasmer_types::{
-    Bytes, ExportIndex, FunctionIndex, GlobalIndex, GlobalInit, GlobalType,
-    LocalFunctionIndex, ModuleInfo, Mutability, Pages, SignatureIndex, Type as WpType,
-};
 use std::{
-    convert::TryInto,
+    convert::{TryFrom, TryInto},
     fmt::Debug,
     marker::{PhantomData, Send, Sync},
+};
+use wasmer::{
+    wasmparser::{Operator, Type},
+    Function, Instance, MiddlewareError, ModuleMiddleware,
+};
+use wasmer_types::{
+    Bytes, ExportIndex, FunctionIndex, GlobalIndex, GlobalInit, GlobalType, LocalFunctionIndex,
+    ModuleInfo, Mutability, Pages, SignatureIndex, Type as WpType, Value as WtValue,
 };
 
 pub mod depth;
@@ -120,10 +120,13 @@ impl ModuleMod for ModuleInfo {
 
 impl<'a> ModuleMod for WasmBinary<'a> {
     fn move_start_function(&mut self, name: &str) {
+        let key = (name.to_owned(), ExportKind::Func);
         self.exports.remove(name);
+        self.all_exports.remove(&key);
 
         if let Some(start) = self.start.take() {
             self.exports.insert(name.to_owned(), start);
+            self.all_exports.insert(key, start);
             self.names.functions.insert(start, name.to_owned());
         }
     }
@@ -158,7 +161,8 @@ impl<'a> ModuleMod for WasmBinary<'a> {
 
         let index = GlobalIndex::from_u32(self.globals.len() as u32);
         self.globals.push(global);
-        self.exports.insert(name.to_owned(), index.as_u32());
+        self.all_exports
+            .insert((name.to_owned(), ExportKind::Global), index.as_u32());
         index
     }
 
@@ -234,5 +238,56 @@ where
         self.0
             .feed(op, out)
             .map_err(|err| MiddlewareError::new("Middleware", err))
+    }
+}
+
+pub struct PolyglotConfig {
+    pub costs: fn(&Operator) -> u64,
+    pub start_gas: u64,
+    pub max_depth: u32,
+    pub memory_limit: Bytes,
+}
+
+impl Default for PolyglotConfig {
+    fn default() -> Self {
+        let costs = |_: &Operator| 0;
+        Self {
+            costs,
+            start_gas: 0,
+            max_depth: 1024,
+            memory_limit: Bytes(1024 * 1024),
+        }
+    }
+}
+
+pub trait GlobalMod {
+    fn get_global<T>(&self, name: &str) -> T
+    where
+        T: TryFrom<WtValue<Function>>,
+        T::Error: Debug;
+
+    fn set_global<T>(&mut self, name: &str, value: T)
+    where
+        T: Into<WtValue<Function>>;
+}
+
+impl GlobalMod for Instance {
+    fn get_global<T>(&self, name: &str) -> T
+    where
+        T: TryFrom<WtValue<Function>>,
+        T::Error: Debug,
+    {
+        let error = format!("global {name} does not exist");
+        let global = self.exports.get_global(name).expect(&error);
+        global.get().try_into().expect("wrong type")
+    }
+
+    fn set_global<T>(&mut self, name: &str, value: T)
+    where
+        T: Into<WtValue<Function>>,
+    {
+        let error = format!("global {name} does not exist");
+        let global = self.exports.get_global(name).expect(&error);
+        global.set(value.into()).expect("failed to write global");
     }
 }

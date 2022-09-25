@@ -1,13 +1,15 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{FunctionMiddleware, Middleware, ModuleMod};
+use crate::{Machine, Value};
+
+use super::{FunctionMiddleware, GlobalMod, Middleware, ModuleMod};
 
 use loupe::{MemoryUsage, MemoryUsageTracker};
 use parking_lot::Mutex;
 use wasmer::{
     wasmparser::{Operator, Type as WpType, TypeOrFuncType},
-    GlobalInit, LocalFunctionIndex, Type,
+    GlobalInit, Instance, LocalFunctionIndex, Type,
 };
 use wasmer_types::{FunctionIndex, GlobalIndex, SignatureIndex};
 
@@ -435,4 +437,79 @@ fn worst_case_depth<'a, M: ModuleMod>(
     }
 
     Ok(worst + locals as u32 + 4)
+}
+
+pub trait DepthCheckedMachine {
+    fn stack_space_left(&self) -> u32;
+    fn stack_size(&self) -> u32;
+    fn reset_stack(&mut self);
+    fn set_stack_limit(&mut self, new_limit: u32);
+}
+
+impl DepthCheckedMachine for Instance {
+    fn stack_space_left(&self) -> u32 {
+        self.get_global("polyglot_stack_space_left")
+    }
+
+    fn stack_size(&self) -> u32 {
+        let limit: u32 = self.get_global("polyglot_stack_size_limit");
+        let space: u32 = self.get_global("polyglot_stack_space_left");
+        return limit - space;
+    }
+
+    fn reset_stack(&mut self) {
+        let limit: u32 = self.get_global("polyglot_stack_size_limit");
+        self.set_global("polyglot_stack_space_left", limit);
+    }
+
+    fn set_stack_limit(&mut self, new_limit: u32) {
+        let limit: u32 = self.get_global("polyglot_stack_size_limit");
+        let space: u32 = self.get_global("polyglot_stack_space_left");
+
+        // space += the difference in the limits
+        let space = space.saturating_add(new_limit).saturating_sub(limit);
+
+        self.set_global("polyglot_stack_size_limit", new_limit);
+        self.set_global("polyglot_stack_space_left", space);
+    }
+}
+
+fn machine_depth_checker_global(machine: &Machine, name: &str) -> u32 {
+    let error = "machine not instrumented with depth checking code";
+    let global = machine.get_global(name).expect(error);
+    match global {
+        Value::I32(space) => space as u32,
+        _ => panic!("wrong type for depth checking instrumentation"),
+    }
+}
+
+impl DepthCheckedMachine for Machine {
+    fn stack_space_left(&self) -> u32 {
+        machine_depth_checker_global(&self, "polyglot_stack_space_left")
+    }
+
+    fn stack_size(&self) -> u32 {
+        let limit = machine_depth_checker_global(&self, "polyglot_stack_size_limit");
+        let space = machine_depth_checker_global(&self, "polyglot_stack_space_left");
+        return limit - space;
+    }
+
+    fn reset_stack(&mut self) {
+        let limit = machine_depth_checker_global(&self, "polyglot_stack_size_limit");
+        self.set_global("polyglot_stack_space_left", Value::from(limit))
+            .unwrap();
+    }
+
+    fn set_stack_limit(&mut self, new_limit: u32) {
+        let limit = machine_depth_checker_global(&self, "polyglot_stack_size_limit");
+        let space = machine_depth_checker_global(&self, "polyglot_stack_space_left");
+
+        // space += the difference in the limits
+        let space = space.saturating_add(new_limit).saturating_sub(limit);
+
+        self.set_global("polyglot_stack_size_limit", Value::from(new_limit))
+            .unwrap();
+        self.set_global("polyglot_stack_space_left", Value::from(space))
+            .unwrap();
+    }
 }

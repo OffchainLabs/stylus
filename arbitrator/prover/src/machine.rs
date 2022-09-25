@@ -2,12 +2,17 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
+    binary::{
+        parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
+    },
     console::Color,
     host::get_host_impl,
     memory::Memory,
-    middlewares::{depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover, Middleware, FunctionMiddleware},
     merkle::{Merkle, MerkleType},
+    middlewares::{
+        depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover,
+        FunctionMiddleware, Middleware, PolyglotConfig,
+    },
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -24,20 +29,21 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
-use wasmer_types::{Bytes, LocalFunctionIndex};
-use wasmer::wasmparser::{
-    DataKind, ElementItem, ElementKind, ImportSectionEntryType, Operator, TableType,
-};
 use std::{
     borrow::Cow,
     convert::TryFrom,
-    fmt,
+    fmt::{self, Debug},
     fs::File,
     io::{BufReader, BufWriter, Write},
+    mem,
     num::Wrapping,
     path::{Path, PathBuf},
-    sync::Arc, mem,
+    sync::Arc,
 };
+use wasmer::wasmparser::{
+    DataKind, ElementItem, ElementKind, ImportSectionEntryType, Operator, TableType,
+};
+use wasmer_types::LocalFunctionIndex;
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -272,19 +278,17 @@ struct Module {
     host_call_hooks: Arc<Vec<Option<(String, String)>>>,
     start_function: Option<u32>,
     func_types: Arc<Vec<FunctionType>>,
+    #[serde(alias = "exports")]
     exports: Arc<HashMap<String, u32>>,
+    #[serde(default)]
+    all_exports: Arc<ExportMap>,
 }
 
 impl Module {
-    fn from_polyglot_binary(
-        mut bin: WasmBinary,
-        costs: fn(&Operator) -> u64,
-        start_gas: u64,
-        max_depth: u32,
-    ) -> Result<Module> {
-        let meter = Meter::new(costs, start_gas);
-        let depth = DepthChecker::new(max_depth);
-        let memory = MemoryChecker::new(Bytes(1024 * 1024))?; // 1 MB memory limit
+    fn from_polyglot_binary(mut bin: WasmBinary, config: &PolyglotConfig) -> Result<Module> {
+        let meter = Meter::new(config.costs, config.start_gas);
+        let depth = DepthChecker::new(config.max_depth);
+        let memory = MemoryChecker::new(config.memory_limit)?; // 1 MB memory limit
         let start = StartMover::new("polyglot_moved_start");
 
         meter.update_module(&mut bin);
@@ -298,12 +302,12 @@ impl Module {
             let mut depth = Middleware::<WasmBinary>::instrument(&depth, index);
             let mut memory = Middleware::<WasmBinary>::instrument(&memory, index);
             let mut start = Middleware::<WasmBinary>::instrument(&start, index);
-            
+
             let mut locals = vec![];
             for local in &code.locals {
                 locals.push(local.value.into())
             }
-            
+
             meter.locals_info(&locals);
             depth.locals_info(&locals);
             memory.locals_info(&locals);
@@ -327,13 +331,18 @@ impl Module {
             feed!(meter);
             feed!(depth);
             feed!(memory);
-            feed!(start);            
+            feed!(start);
             code.expr = build;
         }
-        
-        Self::from_binary(&bin, &HashMap::default(), &FloatingPointImpls::default(), false)
+
+        Self::from_binary(
+            &bin,
+            &HashMap::default(),
+            &FloatingPointImpls::default(),
+            false,
+        )
     }
-    
+
     fn from_binary(
         bin: &WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
@@ -598,6 +607,7 @@ impl Module {
             start_function: bin.start,
             func_types: Arc::new(func_types),
             exports: Arc::new(bin.exports.clone()),
+            all_exports: Arc::new(bin.all_exports.clone()),
         })
     }
 
@@ -955,15 +965,32 @@ impl Machine {
             let library = parse(source).wrap_err_with(|| error_message.clone())?;
             libraries.push(library);
         }
+        let polyglot_config = None;
         Self::from_binaries(
             &libraries,
             bin,
             language_support,
             always_merkleize,
             allow_hostapi_from_main,
+            polyglot_config,
             global_state,
             inbox_contents,
             preimage_resolver,
+        )
+    }
+
+    pub fn from_polyglot_binary(wasm: &[u8], config: &PolyglotConfig) -> Result<Machine> {
+        let bin = parse(wasm)?;
+        Self::from_binaries(
+            &[],
+            bin,
+            false,
+            false,
+            false,
+            Some(config),
+            GlobalState::default(),
+            HashMap::default(),
+            Arc::new(|_, _| panic!("user program read preimage")),
         )
     }
 
@@ -973,6 +1000,7 @@ impl Machine {
         runtime_support: bool,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
+        polyglot_config: Option<&PolyglotConfig>,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
@@ -1034,12 +1062,16 @@ impl Machine {
 
         // Shouldn't be necessary, but to safe, don't allow the main binary to import its own guest calls
         available_imports.retain(|_, i| i.module as usize != modules.len());
-        modules.push(Module::from_binary(
-            &bin,
-            &available_imports,
-            &floating_point_impls,
-            allow_hostapi_from_main,
-        )?);
+        let main = match polyglot_config {
+            Some(config) => Module::from_polyglot_binary(bin, config)?,
+            None => Module::from_binary(
+                &bin,
+                &available_imports,
+                &floating_point_impls,
+                allow_hostapi_from_main,
+            )?,
+        };
+        modules.push(main);
 
         // Build the entrypoint module
         let mut entrypoint = Vec::new();
@@ -1178,6 +1210,7 @@ impl Machine {
             start_function: None,
             func_types: Arc::new(vec![FunctionType::default()]),
             exports: Arc::new(HashMap::default()),
+            all_exports: Arc::new(HashMap::default()),
         };
         modules[0] = entrypoint;
 
@@ -1375,6 +1408,27 @@ impl Machine {
         for module in &mut self.modules {
             module.memory.merkle = None;
         }
+    }
+
+    pub fn get_global(&self, name: &str) -> Result<Value> {
+        let lookup = (name.to_owned(), ExportKind::Global);
+        for module in &self.modules {
+            if let Some(export) = module.all_exports.get(&lookup) {
+                return Ok(module.globals[*export as usize]);
+            }
+        }
+        bail!("global {} not found", name)
+    }
+
+    pub fn set_global(&mut self, name: &str, value: Value) -> Result<()> {
+        let lookup = (name.to_owned(), ExportKind::Global);
+        for module in &mut self.modules {
+            if let Some(export) = module.all_exports.get(&lookup) {
+                module.globals[*export as usize] = value;
+                return Ok(());
+            }
+        }
+        bail!("global {name} not found")
     }
 
     pub fn jump_into_function(&mut self, func: &str, mut args: Vec<Value>) {

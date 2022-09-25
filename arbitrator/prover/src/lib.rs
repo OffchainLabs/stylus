@@ -17,7 +17,11 @@ pub mod utils;
 pub mod value;
 pub mod wavm;
 
-use crate::machine::{argument_data_to_inbox, Machine};
+use crate::machine::argument_data_to_inbox;
+pub use crate::machine::Machine;
+pub use crate::middlewares::meter::MachineMeter;
+pub use crate::value::Value;
+
 use eyre::Result;
 use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
 use sha3::{Digest, Keccak256};
