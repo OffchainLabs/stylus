@@ -543,7 +543,7 @@ impl Module {
             code.len() < (1usize << 31),
             "Module function count must be under 2^31",
         );
-        ensure!(!code.is_empty(), "Module has no code");
+        //ensure!(!code.is_empty(), "Module has no code");
 
         // Make internal functions
         let internals_offset = code.len() as u32;
@@ -609,6 +609,11 @@ impl Module {
             exports: Arc::new(bin.exports.clone()),
             all_exports: Arc::new(bin.all_exports.clone()),
         })
+    }
+
+    fn get_export(&self, name: &str, kind: ExportKind) -> Option<u32> {
+        let lookup = (name.to_owned(), kind);
+        self.all_exports.get(&lookup).cloned()
     }
 
     fn hash(&self) -> Bytes32 {
@@ -1410,11 +1415,19 @@ impl Machine {
         }
     }
 
-    pub fn get_global(&self, name: &str) -> Result<Value> {
-        let lookup = (name.to_owned(), ExportKind::Global);
+    pub fn get_function(&self, func: &str) -> Option<FunctionType> {
         for module in &self.modules {
-            if let Some(export) = module.all_exports.get(&lookup) {
-                return Ok(module.globals[*export as usize]);
+            if let Some(func) = module.get_export(func, ExportKind::Func) {
+                return Some(module.func_types[func as usize].clone());
+            }
+        }
+        None
+    }
+
+    pub fn get_global(&self, name: &str) -> Result<Value> {
+        for module in &self.modules {
+            if let Some(global) = module.get_export(name, ExportKind::Global) {
+                return Ok(module.globals[global as usize]);
             }
         }
         bail!("global {} not found", name)
@@ -1462,6 +1475,12 @@ impl Machine {
             )
         }
         Ok(self.value_stack.clone())
+    }
+
+    pub fn call_function(&mut self, func: &str, args: &Vec<Value>) -> Result<std::result::Result<Vec<Value>, MachineStatus>> {
+        self.jump_into_function(func, args.clone());
+        self.step_n(1_000_000)?;
+        Ok(self.get_final_result().map_err(|_| self.status))
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {

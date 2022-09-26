@@ -12,11 +12,12 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 wasmer = { path = "/home/rachel/Documents/upstream/wasmer/lib/api/" }
 #wasmer = "2.3.0"
-wasm-smith = "0.11.4"
+wasm-smith = "0.11.5"
 wabt = "0.10.0"
 arbitrary = "1.1.6"
 wasmparser = "0.83.0"
 polyglot = { path = "../" }
+prover = { path = "../../prover/" }
 common = { path = "../../common/" }
 
 # Prevent this from interfering with workspaces
@@ -26,5 +27,11 @@ members = ["."]
 [[bin]]
 name = "machine"
 path = "fuzz_targets/fuzz_machine.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "both"
+path = "fuzz_targets/fuzz_both.rs"
 test = false
 doc = false

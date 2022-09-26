@@ -968,6 +968,7 @@ dependencies = [
  "common",
  "libfuzzer-sys",
  "polyglot",
+ "prover",
  "wabt",
  "wasm-smith",
  "wasmer",
@@ -1549,17 +1550,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasm-smith"
-version = "0.11.4"
+name = "wasm-encoder"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3daf8042376731e1873eae92dd609e1d0781105ffc3ffbc452f7bab719c887e2"
+checksum = "7e7ca71c70a6de5b10968ae4d298e548366d9cd9588176e6ff8866f3c49c96ee"
+dependencies = [
+ "leb128",
+]
+
+[[package]]
+name = "wasm-smith"
+version = "0.11.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b3aa9c99fbb0df9453b0ab577a797f3fc538882b9f070fd389600b843cd8878"
 dependencies = [
  "arbitrary",
  "flagset",
  "indexmap",
  "leb128",
- "wasm-encoder",
- "wasmparser 0.89.1",
+ "wasm-encoder 0.17.0",
+ "wasmparser 0.91.0",
 ]
 
 [[package]]
@@ -1794,9 +1804,9 @@ checksum = "718ed7c55c2add6548cca3ddd6383d738cd73b892df400e96b9aa876f0141d7a"
 
 [[package]]
 name = "wasmparser"
-version = "0.89.1"
+version = "0.91.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab5d3e08b13876f96dd55608d03cd4883a0545884932d5adf11925876c96daef"
+checksum = "239cdca8b8f356af8118c522d5fea23da45b60832ed4e18ef90bb3c9d8dce24a"
 dependencies = [
  "indexmap",
 ]
@@ -1810,7 +1820,7 @@ dependencies = [
  "leb128",
  "memchr",
  "unicode-width",
- "wasm-encoder",
+ "wasm-encoder 0.16.0",
 ]
 
 [[package]]

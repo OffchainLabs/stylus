@@ -2,31 +2,24 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use prover::middlewares::{
-    depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover,
+    depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover, PolyglotConfig,
     WasmerMiddlewareWrapper,
 };
 
 use eyre::Result;
 use wasmer::{imports, CompilerConfig, Instance, Module, Store, Universal};
 use wasmer_compiler_singlepass::Singlepass;
-use wasmer_types::Bytes;
-use wasmparser::Operator;
 
 use std::sync::Arc;
 
-pub fn create(
-    wasm: &[u8],
-    costs: fn(&Operator) -> u64,
-    start_gas: u64,
-    max_depth: u32,
-) -> Result<Instance> {
+pub fn create(wasm: &[u8], config: &PolyglotConfig) -> Result<Instance> {
     let mut compiler = Singlepass::new();
     compiler.canonicalize_nans(true);
     compiler.enable_verifier();
 
-    let meter = WasmerMiddlewareWrapper::new(Meter::new(costs, start_gas));
-    let depth = WasmerMiddlewareWrapper::new(DepthChecker::new(max_depth));
-    let memory = WasmerMiddlewareWrapper::new(MemoryChecker::new(Bytes(1024 * 1024))?); // 1 MB memory limit
+    let meter = WasmerMiddlewareWrapper::new(Meter::new(config.costs, config.start_gas));
+    let depth = WasmerMiddlewareWrapper::new(DepthChecker::new(config.max_depth));
+    let memory = WasmerMiddlewareWrapper::new(MemoryChecker::new(config.memory_limit)?); // 1 MB memory limit
     let start = WasmerMiddlewareWrapper::new(StartMover::new("polyglot_moved_start"));
 
     // add the instrumentation

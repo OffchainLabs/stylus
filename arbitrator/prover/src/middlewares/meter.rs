@@ -11,6 +11,7 @@ use wasmer::wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 use wasmer::Instance;
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 
+use std::fmt::Display;
 use std::{fmt::Debug, mem, sync::Arc};
 
 pub struct Meter<F: Fn(&Operator) -> u64 + Send + Sync> {
@@ -166,6 +167,15 @@ impl<'a, F: Fn(&Operator) -> u64 + Send + Sync> FunctionMiddleware<'a> for Funct
 pub enum MachineMeter {
     Ready(u64),
     Exhausted,
+}
+
+impl Display for MachineMeter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ready(gas) => write!(f, "{} gas left", gas),
+            Self::Exhausted => write!(f, "out of gas"),
+        }
+    }
 }
 
 pub trait MeteredMachine {

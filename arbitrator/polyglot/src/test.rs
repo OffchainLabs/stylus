@@ -50,19 +50,18 @@ fn test_gas_arbitrator() -> Result<()> {
     config.costs = expensive_add;
 
     let mut machine = Machine::from_polyglot_binary(&wasm, &config)?;
-    machine.jump_into_function("add_one", vec![Value::I32(32)]);
     assert_eq!(machine.get_status(), MachineStatus::Running);
-
     assert_eq!(machine.gas_left(), MachineMeter::Ready(0));
-    machine.step_n(1024)?;
-    assert_eq!(machine.get_status(), MachineStatus::Errored);
+
+    let args = vec![Value::I32(32)];
+    let status = machine.call_function("add_one", &args)?.unwrap_err();
+    assert_eq!(status, MachineStatus::Errored);
     assert_eq!(machine.gas_left(), MachineMeter::Exhausted);
 
     machine.set_gas(1000);
     assert_eq!(machine.gas_left(), MachineMeter::Ready(1000));
-    machine.jump_into_function("add_one", vec![Value::I32(32)]);
-    machine.step_n(1024)?;
-    assert_eq!(machine.get_final_result()?, vec![Value::I32(33)]);
+    let output = machine.call_function("add_one", &args)?.unwrap();
+    assert_eq!(output, vec![Value::I32(33)]);
     assert_eq!(machine.gas_left(), MachineMeter::Ready(900));
     Ok(())
 }
@@ -106,10 +105,21 @@ fn test_depth_arbitrator() -> Result<()> {
     config.max_depth = 32;
 
     let mut machine = Machine::from_polyglot_binary(&wasm, &config)?;
-    machine.jump_into_function("recurse", vec![Value::I32(32)]);
-    machine.step_n(1024)?;
-    assert_eq!(machine.get_status(), MachineStatus::Errored);
+    let status = machine.call_function("recurse", &vec![])?.unwrap_err();
+    assert_eq!(status, MachineStatus::Errored);
     assert_eq!(machine.get_global("depth")?, Value::I32(5)); // 32 capacity / 6-word frame => 5 calls
 
+    machine.set_stack_limit(48);
+    assert_eq!(machine.stack_space_left(), 16);
+    assert_eq!(machine.stack_size(), 32);
+
+    machine.reset_stack();
+    machine.set_stack_limit(64);
+    assert_eq!(machine.stack_space_left(), 64);
+
+    let status = machine.call_function("recurse", &vec![])?.unwrap_err();
+    assert_eq!(status, MachineStatus::Errored);
+    let program_depth = machine.get_global("depth")?;
+    assert_eq!(program_depth, Value::I32(5 + 10)); // 64 more capacity / 6-word frame => 10 more calls
     Ok(())
 }

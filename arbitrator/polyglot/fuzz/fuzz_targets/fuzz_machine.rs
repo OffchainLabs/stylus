@@ -4,78 +4,50 @@
 #![no_main]
 use common::color;
 use libfuzzer_sys::fuzz_target;
-use polyglot::{self, machine::MachineMeter};
-use wasmparser::Operator;
+use polyglot::{self, ExecOutcome, ExecPolyglot};
+use prover::middlewares::{
+    depth::DepthCheckedMachine,
+    meter::{MachineMeter, MeteredMachine},
+};
 
+mod util;
 mod wasm;
 
-fuzz_target!(|data: &[u8]| {
-    macro_rules! warn {
-        ($text:expr $(,$args:expr)*) => {{
-            eprintln!($text $(,color::red($args))*);
-            return;
-        }}
-    }
+use util::{fail, fuzz_config, warn};
 
-    let module = wasm::random(data);
+fuzz_target!(|data: &[u8]| {
+    let module = wasm::random(data, 0);
     if let Err(error) = polyglot::machine::validate(&module) {
         warn!("Failed to validate wasm {}", error);
     }
 
-    macro_rules! fail {
-        ($form:expr $(,$args:expr)*) => {{
-            let wat = wabt::Wasm2Wat::new()
-                .fold_exprs(true)
-                .inline_export(true)
-                .convert(module)
-                .expect("wasm2wat failure")
-                .as_ref()
-                .to_vec();
-            let text = String::from_utf8(wat).unwrap();
-            println!("{text}");
-
-            let message = format!($form $(,color::red($args))*);
-            eprintln!("{message}");
-            panic!("Fatal error");
-        }}
-    }
-
-    let stack = 64 * 1024;
-    let costs = |_: &Operator| 1;
-    let instance = match polyglot::machine::create(&module, costs, 128 * 1024, stack) {
+    let mut instance = match polyglot::machine::create(&module, &fuzz_config()) {
         Ok(instance) => instance,
         Err(error) => warn!("Failed to create instance: {}", error),
     };
 
-    let start = match instance.exports.get_function("polyglot_moved_start").ok() {
-        Some(start) => start.native::<(), ()>().unwrap(),
-        None => return,
+    let outcome = instance.execute();
+    let space = instance.stack_space_left();
+    let gas = match instance.gas_left() {
+        MachineMeter::Ready(gas) => gas,
+        MachineMeter::Exhausted => warn!("Call failed: {}", "Out of gas"),
     };
 
-    if let Err(error) = start.call() {
-        let gas = match polyglot::machine::gas_left(&instance) {
-            MachineMeter::Ready(gas) => gas,
-            MachineMeter::Exhausted => warn!("Call failed: {}", "Out of gas"),
-        };
-
-        let left = match polyglot::machine::stack_space_remaining(&instance) {
-            0 => warn!("Call failed: {}", "Out of stack"),
-            left => left,
-        };
-
-        let error = error.to_string();
-        if error.contains("RuntimeError: call stack exhausted") {
-            fail!(
-                "Fatal: {} {} words left with {} gas left",
-                "stack overflow",
-                left,
-                gas
-            )
-        }
-
-        warn!(
+    use ExecOutcome::*;
+    match outcome {
+        Success => {}
+        Failure(error) => warn!(
             "Call failed with {} words and {} gas left: {}",
-            left, gas, error
-        );
+            space, gas, error
+        ),
+        OutOfGas => warn!("Call failed: {}", "Out of gas"),
+        OutOfStack => warn!("Call failed: {}", "Out of stack"),
+        StackOverflow => fail!(
+            module,
+            "Fatal: {} {} words and {} gas left",
+            "stack overflow",
+            space,
+            gas
+        ),
     }
 });
