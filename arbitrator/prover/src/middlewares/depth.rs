@@ -139,12 +139,10 @@ impl<'a, M: ModuleMod> FunctionMiddleware<'a> for FunctionDepthChecker<'a, M> {
         //   - When entering, check that the stack has sufficient space and deduct the amount used
         //   - When returning, credit back the amount used as execution is returning to the caller
 
-        let code = std::mem::replace(&mut self.code, vec![]);
+        let mut code = std::mem::replace(&mut self.code, vec![]);
         let size = worst_case_depth(&code, self.locals, self.module.clone())?;
         let global_index = self.space.as_u32();
         let max_frame_size = self.limit / 2;
-
-        println!("FRAME SIZE: {}", size);
 
         if size >= max_frame_size {
             error!("Frame too large: {size} exceeds {max_frame_size}-word maximum");
@@ -179,6 +177,11 @@ impl<'a, M: ModuleMod> FunctionMiddleware<'a> for FunctionDepthChecker<'a, M> {
             ])
         };
 
+        // add an extraneous return instruction to the end to match Arbitrator
+        let last = code.pop().unwrap();
+        code.push(Return);
+        code.push(last);
+
         for op in code {
             let exit = matches!(op, Return);
             if exit {
@@ -187,7 +190,6 @@ impl<'a, M: ModuleMod> FunctionMiddleware<'a> for FunctionDepthChecker<'a, M> {
             out.extend(vec![op]);
         }
 
-        reclaim(out);
         self.done = true;
         Ok(())
     }

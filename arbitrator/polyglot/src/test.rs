@@ -27,7 +27,11 @@ fn expensive_add(op: &Operator) -> u64 {
 #[test]
 fn test_gas() -> Result<()> {
     let wasm = std::fs::read("../jit/programs/pure/main.wat")?;
-    let mut instance = machine::create(&wasm, expensive_add, 0, 1024)?;
+    let mut config = PolyglotConfig::default();
+    config.costs = expensive_add;
+    config.max_depth = 1024;
+
+    let mut instance = machine::create(&wasm, &config)?;
     let add_one = instance.exports.get_function("add_one")?;
     let add_one = add_one.native::<i32, i32>().unwrap();
 
@@ -69,8 +73,10 @@ fn test_gas_arbitrator() -> Result<()> {
 #[test]
 fn test_depth() -> Result<()> {
     let wasm = std::fs::read("../jit/programs/pure/main.wat")?;
-    let costs = |_: &Operator| 0;
-    let mut instance = machine::create(&wasm, costs, 1024, 32)?;
+    let mut config = PolyglotConfig::default();
+    config.max_depth = 32;
+
+    let mut instance = machine::create(&wasm, &config)?;
     let recurse = instance.exports.get_function("recurse")?;
     let recurse = recurse.native::<(), ()>().unwrap();
 
@@ -93,6 +99,13 @@ fn test_depth() -> Result<()> {
     assert_eq!(instance.stack_space_left(), 0);
     let program_depth: u32 = instance.get_global("depth");
     assert_eq!(program_depth, 5 + 10); // 64 more capacity / 6-word frame => 10 more calls
+
+    // show that a successful call reclaims the stack
+    instance.reset_stack();
+    let add_one = instance.exports.get_function("add_one")?;
+    let add_one = add_one.native::<i32, i32>().unwrap();
+    assert_eq!(add_one.call(32)?, 33);
+    assert_eq!(instance.stack_space_left(), 64);
     Ok(())
 }
 
