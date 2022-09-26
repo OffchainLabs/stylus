@@ -24,7 +24,14 @@ fuzz_target!(|data: &[u8]| {
     let config = fuzz_config();
     let mut machine = match Machine::from_polyglot_binary(&module, &config) {
         Ok(machine) => machine,
-        Err(error) => fail!(module, "Failed to create machine: {}", error),
+        Err(error) => {
+            let error = error.to_string();
+            if error.contains("Memory inits to a size larger") {
+                warn!("Failed to create machine: {}", error);
+            } else {
+                fail!(module, "Failed to create machine: {}", error);
+            }
+        }
     };
 
     let mut instance = match polyglot::machine::create(&module, &config) {

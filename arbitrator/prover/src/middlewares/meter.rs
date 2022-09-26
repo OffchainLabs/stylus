@@ -126,7 +126,7 @@ impl<'a, F: Fn(&Operator) -> u64 + Send + Sync> FunctionMiddleware<'a> for Funct
             End | Else | Return | dot!(Loop, Br, BrTable, BrIf, Call, CallIndirect)
         );
 
-        let cost = self.block_cost.saturating_add((self.costs)(&op));
+        let mut cost = self.block_cost.saturating_add((self.costs)(&op));
         self.block_cost = cost;
         self.block.push(op);
 
@@ -134,7 +134,7 @@ impl<'a, F: Fn(&Operator) -> u64 + Send + Sync> FunctionMiddleware<'a> for Funct
             let gas = self.gas_global.as_u32();
             let status = self.status_global.as_u32();
 
-            out.extend(vec![
+            let mut header = vec![
                 // if gas < cost => panic with status = 1
                 GlobalGet { global_index: gas },
                 I64Const { value: cost as i64 },
@@ -153,8 +153,15 @@ impl<'a, F: Fn(&Operator) -> u64 + Send + Sync> FunctionMiddleware<'a> for Funct
                 I64Const { value: cost as i64 },
                 I64Sub,
                 GlobalSet { global_index: gas },
-            ]);
+            ];
 
+            // include the cost of executing the header
+            for op in &header {
+                cost = cost.saturating_add((self.costs)(op))
+            }
+            header[1] = I64Const { value: cost as i64 };
+            
+            out.extend(header);
             out.extend(self.block.clone());
             self.block.clear();
             self.block_cost = 0;

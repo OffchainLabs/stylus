@@ -1477,7 +1477,11 @@ impl Machine {
         Ok(self.value_stack.clone())
     }
 
-    pub fn call_function(&mut self, func: &str, args: &Vec<Value>) -> Result<std::result::Result<Vec<Value>, MachineStatus>> {
+    pub fn call_function(
+        &mut self,
+        func: &str,
+        args: &Vec<Value>,
+    ) -> Result<std::result::Result<Vec<Value>, MachineStatus>> {
         self.jump_into_function(func, args.clone());
         self.step_n(1_000_000)?;
         Ok(self.get_final_result().map_err(|_| self.status))

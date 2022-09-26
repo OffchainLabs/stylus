@@ -13,7 +13,7 @@ use prover::middlewares::{
 mod util;
 mod wasm;
 
-use util::{fail, fuzz_config, warn};
+use util::{fail, fuzz_config, warn, wat};
 
 fuzz_target!(|data: &[u8]| {
     let module = wasm::random(data, 0);
