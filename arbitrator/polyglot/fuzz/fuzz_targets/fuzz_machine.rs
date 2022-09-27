@@ -35,6 +35,7 @@ fuzz_target!(|data: &[u8]| {
 
     use ExecOutcome::*;
     match outcome {
+        NoStart => {}
         Success => {}
         Failure(error) => warn!(
             "Call failed with {} words and {} gas left: {}",

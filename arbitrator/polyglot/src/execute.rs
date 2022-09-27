@@ -14,6 +14,7 @@ use wasmer::Instance;
 
 #[derive(Debug)]
 pub enum ExecOutcome {
+    NoStart,
     Success,
     Failure(String),
     OutOfGas,
@@ -25,6 +26,7 @@ impl Display for ExecOutcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use ExecOutcome::*;
         match self {
+            NoStart => write!(f, "no start"),
             Success => write!(f, "success"),
             Failure(error) => write!(f, "failure: {}", error),
             OutOfGas => write!(f, "out of gas"),
@@ -38,6 +40,7 @@ impl PartialEq for ExecOutcome {
     fn eq(&self, other: &Self) -> bool {
         use ExecOutcome::*;
         match self {
+            NoStart => matches!(other, NoStart),
             Success => matches!(other, Success),
             Failure(_) => matches!(other, Failure(_)),
             OutOfGas => matches!(other, OutOfGas),
@@ -55,7 +58,7 @@ impl ExecPolyglot for Instance {
     fn execute(&mut self) -> ExecOutcome {
         let start = match self.exports.get_function("polyglot_moved_start").ok() {
             Some(start) => start.native::<(), ()>().unwrap(),
-            None => return ExecOutcome::Success,
+            None => return ExecOutcome::NoStart,
         };
 
         match start.call() {
@@ -81,7 +84,7 @@ impl ExecPolyglot for Instance {
 impl ExecPolyglot for Machine {
     fn execute(&mut self) -> ExecOutcome {
         if self.get_function("polyglot_moved_start").is_none() {
-            return ExecOutcome::Success;
+            return ExecOutcome::NoStart;
         }
 
         let call = self.call_function("polyglot_moved_start", &vec![]).unwrap();

@@ -43,7 +43,13 @@ impl Config for WasmConfig {
         false // research why Singlepass doesn't have this on by default before enabling
     }
     fn max_instructions(&self) -> usize {
-        100
+        256
+    }
+    fn allow_start_export(&self) -> bool {
+        true
+    }
+    fn require_start_export(&self) -> bool {
+        true
     }
     fn threads_enabled(&self) -> bool {
         false

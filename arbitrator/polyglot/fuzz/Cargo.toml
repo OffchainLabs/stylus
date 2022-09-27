@@ -11,8 +11,10 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 wasmer = { path = "/home/rachel/Documents/upstream/wasmer/lib/api/" }
+wasm-smith = { path = "/home/rachel/Documents/upstream/wasm-tools/crates/wasm-smith/" }
+
 #wasmer = "2.3.0"
-wasm-smith = "0.11.5"
+#wasm-smith = "0.11.5"
 wabt = "0.10.0"
 arbitrary = "1.1.6"
 wasmparser = "0.83.0"

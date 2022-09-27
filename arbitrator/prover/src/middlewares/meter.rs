@@ -160,6 +160,7 @@ impl<'a, F: Fn(&Operator) -> u64 + Send + Sync> FunctionMiddleware<'a> for Funct
                 cost = cost.saturating_add((self.costs)(op))
             }
             header[1] = I64Const { value: cost as i64 };
+            header[9] = I64Const { value: cost as i64 };
             
             out.extend(header);
             out.extend(self.block.clone());
@@ -181,6 +182,15 @@ impl Display for MachineMeter {
         match self {
             Self::Ready(gas) => write!(f, "{} gas left", gas),
             Self::Exhausted => write!(f, "out of gas"),
+        }
+    }
+}
+
+impl Into<u64> for MachineMeter {
+    fn into(self) -> u64 {
+        match self {
+            Self::Ready(gas) => gas,
+            Self::Exhausted => 0,
         }
     }
 }
