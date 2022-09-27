@@ -9,7 +9,7 @@ use loupe::{MemoryUsage, MemoryUsageTracker};
 use parking_lot::Mutex;
 use wasmer::{
     wasmparser::{Operator, Type as WpType, TypeOrFuncType},
-    GlobalInit, Instance, LocalFunctionIndex, Type,
+    GlobalInit, Instance, LocalFunctionIndex, Type, MiddlewareError,
 };
 use wasmer_types::{FunctionIndex, GlobalIndex, SignatureIndex};
 
@@ -51,7 +51,7 @@ impl<M: ModuleMod + MemoryUsage> MemoryUsage for DepthChecker<M> {
 impl<'a, M: ModuleMod + 'a> Middleware<'a, M> for DepthChecker<M> {
     type FM = FunctionDepthChecker<'a, M>;
 
-    fn update_module(&self, module: &mut M) {
+    fn update_module(&self, module: &mut M) -> Result<(), MiddlewareError> {
         let limit = GlobalInit::I32Const(self.limit as i32);
         let space = module.add_global("polyglot_stack_space_left", Type::I32, limit);
 
@@ -60,12 +60,13 @@ impl<'a, M: ModuleMod + 'a> Middleware<'a, M> for DepthChecker<M> {
 
         *self.global.lock() = Some(space);
         *self.module.lock() = Some(Arc::new(module.clone()));
+        Ok(())
     }
 
-    fn instrument(&self, _: LocalFunctionIndex) -> Self::FM {
+    fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError> {
         let global = self.global.lock().expect("no global");
         let module = self.module.lock().clone().expect("no module");
-        FunctionDepthChecker::new(global, self.limit, module)
+        Ok(FunctionDepthChecker::new(global, self.limit, module))
     }
 }
 

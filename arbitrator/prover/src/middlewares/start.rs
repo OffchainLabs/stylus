@@ -4,6 +4,7 @@
 use super::{DefaultFunctionMiddleware, Middleware, ModuleMod};
 
 use loupe::MemoryUsage;
+use wasmer::MiddlewareError;
 use wasmer_types::LocalFunctionIndex;
 
 #[derive(Debug, MemoryUsage)]
@@ -21,11 +22,12 @@ impl StartMover {
 impl<'a, M: ModuleMod> Middleware<'a, M> for StartMover {
     type FM = DefaultFunctionMiddleware;
 
-    fn update_module(&self, module: &mut M) {
+    fn update_module(&self, module: &mut M) -> Result<(), MiddlewareError> {
         module.move_start_function(&self.name);
+        Ok(())
     }
 
-    fn instrument(&self, _: LocalFunctionIndex) -> Self::FM {
-        DefaultFunctionMiddleware
+    fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError> {
+        Ok(DefaultFunctionMiddleware)
     }
 }

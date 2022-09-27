@@ -38,8 +38,8 @@ pub trait ModuleMod: Clone + Debug + Send + Sync {
 pub trait Middleware<'a, M: ModuleMod> {
     type FM: FunctionMiddleware<'a> + Debug + 'a;
 
-    fn update_module(&self, module: &mut M); // not mutable due to wasmer
-    fn instrument(&self, func_index: LocalFunctionIndex) -> Self::FM;
+    fn update_module(&self, module: &mut M) -> Result<(), MiddlewareError>; // not mutable due to wasmer
+    fn instrument(&self, func_index: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError>;
 }
 
 pub trait FunctionMiddleware<'a> {
@@ -202,18 +202,18 @@ impl<T> ModuleMiddleware for WasmerMiddlewareWrapper<T, ModuleInfo>
 where
     T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<'a, ModuleInfo>,
 {
-    fn transform_module_info(&self, module: &mut ModuleInfo) {
-        self.0.update_module(module);
+    fn transform_module_info(&self, module: &mut ModuleInfo) -> Result<(), MiddlewareError> {
+        self.0.update_module(module)
     }
 
     fn generate_function_middleware<'a>(
         &self,
         local_function_index: LocalFunctionIndex,
-    ) -> Box<dyn wasmer::FunctionMiddleware<'a> + 'a> {
-        Box::new(WasmerFunctionMiddlewareWrapper(
-            self.0.instrument(local_function_index),
+    ) -> Result<Box<dyn wasmer::FunctionMiddleware<'a> + 'a>, MiddlewareError> {
+        Ok(Box::new(WasmerFunctionMiddlewareWrapper(
+            self.0.instrument(local_function_index)?,
             PhantomData,
-        ))
+        )))
     }
 }
 

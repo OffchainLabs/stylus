@@ -33,6 +33,7 @@ fuzz_target!(|data: &[u8]| {
                 "Out-of-bounds data memory init",
                 "Out of bounds element segment",
                 "No implementation for floating point operation", // move to validate
+                "tables exceed memory limit",
             ];
             if acceptable.iter().any(|x| error.contains(x)) {
                 warn!("Failed to create machine: {}", error);

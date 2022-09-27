@@ -291,17 +291,17 @@ impl Module {
         let memory = MemoryChecker::new(config.memory_limit)?; // 1 MB memory limit
         let start = StartMover::new("polyglot_moved_start");
 
-        meter.update_module(&mut bin);
-        depth.update_module(&mut bin);
-        memory.update_module(&mut bin);
-        start.update_module(&mut bin);
+        meter.update_module(&mut bin)?;
+        depth.update_module(&mut bin)?;
+        memory.update_module(&mut bin)?;
+        start.update_module(&mut bin)?;
 
         for (index, code) in bin.codes.iter_mut().enumerate() {
             let index = LocalFunctionIndex::from_u32(index as u32);
-            let mut meter = Middleware::<WasmBinary>::instrument(&meter, index);
-            let mut depth = Middleware::<WasmBinary>::instrument(&depth, index);
-            let mut memory = Middleware::<WasmBinary>::instrument(&memory, index);
-            let mut start = Middleware::<WasmBinary>::instrument(&start, index);
+            let mut meter = Middleware::<WasmBinary>::instrument(&meter, index)?;
+            let mut depth = Middleware::<WasmBinary>::instrument(&depth, index)?;
+            let mut memory = Middleware::<WasmBinary>::instrument(&memory, index)?;
+            let mut start = Middleware::<WasmBinary>::instrument(&start, index)?;
 
             let mut locals = vec![];
             for local in &code.locals {

@@ -8,7 +8,7 @@ use super::{FunctionMiddleware, GlobalMod, Middleware, ModuleMod};
 use loupe::{MemoryUsage, MemoryUsageTracker};
 use parking_lot::Mutex;
 use wasmer::wasmparser::{Operator, Type as WpType, TypeOrFuncType};
-use wasmer::Instance;
+use wasmer::{Instance, MiddlewareError};
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 
 use std::fmt::Display;
@@ -56,18 +56,19 @@ where
 {
     type FM = FunctionMeter<'a, F>;
 
-    fn update_module(&self, module: &mut M) {
+    fn update_module(&self, module: &mut M) -> Result<(), MiddlewareError> {
         let start = GlobalInit::I64Const(self.start_gas as i64);
         let gas = module.add_global("polyglot_gas_left", Type::I64, start);
         let status = module.add_global("polyglot_gas_status", Type::I32, GlobalInit::I32Const(0));
         *self.gas_global.lock() = Some(gas);
         *self.status_global.lock() = Some(status);
+        Ok(())
     }
 
-    fn instrument(&self, _: LocalFunctionIndex) -> Self::FM {
+    fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError> {
         let gas = self.gas_global.lock().expect("no global");
         let status = self.status_global.lock().expect("no global");
-        FunctionMeter::new(gas, status, self.costs.clone())
+        Ok(FunctionMeter::new(gas, status, self.costs.clone()))
     }
 }
 

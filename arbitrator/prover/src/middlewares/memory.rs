@@ -5,6 +5,7 @@ use super::{DefaultFunctionMiddleware, Middleware, ModuleMod};
 
 use eyre::Result;
 use loupe::MemoryUsage;
+use wasmer::MiddlewareError;
 use wasmer_types::{Bytes, LocalFunctionIndex, Pages};
 
 use std::{convert::TryFrom, mem};
@@ -31,15 +32,19 @@ impl MemoryChecker {
 impl<'a, M: ModuleMod> Middleware<'a, M> for MemoryChecker {
     type FM = DefaultFunctionMiddleware;
 
-    fn update_module(&self, module: &mut M) {
+    fn update_module(&self, module: &mut M) -> Result<(), MiddlewareError> {
         let Bytes(table_bytes) = module.table_bytes();
         let Bytes(limit) = self.limit;
+        if table_bytes > limit {
+            return Err(MiddlewareError::new("Memory Checker", "tables exceed memory limit"))
+        }
         let limit = limit.saturating_sub(table_bytes);
         let limit = Pages::try_from(Bytes(limit)).unwrap(); // checked in new()
         module.limit_memory(limit);
+        Ok(())
     }
 
-    fn instrument(&self, _: LocalFunctionIndex) -> Self::FM {
-        DefaultFunctionMiddleware
+    fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError> {
+        Ok(DefaultFunctionMiddleware)
     }
 }
