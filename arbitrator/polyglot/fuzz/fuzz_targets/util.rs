@@ -24,11 +24,11 @@ macro_rules! wat {
         let wat = wabt::Wasm2Wat::new()
             .fold_exprs(true)
             .inline_export(true)
-            .convert($wasm)
-            .expect("wasm2wat failure")
-            .as_ref()
-            .to_vec();
-        String::from_utf8(wat).unwrap()
+            .convert($wasm);
+        match wat {
+            Ok(wat) => String::from_utf8(wat.as_ref().to_vec()).unwrap(),
+            Err(err) => format!("wasm2wat failed: {}", err),
+        }
     }};
 }
 

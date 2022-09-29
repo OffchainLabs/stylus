@@ -16,4 +16,8 @@ wasmer-types = { path = "/home/rachel/Documents/upstream/wasmer/lib/types" }
 wasmparser = "0.83.0"
 parking_lot = "0.12.1"
 loupe = "0.1.3"
+thiserror = "1.0.33"
 eyre = "0.6.5"
+common = { path = "../common/" }
+sha3 = "0.9.1"
+hex = "0.4.3"

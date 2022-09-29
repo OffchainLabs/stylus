@@ -34,9 +34,11 @@ fuzz_target!(|data: &[u8]| {
                 "Out of bounds element segment",
                 "No implementation for floating point operation", // move to validate
                 "tables exceed memory limit",
+                "module memory minimum",
             ];
             if acceptable.iter().any(|x| error.contains(x)) {
-                warn!("Failed to create machine: {}", error);
+                //warn!("Failed to create machine: {}", error);
+                return;
             } else {
                 fail!(module, "Failed to create machine: {}", error);
             }
@@ -104,6 +106,20 @@ fuzz_target!(|data: &[u8]| {
         warn!("no start");
     }
 
+    let times = vec![
+        &instance_load_time,
+        &instance_time,
+        &machine_load_time,
+        &machine_time,
+    ];
+
+    if times.into_iter().all(|time| time.as_millis() <= 60) {
+        return;
+    }
+
+    let wat = wat!(module);
+    println!("{}\n{}\n", color::yellow("slow wasm"), color::grey(wat));
+
     println!(
         "Poly: {} with {} and {} stack",
         maybe!(&instance_outcome, &machine_outcome),
@@ -116,6 +132,7 @@ fuzz_target!(|data: &[u8]| {
     let rate = 1_000_000.0 * count as f64 / instance_time as f64;
 
     let ratio = instance_time as f64 / machine_time as f64;*/
+
     println!(
         "Time {} {} {} {}",
         format_time(instance_load_time),

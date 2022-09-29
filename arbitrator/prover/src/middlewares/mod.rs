@@ -28,7 +28,7 @@ pub mod start;
 pub trait ModuleMod: Clone + Debug + Send + Sync {
     fn move_start_function(&mut self, name: &str);
     fn table_bytes(&self) -> Bytes;
-    fn limit_memory(&mut self, limit: Pages);
+    fn limit_memory(&mut self, limit: Pages) -> Result<(), MiddlewareError>;
     fn add_global(&mut self, name: &str, ty: WpType, init: GlobalInit) -> GlobalIndex;
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType, String>;
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType, String>;
@@ -86,12 +86,20 @@ impl ModuleMod for ModuleInfo {
         Bytes(total as usize)
     }
 
-    fn limit_memory(&mut self, limit: Pages) {
+    fn limit_memory(&mut self, limit: Pages) -> Result<(), MiddlewareError> {
         for (_, memory) in &mut self.memories {
             let limit = memory.maximum.unwrap_or(limit);
             let pages = limit.min(limit);
             memory.maximum = Some(pages);
+
+            if memory.minimum > limit {
+                let Pages(minimum) = memory.minimum;
+                let Pages(limit) = limit;
+                let message = format!("module memory minimum {minimum} exceeds {limit} limit");
+                return Err(MiddlewareError::new("Memory Limiter", message));
+            }
         }
+        Ok(())
     }
 
     fn add_global(&mut self, name: &str, ty: WpType, init: GlobalInit) -> GlobalIndex {
@@ -141,13 +149,20 @@ impl<'a> ModuleMod for WasmBinary<'a> {
         Bytes(total as usize)
     }
 
-    fn limit_memory(&mut self, limit: Pages) {
+    fn limit_memory(&mut self, limit: Pages) -> Result<(), MiddlewareError> {
         for memory in &mut self.memories {
             let Pages(limit) = limit;
             let limit = memory.maximum.unwrap_or(limit.into());
             let pages = limit.min(limit);
             memory.maximum = Some(pages);
+
+            let minimum = memory.initial;
+            if minimum > limit {
+                let message = format!("module memory minimum {minimum} exceeds {limit} limit");
+                return Err(MiddlewareError::new("Memory Limiter", message));
+            }
         }
+        Ok(())
     }
 
     fn add_global(&mut self, name: &str, _ty: WpType, init: GlobalInit) -> GlobalIndex {

@@ -11,6 +11,7 @@ use wasmer::wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 use wasmer::{Instance, MiddlewareError};
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 
+use std::convert::TryInto;
 use std::fmt::Display;
 use std::{fmt::Debug, mem, sync::Arc};
 
@@ -162,7 +163,7 @@ impl<'a, F: Fn(&Operator) -> u64 + Send + Sync> FunctionMiddleware<'a> for Funct
             }
             header[1] = I64Const { value: cost as i64 };
             header[9] = I64Const { value: cost as i64 };
-            
+
             out.extend(header);
             out.extend(self.block.clone());
             self.block.clear();
@@ -208,14 +209,12 @@ impl MeteredMachine for Machine {
     fn gas_left(&self) -> MachineMeter {
         let gas = self.get_global("polyglot_gas_left").expect(METER_ERROR);
         let status = self.get_global("polyglot_gas_status").expect(METER_ERROR);
-        let gas = match gas {
-            Value::I64(gas) => gas,
-            _ => panic!("{}", TYPE_ERROR),
-        };
+
+        let gas: u64 = gas.try_into().expect(TYPE_ERROR);
+        let status: u32 = status.try_into().expect(TYPE_ERROR);
         match status {
-            Value::I32(1) => MachineMeter::Exhausted,
-            Value::I32(0) => MachineMeter::Ready(gas),
-            _ => panic!("{}", TYPE_ERROR),
+            0 => MachineMeter::Ready(gas),
+            _ => MachineMeter::Exhausted,
         }
     }
 

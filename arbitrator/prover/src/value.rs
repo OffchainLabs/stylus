@@ -1,13 +1,12 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use std::convert::TryFrom;
-
 use crate::{binary::FloatType, console::Color, utils::Bytes32};
 use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
+use std::convert::{TryFrom, TryInto};
 use wasmer::wasmparser::{FuncType, Type as WpType};
 use wasmer_types::Type;
 
@@ -281,6 +280,28 @@ impl From<u32> for Value {
 impl From<u64> for Value {
     fn from(value: u64) -> Self {
         Value::I64(value as u64)
+    }
+}
+
+impl TryInto<u64> for Value {
+    type Error = ();
+
+    fn try_into(self) -> Result<u64, Self::Error> {
+        match self {
+            Value::I64(value) => Ok(value as u64),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryInto<u32> for Value {
+    type Error = ();
+
+    fn try_into(self) -> Result<u32, Self::Error> {
+        match self {
+            Value::I32(value) => Ok(value as u32),
+            _ => Err(()),
+        }
     }
 }
 

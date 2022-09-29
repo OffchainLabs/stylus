@@ -3,9 +3,12 @@
 
 #![cfg(test)]
 
-use crate::machine;
+use crate::{
+    machine::{self, WasmEnvArc},
+    ExecOutcome, ExecPolyglot,
+};
 
-use eyre::Result;
+use eyre::{bail, Result};
 use prover::{
     machine::MachineStatus,
     middlewares::{
@@ -15,6 +18,8 @@ use prover::{
     },
     Machine, Value,
 };
+use sha3::{Digest, Keccak256};
+use std::time::{Duration, Instant};
 use wasmparser::Operator;
 
 fn expensive_add(op: &Operator) -> u64 {
@@ -31,7 +36,7 @@ fn test_gas() -> Result<()> {
     config.costs = expensive_add;
     config.max_depth = 1024;
 
-    let mut instance = machine::create(&wasm, &config)?;
+    let mut instance = machine::create(&wasm, WasmEnvArc::default(), &config)?;
     let add_one = instance.exports.get_function("add_one")?;
     let add_one = add_one.native::<i32, i32>().unwrap();
 
@@ -76,7 +81,7 @@ fn test_depth() -> Result<()> {
     let mut config = PolyglotConfig::default();
     config.max_depth = 32;
 
-    let mut instance = machine::create(&wasm, &config)?;
+    let mut instance = machine::create(&wasm, WasmEnvArc::default(), &config)?;
     let recurse = instance.exports.get_function("recurse")?;
     let recurse = recurse.native::<(), ()>().unwrap();
 
@@ -135,4 +140,62 @@ fn test_depth_arbitrator() -> Result<()> {
     let program_depth = machine.get_global("depth")?;
     assert_eq!(program_depth, Value::I32(5 + 10)); // 64 more capacity / 6-word frame => 10 more calls
     Ok(())
+}
+
+#[test]
+pub fn test_sha3() -> Result<()> {
+    let wasm = std::fs::read("programs/sha3/target/wasm32-unknown-unknown/release/sha3.wasm")?;
+    let mut config = PolyglotConfig::default();
+    config.memory_limit = wasmer_types::Bytes(2 * 1024 * 1024);
+    config.costs = |_: &Operator| 1;
+    config.start_gas = 1_000_000;
+
+    let time = Instant::now();
+    let preimage = "°º¤ø,¸¸,ø¤º°`°º¤ø,¸,ø¤°º¤ø,¸¸,ø¤º°`°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
+    let mut hasher = Keccak256::new();
+    hasher.update(preimage);
+    let hash = hasher.finalize().to_vec();
+    println!("native:    {}", format_time(time.elapsed()));
+
+    let time = Instant::now();
+    let env = WasmEnvArc::new(preimage.as_bytes(), 1000);
+    let instance = machine::create(&wasm, env.clone(), &config)?;
+    println!("Ploy load: {}", format_time(time.elapsed()));
+
+    let time = Instant::now();
+    match instance.run_main(env.clone())? {
+        ExecOutcome::Success(output) => assert_eq!(output, hash),
+        failure => bail!("call failed: {}", failure),
+    }
+    println!("Poly main: {}", format_time(time.elapsed()));
+
+    let time = Instant::now();
+    let machine = Machine::from_polyglot_binary(&wasm, &config)?;
+    println!("Mach load: {}", format_time(time.elapsed()));
+
+    let time = Instant::now();
+    match machine.run_main(env)? {
+        ExecOutcome::Success(output) => assert_eq!(output, hash),
+        failure => bail!("call failed: {}", failure),
+    }
+    println!("Mach main: {}", format_time(time.elapsed()));
+
+    Ok(())
+}
+
+fn format_time(span: Duration) -> String {
+    use common::color;
+    let mut span = span.as_nanos() as f64;
+    let mut unit = 0;
+    let units = vec!["ns", "μs", "ms", "s"];
+    let scale = vec![1000., 1000., 1000., 1000.];
+    let colors = vec![color::MINT, color::MINT, color::YELLOW, color::RED];
+    while span > 100. {
+        span /= scale[unit];
+        unit += 1;
+    }
+    color::color(
+        colors[unit],
+        format!("{:6}", format!("{:.1}{}", span, units[unit])),
+    )
 }

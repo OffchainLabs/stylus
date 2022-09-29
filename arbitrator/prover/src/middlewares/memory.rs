@@ -36,12 +36,14 @@ impl<'a, M: ModuleMod> Middleware<'a, M> for MemoryChecker {
         let Bytes(table_bytes) = module.table_bytes();
         let Bytes(limit) = self.limit;
         if table_bytes > limit {
-            return Err(MiddlewareError::new("Memory Checker", "tables exceed memory limit"))
+            return Err(MiddlewareError::new(
+                "Memory Checker",
+                "tables exceed memory limit",
+            ));
         }
         let limit = limit.saturating_sub(table_bytes);
         let limit = Pages::try_from(Bytes(limit)).unwrap(); // checked in new()
-        module.limit_memory(limit);
-        Ok(())
+        module.limit_memory(limit)
     }
 
     fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError> {

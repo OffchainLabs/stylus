@@ -9,7 +9,7 @@ use loupe::{MemoryUsage, MemoryUsageTracker};
 use parking_lot::Mutex;
 use wasmer::{
     wasmparser::{Operator, Type as WpType, TypeOrFuncType},
-    GlobalInit, Instance, LocalFunctionIndex, Type, MiddlewareError,
+    GlobalInit, Instance, LocalFunctionIndex, MiddlewareError, Type,
 };
 use wasmer_types::{FunctionIndex, GlobalIndex, SignatureIndex};
 
