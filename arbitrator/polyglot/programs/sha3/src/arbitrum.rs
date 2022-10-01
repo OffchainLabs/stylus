@@ -4,14 +4,14 @@
 #![allow(dead_code)]
 
 extern "C" {
-    fn read_args(data: *const u8);
+    fn read_args(data: *mut u8);
     fn return_data(status: usize, len: usize, data: *const u8) -> !;
 }
 
 pub (crate) fn args(len: usize) -> Vec<u8> {
     let mut input = Vec::with_capacity(len);
     unsafe {
-        read_args(input.as_ptr());
+        read_args(input.as_mut_ptr());
         input.set_len(len);
     }
     input
