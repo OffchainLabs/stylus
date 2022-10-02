@@ -1,15 +1,23 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use polyglot::machine::WasmEnvArc;
 use prover::middlewares::PolyglotConfig;
 use wasmer::wasmparser::Operator;
 
-pub fn fuzz_config() -> PolyglotConfig {
+pub fn fuzz_config() -> (PolyglotConfig, WasmEnvArc) {
+    let env = WasmEnvArc::new(&[], 1000);
     let mut config = PolyglotConfig::default();
-    config.costs = |_: &Operator| 1;
+    config.costs = |op: &Operator| match op {
+        Operator::BrTable { table } => {
+            2 + 4 * table.targets().size_hint().0 as u64
+        },
+        Operator::LocalTee { .. } => 2,
+        _ => 1,
+    };
     config.start_gas = 128 * 1024;
     config.max_depth = 64 * 1024;
-    config
+    (config, env)
 }
 
 macro_rules! warn_ {

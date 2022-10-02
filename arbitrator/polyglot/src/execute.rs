@@ -23,6 +23,7 @@ pub enum ExecOutcome {
     OutOfGas,
     OutOfStack,
     StackOverflow,
+    FatalError(String),
 }
 
 impl Display for ExecOutcome {
@@ -36,6 +37,7 @@ impl Display for ExecOutcome {
             OutOfGas => write!(f, "out of gas"),
             OutOfStack => write!(f, "out of stack"),
             StackOverflow => write!(f, "stack overflow"),
+            FatalError(error) => write!(f, "fatal error: {}", error),
         }
     }
 }
@@ -49,6 +51,7 @@ impl PartialEq for ExecOutcome {
             OutOfGas => matches!(other, OutOfGas),
             OutOfStack => matches!(other, OutOfStack),
             StackOverflow => matches!(other, StackOverflow),
+            FatalError(_) => matches!(other, FatalError(_)),
             Success(output) => match other {
                 Success(other) => output == other,
                 _ => false,
@@ -129,7 +132,10 @@ impl ExecPolyglot for Machine {
             return ExecOutcome::NoStart;
         }
 
-        let call = self.call_function("polyglot_moved_start", &vec![]).unwrap();
+        let call = match self.call_function("polyglot_moved_start", &vec![]) {
+            Ok(call) => call,
+            Err(error) => return ExecOutcome::FatalError(error.to_string()),
+        };
 
         match call {
             Ok(_) => ExecOutcome::Success(vec![]),
@@ -142,8 +148,8 @@ impl ExecPolyglot for Machine {
                 }
 
                 match error {
-                    MachineStatus::Running => ExecOutcome::StackOverflow,
-                    MachineStatus::Errored => ExecOutcome::Failure("error".to_owned()),
+                    MachineStatus::Running => ExecOutcome::FatalError("not done".into()),
+                    MachineStatus::Errored => ExecOutcome::Failure("error".into()),
                     MachineStatus::Finished => panic!("machine finished unsuccessfully"),
                     MachineStatus::TooFar => panic!("machine reached the too-far state"),
                 }

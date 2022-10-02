@@ -146,7 +146,6 @@ fn test_depth_arbitrator() -> Result<()> {
 pub fn test_sha3() -> Result<()> {
     let wasm = std::fs::read("programs/sha3/target/wasm32-unknown-unknown/release/sha3.wasm")?;
     let mut config = PolyglotConfig::default();
-    config.memory_limit = wasmer_types::Bytes(2 * 1024 * 1024);
     config.costs = |_: &Operator| 1;
     config.start_gas = 1_000_000;
 
@@ -179,7 +178,86 @@ pub fn test_sha3() -> Result<()> {
         failure => bail!("call failed: {}", failure),
     }
     println!("Mach main: {}", format_time(time.elapsed()));
+    Ok(())
+}
 
+#[test]
+pub fn test_eddsa() -> Result<()> {
+    use ed25519_dalek::{Keypair, Signer, Verifier};
+    use rand::rngs::OsRng;
+
+    let wasm = std::fs::read("programs/eddsa/eddsa.wasm")?;
+    let mut config = PolyglotConfig::default();
+    config.costs = |_: &Operator| 1;
+    config.start_gas = 10_000_000;
+
+    let mut rng = OsRng {};
+    let message = "✲´*。.❄¨¯`* ✲。(╯^□^)╯ <(yay, it's snowing!) ✲。❄。*。¨¯`*✲".as_bytes();
+    let keypair: Keypair = Keypair::generate(&mut rng);
+    let signature = keypair.sign(message);
+
+    let mut args = signature.to_bytes().to_vec();
+    args.extend(keypair.public.to_bytes());
+    args.extend(message);
+    let env = WasmEnvArc::new(&args, 1000);
+
+    let time = Instant::now();
+    assert!(keypair.public.verify(message, &signature).is_ok());
+    println!("Native:    {}", format_time(time.elapsed()));
+
+    let time = Instant::now();
+    let instance = machine::create(&wasm, env.clone(), &config)?;
+    println!("Ploy load: {}", format_time(time.elapsed()));
+
+    let time = Instant::now();
+    match instance.run_main(env.clone())? {
+        ExecOutcome::Success(output) => assert_eq!(output, vec![]),
+        ExecOutcome::Revert(output) => {
+            bail!("reverted with {}", hex::encode(output))
+        }
+        failure => bail!("call failed: {}", failure),
+    }
+    println!("Poly main: {}", format_time(time.elapsed()));
+    Ok(())
+}
+
+#[test]
+pub fn test_bls() -> Result<()> {
+    use ed25519_dalek::{Keypair, Signer, Verifier};
+    use rand::rngs::OsRng;
+
+    let wasm = std::fs::read("programs/bls/target/wasm32-unknown-unknown/release/bls.wasm")?;
+    let mut config = PolyglotConfig::default();
+    config.costs = |_: &Operator| 1;
+    config.start_gas = 10_000_000;
+
+    let mut rng = OsRng {};
+    let message = "✲´*。.❄¨¯`* ✲。(╯^□^)╯ <(yay, it's snowing!) ✲。❄。*。¨¯`*✲".as_bytes();
+    let keypair: Keypair = Keypair::generate(&mut rng);
+    let signature = keypair.sign(message);
+
+    let mut args = signature.to_bytes().to_vec();
+    args.extend(keypair.public.to_bytes());
+    args.extend(message);
+    let env = WasmEnvArc::new(&args, 1000);
+
+    let time = Instant::now();
+    assert!(keypair.public.verify(message, &signature).is_ok());
+    println!("Native:    {}", format_time(time.elapsed()));
+
+    let time = Instant::now();
+    let instance = machine::create(&wasm, env.clone(), &config)?;
+    println!("Ploy load: {}", format_time(time.elapsed()));
+
+    let time = Instant::now();
+    match instance.run_main(env.clone())? {
+        ExecOutcome::Success(output) => assert_eq!(output, vec![]),
+        ExecOutcome::Revert(output) => {
+            bail!("reverted with {}", hex::encode(output))
+        }
+        failure => bail!("call failed: {}", failure),
+    }
+    println!("Poly main: {}", format_time(time.elapsed()));
     Ok(())
 }
 

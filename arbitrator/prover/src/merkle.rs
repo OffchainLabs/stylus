@@ -3,6 +3,7 @@
 
 use crate::utils::Bytes32;
 use digest::Digest;
+use fnv::FnvHashMap as HashMap;
 use rayon::prelude::*;
 use sha3::Keccak256;
 use std::convert::TryFrom;
@@ -69,6 +70,17 @@ impl Merkle {
         if hashes.is_empty() {
             return Merkle::default();
         }
+
+        let mut zeros = HashMap::default();
+        let mut known = empty_hash;
+        let mut size = hashes.len();
+        while size > 1 {
+            let hash = hash_node(ty, known, known);
+            zeros.insert(known, hash);
+            known = hash;
+            size /= 2;
+        }
+        
         let mut layers = vec![hashes];
         let mut empty_layers = vec![empty_hash];
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
@@ -78,7 +90,15 @@ impl Merkle {
                 .unwrap()
                 .par_chunks(2)
                 .map(|window| {
-                    hash_node(ty, window[0], window.get(1).cloned().unwrap_or(empty_layer))
+                    let a = window[0];
+                    let b = window.get(1).cloned().unwrap_or(empty_layer);
+                    if a == b {
+                        if let Some(hash) = zeros.get(&a) {
+                            return hash.clone();
+                        }
+                    }
+                    
+                    hash_node(ty, a, b)
                 })
                 .collect();
             empty_layers.push(hash_node(ty, empty_layer, empty_layer));

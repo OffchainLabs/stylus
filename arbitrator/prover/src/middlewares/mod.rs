@@ -270,7 +270,7 @@ impl Default for PolyglotConfig {
             costs,
             start_gas: 0,
             max_depth: 1024,
-            memory_limit: Bytes(1024 * 1024),
+            memory_limit: Bytes(2 * 1024 * 1024),
         }
     }
 }

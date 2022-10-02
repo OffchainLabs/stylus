@@ -23,7 +23,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     let start = Instant::now();
-    let config = fuzz_config();
+    let (config, env) = fuzz_config();
     let mut machine = match Machine::from_polyglot_binary(&module, &config) {
         Ok(machine) => machine,
         Err(error) => {
@@ -47,18 +47,18 @@ fuzz_target!(|data: &[u8]| {
     let machine_load_time = start.elapsed();
 
     let start = Instant::now();
-    let mut instance = match polyglot::machine::create(&module, &config) {
+    let mut instance = match polyglot::machine::create(&module, env, &config) {
         Ok(instance) => instance,
         Err(error) => fail!(module, "Failed to create instance: {}", error),
     };
     let instance_load_time = start.elapsed();
 
     let start = Instant::now();
-    let instance_outcome = instance.execute();
+    let instance_outcome = instance.run_start();
     let instance_time = start.elapsed();
 
     let start = Instant::now();
-    let machine_outcome = machine.execute();
+    let machine_outcome = machine.run_start();
     let machine_time = start.elapsed();
 
     let instance_gas = instance.gas_left();
@@ -113,7 +113,7 @@ fuzz_target!(|data: &[u8]| {
         &machine_time,
     ];
 
-    if times.into_iter().all(|time| time.as_millis() <= 60) {
+    if times.iter().all(|time| time.as_millis() <= 100) {
         return;
     }
 
@@ -141,6 +141,10 @@ fuzz_target!(|data: &[u8]| {
         format_time(machine_time),
     );
     println!();
+
+    if times.iter().map(|time| time.as_millis()).sum::<u128>() > 500 {
+        panic!("took too long!");
+    }
 });
 
 fn format_time(span: Duration) -> String {

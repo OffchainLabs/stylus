@@ -9,6 +9,7 @@ exclude = [
         "polyglot/fuzz",
         "polyglot/honggfuzz",
         "polyglot/programs/sha3",
+        "polyglot/programs/bls",
 ]
 
 [profile.release]

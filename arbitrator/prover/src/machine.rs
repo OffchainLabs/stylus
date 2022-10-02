@@ -1483,7 +1483,7 @@ impl Machine {
         args: &Vec<Value>,
     ) -> Result<std::result::Result<Vec<Value>, MachineStatus>> {
         self.jump_into_function(func, args.clone());
-        self.step_n(1_000_000)?;
+        self.step_n(245_000)?;
         Ok(self.get_final_result().map_err(|_| self.status))
     }
 

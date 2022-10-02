@@ -28,10 +28,10 @@ impl Config for WasmConfig {
         self.min_funcs // upstream bug ignores this for small slices
     }
     fn max_funcs(&self) -> usize {
-        100
+        200
     }
     fn max_memory_pages(&self, _is_64: bool) -> u64 {
-        17 // a little over 1 MB
+        33 // a little over 2 MB
     }
     fn memory64_enabled(&self) -> bool {
         false

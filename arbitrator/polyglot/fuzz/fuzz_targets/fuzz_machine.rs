@@ -21,12 +21,13 @@ fuzz_target!(|data: &[u8]| {
         warn!("Failed to validate wasm {}", error);
     }
 
-    let mut instance = match polyglot::machine::create(&module, &fuzz_config()) {
+    let (config, env) = fuzz_config();
+    let mut instance = match polyglot::machine::create(&module, env, &config) {
         Ok(instance) => instance,
         Err(error) => warn!("Failed to create instance: {}", error),
     };
 
-    let outcome = instance.execute();
+    let outcome = instance.run_start();
     let space = instance.stack_space_left();
     let gas = match instance.gas_left() {
         MachineMeter::Ready(gas) => gas,
@@ -36,7 +37,8 @@ fuzz_target!(|data: &[u8]| {
     use ExecOutcome::*;
     match outcome {
         NoStart => {}
-        Success => {}
+        Success(_) => {}
+        Revert(output) => warn!("reverted with {}", hex::encode(output)),
         Failure(error) => warn!(
             "Call failed with {} words and {} gas left: {}",
             space, gas, error
