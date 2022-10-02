@@ -262,6 +262,8 @@ struct AvailableImport {
     func: u32,
 }
 
+type AvailableImports = HashMap<String, AvailableImport>;
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct Module {
     globals: Vec<Value>,
@@ -285,7 +287,29 @@ struct Module {
 }
 
 impl Module {
-    fn from_polyglot_binary(mut bin: WasmBinary, config: &PolyglotConfig) -> Result<Module> {
+    fn from_polyglot_binary(
+        mut bin: WasmBinary,
+        available_imports: &AvailableImports,
+        config: &PolyglotConfig,
+    ) -> Result<Module> {
+
+        /*for import in &bin.imports {
+            if let ImportSectionEntryType::Function()
+        }*/
+        
+        /*for (name, import) in available_imports {
+            let type_count = bin.types.len() as u32;
+            let func_count = bin.functions.len() as u32;
+            bin.types.push(import.ty.clone());
+            bin.functions.push(type_count);
+            bin.names.functions.insert(func_count, name.into());
+          }
+
+        for (id, name) in &bin.names.functions {
+            println!("NAME {} {}", id, name);
+        }
+        println!("LEN {} {}", bin.functions.len(), bin.names.functions.len());*/
+
         let meter = Meter::new(config.costs, config.start_gas);
         let depth = DepthChecker::new(config.max_depth);
         let memory = MemoryChecker::new(config.memory_limit)?; // 1 MB memory limit
@@ -345,12 +369,11 @@ impl Module {
 
     fn from_binary(
         bin: &WasmBinary,
-        available_imports: &HashMap<String, AvailableImport>,
+        available_imports: &AvailableImports,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
     ) -> Result<Module> {
         let mut code = Vec::new();
-        let mut func_type_idxs: Vec<u32> = Vec::new();
         let mut memory = Memory::default();
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
@@ -392,14 +415,16 @@ impl Module {
                         import_name,
                     );
                 }
-                func_type_idxs.push(ty);
                 code.push(func);
                 host_call_hooks.push(Some((import.module.into(), import_name.into())));
             } else {
                 bail!("Unsupport import kind {:?}", import);
             }
         }
+        
+        let mut func_type_idxs = bin.imported_functions.clone();
         func_type_idxs.extend(bin.functions.iter());
+        
         let types = &bin.types;
         let mut func_types: Vec<FunctionType> = func_type_idxs
             .iter()
@@ -1065,10 +1090,10 @@ impl Machine {
             modules.push(module);
         }
 
-        // Shouldn't be necessary, but to safe, don't allow the main binary to import its own guest calls
+        // Shouldn't be necessary, but to be safe, don't allow the main binary to import its own guest calls
         available_imports.retain(|_, i| i.module as usize != modules.len());
         let main = match polyglot_config {
-            Some(config) => Module::from_polyglot_binary(bin, config)?,
+            Some(config) => Module::from_polyglot_binary(bin, &available_imports, config)?,
             None => Module::from_binary(
                 &bin,
                 &available_imports,

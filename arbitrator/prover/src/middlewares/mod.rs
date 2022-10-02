@@ -121,7 +121,10 @@ impl ModuleMod for ModuleInfo {
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType, String> {
         match self.functions.get(func) {
             Some(sig) => self.get_signature(*sig),
-            None => return Err(format!("missing func with id {}", func.as_u32())),
+            None => match self.function_names.get(&func) {
+                Some(name) => return Err(format!("missing func {name} @ index {}", func.as_u32())),
+                None => return Err(format!("missing func @ index {}", func.as_u32())),
+            },
         }
     }
 }
@@ -189,10 +192,22 @@ impl<'a> ModuleMod for WasmBinary<'a> {
     }
 
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType, String> {
-        let index = func.as_u32() as usize;
-        match self.functions.get(index) {
+        let mut index = func.as_u32() as usize;
+        let sig;
+        
+        if index < self.imported_functions.len() {
+            sig = self.imported_functions.get(index);
+        } else {
+            index -= self.imported_functions.len();
+            sig = self.functions.get(index);
+        }
+        
+        match sig {
             Some(sig) => self.get_signature(SignatureIndex::from_u32(*sig)),
-            None => return Err(format!("missing func with id {}", func.as_u32())),
+            None => match self.names.functions.get(&func.as_u32()) {
+                Some(name) => return Err(format!("missing func {name} @ index {}", func.as_u32())),
+                None => return Err(format!("missing func @ index {}", func.as_u32())),
+            },
         }
     }
 }

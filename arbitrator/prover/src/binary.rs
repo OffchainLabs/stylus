@@ -15,7 +15,7 @@ use std::{convert::TryInto, fmt::Debug, hash::Hash, str::FromStr};
 use wasmer::wasmparser::{
     Data, Element, Export as WpExport, ExternalKind, Global, Import, MemoryType, Name,
     NameSectionReader, Naming, Operator, Parser, Payload, TableType, TypeDef, Validator,
-    WasmFeatures,
+    WasmFeatures, ImportSectionEntryType,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -260,6 +260,7 @@ pub type ExportMap = HashMap<(String, ExportKind), u32>;
 pub struct WasmBinary<'a> {
     pub types: Vec<FunctionType>,
     pub imports: Vec<Import<'a>>,
+    pub imported_functions: Vec<u32>,
     pub functions: Vec<u32>,
     pub tables: Vec<TableType>,
     pub memories: Vec<MemoryType>,
@@ -278,6 +279,7 @@ impl<'a> Debug for WasmBinary<'a> {
         f.debug_struct("WasmBinary")
             .field("types", &self.types)
             .field("imports", &self.imports)
+            .field("imported_functions", &self.imported_functions)
             .field("functions", &self.functions)
             .field("tables", &self.tables)
             .field("memories", &self.memories)
@@ -403,7 +405,16 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                     }
                 }
             }
-            ImportSection(imports) => process!(binary.imports, imports),
+            ImportSection(imports) => {
+                for import in flatten!(Import, imports) {
+                    let sig = match import.ty {
+                        ImportSectionEntryType::Function(sig) => sig,
+                        _ => bail!("unsupported import kind {:?}", import),
+                    };
+                    binary.imports.push(import);
+                    binary.imported_functions.push(sig);
+                }
+            },
             FunctionSection(functions) => process!(binary.functions, functions),
             TableSection(tables) => process!(binary.tables, tables),
             MemorySection(memories) => process!(binary.memories, memories),

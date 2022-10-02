@@ -80,7 +80,7 @@ impl Merkle {
             known = hash;
             size /= 2;
         }
-        
+
         let mut layers = vec![hashes];
         let mut empty_layers = vec![empty_hash];
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
@@ -97,7 +97,7 @@ impl Merkle {
                             return hash.clone();
                         }
                     }
-                    
+
                     hash_node(ty, a, b)
                 })
                 .collect();

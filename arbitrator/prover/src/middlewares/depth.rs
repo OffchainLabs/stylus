@@ -63,10 +63,10 @@ impl<'a, M: ModuleMod + 'a> Middleware<'a, M> for DepthChecker<M> {
         Ok(())
     }
 
-    fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError> {
+    fn instrument(&self, func: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError> {
         let global = self.global.lock().expect("no global");
         let module = self.module.lock().clone().expect("no module");
-        Ok(FunctionDepthChecker::new(global, self.limit, module))
+        Ok(FunctionDepthChecker::new(global, self.limit, func, module))
     }
 }
 
@@ -75,6 +75,7 @@ pub struct FunctionDepthChecker<'a, M: ModuleMod + 'a> {
     /// Represets the amount of stack depth remaining
     space: GlobalIndex,
     limit: u32,
+    func: LocalFunctionIndex,
     module: Arc<M>,
     code: Vec<Operator<'a>>,
     locals: usize,
@@ -83,10 +84,11 @@ pub struct FunctionDepthChecker<'a, M: ModuleMod + 'a> {
 }
 
 impl<'a, M: ModuleMod> FunctionDepthChecker<'a, M> {
-    fn new(space: GlobalIndex, limit: u32, module: Arc<M>) -> Self {
+    fn new(space: GlobalIndex, limit: u32, func: LocalFunctionIndex, module: Arc<M>) -> Self {
         Self {
             space,
             limit,
+            func,
             module,
             code: vec![],
             locals: 0,
@@ -141,7 +143,7 @@ impl<'a, M: ModuleMod> FunctionMiddleware<'a> for FunctionDepthChecker<'a, M> {
         //   - When returning, credit back the amount used as execution is returning to the caller
 
         let mut code = std::mem::replace(&mut self.code, vec![]);
-        let size = worst_case_depth(&code, self.locals, self.module.clone())?;
+        let size = worst_case_depth(&code, self.locals, self.func, self.module.clone())?;
         let global_index = self.space.as_u32();
         let max_frame_size = self.limit / 2;
 
@@ -199,6 +201,7 @@ impl<'a, M: ModuleMod> FunctionMiddleware<'a> for FunctionDepthChecker<'a, M> {
 fn worst_case_depth<'a, M: ModuleMod>(
     code: &[Operator<'a>],
     locals: usize,
+    func: LocalFunctionIndex,
     module: Arc<M>,
 ) -> Result<u32, String> {
     use Operator::*;
@@ -294,10 +297,12 @@ fn worst_case_depth<'a, M: ModuleMod>(
 
             Call { function_index } => {
                 let index = FunctionIndex::from_u32(*function_index);
+                //println!("CALL {function_index} from {}", func.as_u32());
                 let ty = module.get_function(index)?;
                 ins_and_outs!(ty)
             }
             CallIndirect { index, .. } => {
+                //println!("INDIRECT {index} from {}", func.as_u32());
                 let index = SignatureIndex::from_u32(*index);
                 let ty = module.get_signature(index)?;
                 ins_and_outs!(ty)
