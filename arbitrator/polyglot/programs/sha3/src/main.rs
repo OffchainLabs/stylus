@@ -8,9 +8,9 @@ mod arbitrum;
 use sha3::{Keccak256, Digest};
 
 // TODO: make proc macro
-arbitrum::arbitrum_main!(user_start);
+arbitrum::arbitrum_main!(user_main);
 
-fn user_start(preimage: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+fn user_main(preimage: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let hash = keccak(&preimage);
     Ok(hash.as_ref().into())
 }
