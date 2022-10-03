@@ -201,7 +201,7 @@ impl<'a, M: ModuleMod> FunctionMiddleware<'a> for FunctionDepthChecker<'a, M> {
 fn worst_case_depth<'a, M: ModuleMod>(
     code: &[Operator<'a>],
     locals: usize,
-    func: LocalFunctionIndex,
+    _func: LocalFunctionIndex,
     module: Arc<M>,
 ) -> Result<u32, String> {
     use Operator::*;
@@ -297,12 +297,10 @@ fn worst_case_depth<'a, M: ModuleMod>(
 
             Call { function_index } => {
                 let index = FunctionIndex::from_u32(*function_index);
-                //println!("CALL {function_index} from {}", func.as_u32());
                 let ty = module.get_function(index)?;
                 ins_and_outs!(ty)
             }
             CallIndirect { index, .. } => {
-                //println!("INDIRECT {index} from {}", func.as_u32());
                 let index = SignatureIndex::from_u32(*index);
                 let ty = module.get_signature(index)?;
                 ins_and_outs!(ty)

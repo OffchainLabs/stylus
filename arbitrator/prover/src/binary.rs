@@ -13,9 +13,9 @@ use nom::{
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, str::FromStr};
 use wasmer::wasmparser::{
-    Data, Element, Export as WpExport, ExternalKind, Global, Import, MemoryType, Name,
-    NameSectionReader, Naming, Operator, Parser, Payload, TableType, TypeDef, Validator,
-    WasmFeatures, ImportSectionEntryType,
+    Data, Element, Export as WpExport, ExternalKind, Global, Import, ImportSectionEntryType,
+    MemoryType, Name, NameSectionReader, Naming, Operator, Parser, Payload, TableType, TypeDef,
+    Validator, WasmFeatures,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -414,7 +414,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                     binary.imports.push(import);
                     binary.imported_functions.push(sig);
                 }
-            },
+            }
             FunctionSection(functions) => process!(binary.functions, functions),
             TableSection(tables) => process!(binary.tables, tables),
             MemorySection(memories) => process!(binary.memories, memories),

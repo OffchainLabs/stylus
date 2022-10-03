@@ -289,14 +289,15 @@ struct Module {
 impl Module {
     fn from_polyglot_binary(
         mut bin: WasmBinary,
-        available_imports: &AvailableImports,
+        available_imports: &mut AvailableImports,
         config: &PolyglotConfig,
     ) -> Result<Module> {
+        //available_imports.insert(k, v)
 
         /*for import in &bin.imports {
             if let ImportSectionEntryType::Function()
         }*/
-        
+
         /*for (name, import) in available_imports {
             let type_count = bin.types.len() as u32;
             let func_count = bin.functions.len() as u32;
@@ -361,7 +362,7 @@ impl Module {
 
         Self::from_binary(
             &bin,
-            &HashMap::default(),
+            &available_imports,
             &FloatingPointImpls::default(),
             false,
         )
@@ -393,10 +394,14 @@ impl Module {
                         "Import has different function signature than host function. Expected {:?} but got {:?}",
                         import.ty, have_ty,
                     );
+                    let call = match import_name.starts_with("arbitrator_forward__") {
+                        true => Opcode::CrossModuleForward,
+                        false => Opcode::CrossModuleCall,
+                    };
                     let wavm = vec![
                         Instruction::simple(Opcode::InitFrame),
                         Instruction::with_data(
-                            Opcode::CrossModuleCall,
+                            call,
                             pack_cross_module_call(import.module, import.func),
                         ),
                         Instruction::simple(Opcode::Return),
@@ -421,10 +426,10 @@ impl Module {
                 bail!("Unsupport import kind {:?}", import);
             }
         }
-        
+
         let mut func_type_idxs = bin.imported_functions.clone();
         func_type_idxs.extend(bin.functions.iter());
-        
+
         let types = &bin.types;
         let mut func_types: Vec<FunctionType> = func_type_idxs
             .iter()
@@ -1011,6 +1016,8 @@ impl Machine {
 
     pub fn from_polyglot_binary(wasm: &[u8], config: &PolyglotConfig) -> Result<Machine> {
         let bin = parse(wasm)?;
+        //let forwarder = parse()?;
+        
         Self::from_binaries(
             &[],
             bin,
@@ -1093,7 +1100,7 @@ impl Machine {
         // Shouldn't be necessary, but to be safe, don't allow the main binary to import its own guest calls
         available_imports.retain(|_, i| i.module as usize != modules.len());
         let main = match polyglot_config {
-            Some(config) => Module::from_polyglot_binary(bin, &available_imports, config)?,
+            Some(config) => Module::from_polyglot_binary(bin, &mut available_imports, config)?,
             None => Module::from_binary(
                 &bin,
                 &available_imports,
@@ -1656,6 +1663,22 @@ impl Machine {
                     self.value_stack.push(Value::InternalRef(self.pc));
                     self.value_stack.push(Value::I32(self.pc.module as u32));
                     self.value_stack.push(Value::I32(module.internals_offset));
+                    let (call_module, call_func) =
+                        unpack_cross_module_call(inst.argument_data as u64);
+                    self.pc.module = call_module as usize;
+                    self.pc.func = call_func as usize;
+                    self.pc.inst = 0;
+                    module = &mut self.modules[self.pc.module];
+                    func = &module.funcs[self.pc.func];
+                }
+                Opcode::CrossModuleForward => {
+                    flush_module!();
+                    let current_frame = self.frame_stack.last().unwrap();
+                    self.value_stack.push(Value::InternalRef(self.pc));
+                    self.value_stack
+                        .push(Value::I32(current_frame.caller_module));
+                    self.value_stack
+                        .push(Value::I32(current_frame.caller_module_internals));
                     let (call_module, call_func) =
                         unpack_cross_module_call(inst.argument_data as u64);
                     self.pc.module = call_module as usize;

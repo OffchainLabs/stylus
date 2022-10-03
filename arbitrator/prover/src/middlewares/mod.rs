@@ -194,14 +194,14 @@ impl<'a> ModuleMod for WasmBinary<'a> {
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType, String> {
         let mut index = func.as_u32() as usize;
         let sig;
-        
+
         if index < self.imported_functions.len() {
             sig = self.imported_functions.get(index);
         } else {
             index -= self.imported_functions.len();
             sig = self.functions.get(index);
         }
-        
+
         match sig {
             Some(sig) => self.get_signature(SignatureIndex::from_u32(*sig)),
             None => match self.names.functions.get(&func.as_u32()) {
