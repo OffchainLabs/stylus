@@ -63,13 +63,15 @@ fn test_gas_arbitrator() -> Result<()> {
     assert_eq!(machine.gas_left(), MachineMeter::Ready(0));
 
     let args = vec![Value::I32(32)];
-    let status = machine.call_function("add_one", &args)?.unwrap_err();
+    let status = machine
+        .call_function("user", "add_one", &args)?
+        .unwrap_err();
     assert_eq!(status, MachineStatus::Errored);
     assert_eq!(machine.gas_left(), MachineMeter::Exhausted);
 
     machine.set_gas(1000);
     assert_eq!(machine.gas_left(), MachineMeter::Ready(1000));
-    let output = machine.call_function("add_one", &args)?.unwrap();
+    let output = machine.call_function("user", "add_one", &args)?.unwrap();
     assert_eq!(output, vec![Value::I32(33)]);
     assert_eq!(machine.gas_left(), MachineMeter::Ready(900));
     Ok(())
@@ -123,7 +125,9 @@ fn test_depth_arbitrator() -> Result<()> {
     config.max_depth = 32;
 
     let mut machine = Machine::from_polyglot_binary(&wasm, &config)?;
-    let status = machine.call_function("recurse", &vec![])?.unwrap_err();
+    let status = machine
+        .call_function("user", "recurse", &vec![])?
+        .unwrap_err();
     assert_eq!(status, MachineStatus::Errored);
     assert_eq!(machine.get_global("depth")?, Value::I32(5)); // 32 capacity / 6-word frame => 5 calls
 
@@ -135,7 +139,9 @@ fn test_depth_arbitrator() -> Result<()> {
     machine.set_stack_limit(64);
     assert_eq!(machine.stack_space_left(), 64);
 
-    let status = machine.call_function("recurse", &vec![])?.unwrap_err();
+    let status = machine
+        .call_function("user", "recurse", &vec![])?
+        .unwrap_err();
     assert_eq!(status, MachineStatus::Errored);
     let program_depth = machine.get_global("depth")?;
     assert_eq!(program_depth, Value::I32(5 + 10)); // 64 more capacity / 6-word frame => 10 more calls
@@ -158,7 +164,7 @@ pub fn test_sha3() -> Result<()> {
 
     let time = Instant::now();
     let env = WasmEnvArc::new(preimage.as_bytes(), 1000);
-    let instance = machine::create(&wasm, env.clone(), &config)?;
+    let mut instance = machine::create(&wasm, env.clone(), &config)?;
     println!("Ploy load: {}", format_time(time.elapsed()));
 
     let time = Instant::now();
@@ -169,12 +175,12 @@ pub fn test_sha3() -> Result<()> {
     println!("Poly main: {}", format_time(time.elapsed()));
 
     let time = Instant::now();
-    let machine = Machine::from_polyglot_binary(&wasm, &config)?;
+    let mut machine = Machine::from_polyglot_binary(&wasm, &config)?;
     println!("Mach load: {}", format_time(time.elapsed()));
 
     let time = Instant::now();
     match machine.run_main(env)? {
-        ExecOutcome::Success(output) => assert_eq!(output, hash),
+        ExecOutcome::Success(output) => assert_eq!(hex::encode(output), hex::encode(hash)),
         failure => bail!("call failed: {}", failure),
     }
     println!("Mach main: {}", format_time(time.elapsed()));
@@ -206,47 +212,7 @@ pub fn test_eddsa() -> Result<()> {
     println!("Native:    {}", format_time(time.elapsed()));
 
     let time = Instant::now();
-    let instance = machine::create(&wasm, env.clone(), &config)?;
-    println!("Ploy load: {}", format_time(time.elapsed()));
-
-    let time = Instant::now();
-    match instance.run_main(env.clone())? {
-        ExecOutcome::Success(output) => assert_eq!(output, vec![]),
-        ExecOutcome::Revert(output) => {
-            bail!("reverted with {}", hex::encode(output))
-        }
-        failure => bail!("call failed: {}", failure),
-    }
-    println!("Poly main: {}", format_time(time.elapsed()));
-    Ok(())
-}
-
-#[test]
-pub fn test_bls() -> Result<()> {
-    use ed25519_dalek::{Keypair, Signer, Verifier};
-    use rand::rngs::OsRng;
-
-    let wasm = std::fs::read("programs/bls/target/wasm32-unknown-unknown/release/bls.wasm")?;
-    let mut config = PolyglotConfig::default();
-    config.costs = |_: &Operator| 1;
-    config.start_gas = 10_000_000;
-
-    let mut rng = OsRng {};
-    let message = "✲´*。.❄¨¯`* ✲。(╯^□^)╯ <(yay, it's snowing!) ✲。❄。*。¨¯`*✲".as_bytes();
-    let keypair: Keypair = Keypair::generate(&mut rng);
-    let signature = keypair.sign(message);
-
-    let mut args = signature.to_bytes().to_vec();
-    args.extend(keypair.public.to_bytes());
-    args.extend(message);
-    let env = WasmEnvArc::new(&args, 1000);
-
-    let time = Instant::now();
-    assert!(keypair.public.verify(message, &signature).is_ok());
-    println!("Native:    {}", format_time(time.elapsed()));
-
-    let time = Instant::now();
-    let instance = machine::create(&wasm, env.clone(), &config)?;
+    let mut instance = machine::create(&wasm, env.clone(), &config)?;
     println!("Ploy load: {}", format_time(time.elapsed()));
 
     let time = Instant::now();

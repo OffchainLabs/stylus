@@ -285,6 +285,7 @@ impl<'a> Debug for WasmBinary<'a> {
             .field("memories", &self.memories)
             .field("globals", &self.globals)
             .field("exports", &self.exports)
+            .field("all_exports", &self.all_exports)
             .field("start", &self.start)
             .field("elements", &format!("<{} elements>", self.elements.len()))
             .field("codes", &self.codes)
@@ -294,7 +295,7 @@ impl<'a> Debug for WasmBinary<'a> {
     }
 }
 
-pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
+pub fn parse<'a>(input: &'a [u8], name: &'_ str) -> eyre::Result<WasmBinary<'a>> {
     let features = WasmFeatures {
         mutable_global: true,
         saturating_float_to_int: true,
@@ -323,6 +324,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         .collect::<Result<_, _>>()?;
 
     let mut binary = WasmBinary::default();
+    binary.names.module = name.into();
 
     for mut section in sections.into_iter() {
         use Payload::*;
@@ -375,7 +377,6 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                 while !ops.eof() {
                     code.expr.push(ops.read()?);
                 }
-
                 binary.codes.push(code);
             }
             GlobalSection(globals) => {
@@ -436,7 +437,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
 
                 while !name_reader.eof() {
                     match name_reader.read()? {
-                        Name::Module(name) => binary.names.module = name.get_name()?.to_owned(),
+                        Name::Module(_name) => {} // we use the one passed in instead
                         Name::Function(namemap) => {
                             let mut map_reader = namemap.get_map()?;
                             for _ in 0..map_reader.get_count() {

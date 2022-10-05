@@ -5,7 +5,7 @@
 
 mod arbitrum;
 
-use sha3::{Keccak256, Digest};
+use sha3::{Digest, Keccak256};
 
 // TODO: make proc macro
 arbitrum::arbitrum_main!(user_main);

@@ -69,7 +69,7 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 arbitrator_wasm_wasistub_files = $(wildcard arbitrator/wasm-libraries/wasi-stub/src/*/*)
 arbitrator_wasm_gostub_files = $(wildcard arbitrator/wasm-libraries/go-stub/src/*/*)
 arbitrator_wasm_hostio_files = $(wildcard arbitrator/wasm-libraries/host-io/src/*/*)
-arbitrator_wasm_polyhost_files = $(wildcard arbitrator/wasm-libraries/host-io/src/*) arbitrator/wasm-libraries/host-io/Cargo.toml
+arbitrator_wasm_polyhost_files = $(wildcard arbitrator/wasm-libraries/poly-host/src/*) arbitrator/wasm-libraries/poly-host/Cargo.toml
 
 # user targets
 
@@ -270,7 +270,8 @@ $(output_root)/machines/latest/brotli.wasm: $(DEP_PREDICATE) $(wildcard arbitrat
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
 
 $(output_root)/machines/latest/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
-	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_root)/machines/latest -l $(output_root)/machines/latest/soft-float.wasm -l $(output_root)/machines/latest/wasi_stub.wasm -l $(output_root)/machines/latest/go_stub.wasm -l $(output_root)/machines/latest/host_io.wasm -l $(output_root)/machines/latest/brotli.wasm
+	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_root)/machines/latest \
+		$(patsubst %,-l $(output_root)/machines/latest/%.wasm, forwarder poly_host soft-float wasi_stub go_stub host_io brotli)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@

@@ -7,4 +7,12 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[profile.release]
+opt-level = "z"
+strip = true
+lto = true
+panic = "abort"
+
 [dependencies]
+hashbrown = "0.12.3"
+hex = "0.4.3"

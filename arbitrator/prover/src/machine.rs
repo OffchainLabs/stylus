@@ -11,7 +11,7 @@ use crate::{
     merkle::{Merkle, MerkleType},
     middlewares::{
         depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover,
-        FunctionMiddleware, Middleware, PolyglotConfig,
+        FunctionMiddleware, Middleware, ModuleMod, PolyglotConfig,
     },
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
@@ -21,6 +21,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
+use common::color;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -32,7 +33,7 @@ use sha3::Keccak256;
 use std::{
     borrow::Cow,
     convert::TryFrom,
-    fmt::{self, Debug},
+    fmt::{self, Debug, Display},
     fs::File,
     io::{BufReader, BufWriter, Write},
     mem,
@@ -43,7 +44,7 @@ use std::{
 use wasmer::wasmparser::{
     DataKind, ElementItem, ElementKind, ImportSectionEntryType, Operator, TableType,
 };
-use wasmer_types::LocalFunctionIndex;
+use wasmer_types::{FunctionIndex, LocalFunctionIndex};
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -262,10 +263,18 @@ struct AvailableImport {
     func: u32,
 }
 
+impl AvailableImport {
+    pub fn new(ty: FunctionType, module: u32, func: u32) -> Self {
+        Self { ty, module, func }
+    }
+}
+
 type AvailableImports = HashMap<String, AvailableImport>;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct Module {
+    #[serde(default)]
+    name: String,
     globals: Vec<Value>,
     memory: Memory,
     tables: Vec<Table>,
@@ -292,25 +301,6 @@ impl Module {
         available_imports: &mut AvailableImports,
         config: &PolyglotConfig,
     ) -> Result<Module> {
-        //available_imports.insert(k, v)
-
-        /*for import in &bin.imports {
-            if let ImportSectionEntryType::Function()
-        }*/
-
-        /*for (name, import) in available_imports {
-            let type_count = bin.types.len() as u32;
-            let func_count = bin.functions.len() as u32;
-            bin.types.push(import.ty.clone());
-            bin.functions.push(type_count);
-            bin.names.functions.insert(func_count, name.into());
-          }
-
-        for (id, name) in &bin.names.functions {
-            println!("NAME {} {}", id, name);
-        }
-        println!("LEN {} {}", bin.functions.len(), bin.names.functions.len());*/
-
         let meter = Meter::new(config.costs, config.start_gas);
         let depth = DepthChecker::new(config.max_depth);
         let memory = MemoryChecker::new(config.memory_limit)?; // 1 MB memory limit
@@ -378,48 +368,57 @@ impl Module {
         let mut memory = Memory::default();
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
+
         for import in &bin.imports {
             if let ImportSectionEntryType::Function(ty) = import.ty {
-                let import_name = match import.field {
+                let have_ty = &bin.types[ty as usize];
+
+                let mut import_name = match import.field {
                     Some(name) => name,
                     None => bail!("Missing name for import in {}", import.module),
                 };
+                let mut forward = false;
+                if let Some(name) = import_name.strip_prefix("arbitrator_forward__") {
+                    import_name = name;
+                    forward = true;
+                }
+
                 let mut qualified_name = format!("{}__{}", import.module, import_name);
                 qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
-                let have_ty = &bin.types[ty as usize];
                 let func;
-                if let Some(import) = available_imports.get(&qualified_name) {
-                    ensure!(
-                        &import.ty == have_ty,
-                        "Import has different function signature than host function. Expected {:?} but got {:?}",
-                        import.ty, have_ty,
-                    );
-                    let call = match import_name.starts_with("arbitrator_forward__") {
-                        true => Opcode::CrossModuleForward,
-                        false => Opcode::CrossModuleCall,
-                    };
-                    let wavm = vec![
-                        Instruction::simple(Opcode::InitFrame),
-                        Instruction::with_data(
-                            call,
-                            pack_cross_module_call(import.module, import.func),
-                        ),
-                        Instruction::simple(Opcode::Return),
-                    ];
-                    func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
-                } else {
-                    func = get_host_impl(import.module, import_name)?;
-                    ensure!(
-                        &func.ty == have_ty,
-                        "Import has different function signature than host function. Expected {:?} but got {:?}",
-                        func.ty, have_ty,
-                    );
-                    ensure!(
-                        allow_hostapi,
-                        "Calling hostapi directly is not allowed. Function {}",
-                        import_name,
-                    );
-                }
+
+                let import_ty = match available_imports.get(&qualified_name) {
+                    Some(import) => {
+                        let call = match forward {
+                            true => Opcode::CrossModuleForward,
+                            false => Opcode::CrossModuleCall,
+                        };
+                        let wavm = vec![
+                            Instruction::simple(Opcode::InitFrame),
+                            Instruction::with_data(
+                                call,
+                                pack_cross_module_call(import.module, import.func),
+                            ),
+                            Instruction::simple(Opcode::Return),
+                        ];
+                        func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
+                        &import.ty
+                    }
+                    None => {
+                        ensure!(
+                            allow_hostapi,
+                            "Calling hostapi directly is not allowed. Function {}",
+                            color::red(import_name),
+                        );
+                        func = get_host_impl(import.module, import_name)?;
+                        &func.ty
+                    }
+                };
+                ensure!(
+                    import_ty == have_ty,
+                    "Import {} has different function signature than host function.\nExpected {} but got {}",
+                    color::red(import_name), color::red(have_ty), color::red(import_ty),
+                );
                 code.push(func);
                 host_call_hooks.push(Some((import.module.into(), import_name.into())));
             } else {
@@ -507,7 +506,9 @@ impl Module {
                     data.data.len(),
                 );
             }
-            memory.set_range(offset, data.data);
+            if let Err(err) = memory.set_range(offset, data.data) {
+                bail!("{}", err);
+            }
         }
 
         for table in &bin.tables {
@@ -621,6 +622,7 @@ impl Module {
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
 
         Ok(Self {
+            name: bin.names.module.clone(),
             memory,
             globals: bin.globals.clone(),
             tables_merkle: Merkle::new(MerkleType::Table, tables_hashes?),
@@ -752,6 +754,17 @@ pub enum MachineStatus {
     Finished,
     Errored,
     TooFar,
+}
+
+impl Display for MachineStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Running => write!(f, "running"),
+            Self::Finished => write!(f, "finished"),
+            Self::Errored => write!(f, "errored"),
+            Self::TooFar => write!(f, "too far"),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -988,16 +1001,17 @@ impl Machine {
         preimage_resolver: PreimageResolver,
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
-        let bin = parse(&bin_source)
+        let bin = parse(&bin_source, &binary_path.to_string_lossy())
             .wrap_err_with(|| format!("failed to validate WASM binary at {:?}", binary_path))?;
         let mut libraries = vec![];
         let mut lib_sources = vec![];
         for path in library_paths {
+            let name = path.to_string_lossy();
             let error_message = format!("failed to validate WASM binary at {:?}", path);
-            lib_sources.push((file_bytes(path)?, error_message));
+            lib_sources.push((file_bytes(path)?, name, error_message));
         }
-        for (source, error_message) in &lib_sources {
-            let library = parse(source).wrap_err_with(|| error_message.clone())?;
+        for (source, name, error_message) in &lib_sources {
+            let library = parse(source, &name).wrap_err_with(|| error_message.clone())?;
             libraries.push(library);
         }
         let polyglot_config = None;
@@ -1015,11 +1029,16 @@ impl Machine {
     }
 
     pub fn from_polyglot_binary(wasm: &[u8], config: &PolyglotConfig) -> Result<Machine> {
-        let bin = parse(wasm)?;
-        //let forwarder = parse()?;
-        
+        let bin = parse(wasm, "user")?;
+        let forwarder = std::fs::read("../../target/machines/latest/forwarder.wasm")?;
+        let forwarder = parse(&forwarder, "forwarder")?;
+        let poly_host = std::fs::read("../../target/machines/latest/poly_host.wasm")?;
+        let poly_host = parse(&poly_host, "poly_host")?;
+        let wasi_stub = std::fs::read("../../target/machines/latest/wasi_stub.wasm")?;
+        let wasi_stub = parse(&wasi_stub, "wasi_stub")?;
+
         Self::from_binaries(
-            &[],
+            &[forwarder, poly_host, wasi_stub],
             bin,
             false,
             false,
@@ -1062,18 +1081,25 @@ impl Machine {
             }
         }
 
+        // collect all library exports in advance they can use each other's
+        for (index, lib) in libraries.into_iter().enumerate() {
+            let module = 1 + index as u32; // off by one due to the entry point
+            for ((name, kind), &export) in &lib.all_exports {
+                if *kind == ExportKind::Func {
+                    let ty = match lib.get_function(FunctionIndex::from_u32(export)) {
+                        Ok(ty) => ty,
+                        Err(error) => bail!("failed to read {} export: {}", name, error),
+                    };
+                    let import = AvailableImport::new(ty, module, export);
+                    available_imports.insert(name.clone(), import);
+                }
+            }
+        }
+
         for lib in libraries {
             let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
             for (name, &func) in &*module.exports {
                 let ty = module.func_types[func as usize].clone();
-                available_imports.insert(
-                    name.clone(),
-                    AvailableImport {
-                        module: modules.len() as u32,
-                        func,
-                        ty: ty.clone(),
-                    },
-                );
                 if let Ok(op) = name.parse::<FloatInstruction>() {
                     let mut sig = op.signature();
                     // wavm codegen takes care of effecting this type change at callsites
@@ -1086,7 +1112,7 @@ impl Machine {
                     }
                     ensure!(
                         ty == sig,
-                        "Wrong type for floating point impl {:?} expecting {:?} but got {:?}",
+                        "Wrong type for floating point impl {} expecting {} but got {}",
                         name,
                         sig,
                         ty
@@ -1231,6 +1257,7 @@ impl Machine {
             &entrypoint_types,
         )?];
         let entrypoint = Module {
+            name: "entry_point".into(),
             globals: Vec::new(),
             memory: Memory::default(),
             tables: Vec::new(),
@@ -1447,13 +1474,45 @@ impl Machine {
         }
     }
 
-    pub fn get_function(&self, func: &str) -> Option<FunctionType> {
-        for module in &self.modules {
-            if let Some(func) = module.get_export(func, ExportKind::Func) {
-                return Some(module.func_types[func as usize].clone());
-            }
+    fn get_module(&self, module: &str) -> Result<&Module> {
+        match self.modules.iter().position(|m| m.name == module) {
+            Some(index) => Ok(&self.modules[index]),
+            None => bail!("module {} not found", color::red(module)),
         }
-        None
+    }
+
+    fn get_module_mut(&mut self, module: &str) -> Result<&mut Module> {
+        match self.modules.iter().position(|m| m.name == module) {
+            Some(index) => Ok(&mut self.modules[index]),
+            None => bail!("module {} not found", color::red(module)),
+        }
+    }
+
+    pub fn read_memory(&mut self, module: &str, len: u32, ptr: u32) -> Result<&[u8]> {
+        let module = self.get_module(module)?;
+        match module.memory.get_range(ptr as usize, len as usize) {
+            Some(data) => Ok(data),
+            None => bail!("failed to read {len} bytes of memory @ {ptr}"),
+        }
+    }
+
+    pub fn write_memory(&mut self, module: &str, ptr: u32, data: &[u8]) -> Result<()> {
+        let module = self.get_module_mut(module)?;
+        if let Err(err) = module.memory.set_range(ptr as usize, data) {
+            bail!(
+                "failed to write {} bytes to memory @ {ptr}: {err}",
+                data.len()
+            );
+        }
+        Ok(())
+    }
+
+    pub fn get_function(&self, module: &str, func: &str) -> Result<FunctionType> {
+        let module = &self.get_module(module)?;
+        match module.get_export(func, ExportKind::Func) {
+            Some(func) => Ok(module.func_types[func as usize].clone()),
+            None => bail!("func {} not found", color::red(func)),
+        }
     }
 
     pub fn get_global(&self, name: &str) -> Result<Value> {
@@ -1476,23 +1535,31 @@ impl Machine {
         bail!("global {name} not found")
     }
 
-    pub fn jump_into_function(&mut self, func: &str, mut args: Vec<Value>) {
+    pub fn jump_into_function(&mut self, module: &str, func: &str, mut args: Vec<Value>) {
         let frame_args = [Value::RefNull, Value::I32(0), Value::I32(0)];
         args.extend(frame_args);
         self.value_stack = args;
 
-        let module = self.modules.last().expect("no module");
-        let export = module.exports.iter().find(|x| x.0 == func);
-        let export = export
-            .unwrap_or_else(|| panic!("func {} not found", func))
-            .1;
+        let qualified = &format!("{module}__{func}");
+        let module = match self.modules.iter().position(|m| m.name == module) {
+            Some(module) => module,
+            None => panic!("module {} not found", color::red(module)),
+        };
+        let func = match self.modules[module]
+            .exports
+            .iter()
+            .find(|x| x.0 == qualified)
+        {
+            Some((_, func)) => *func as usize,
+            None => panic!("func {} not found", color::red(func)),
+        };
 
         self.frame_stack.clear();
         self.internal_stack.clear();
 
         self.pc = ProgramCounter {
-            module: self.modules.len() - 1,
-            func: *export as usize,
+            module,
+            func,
             inst: 0,
         };
         self.status = MachineStatus::Running;
@@ -1511,10 +1578,11 @@ impl Machine {
 
     pub fn call_function(
         &mut self,
+        module: &str,
         func: &str,
         args: &Vec<Value>,
     ) -> Result<std::result::Result<Vec<Value>, MachineStatus>> {
-        self.jump_into_function(func, args.clone());
+        self.jump_into_function(module, func, args.clone());
         self.step_n(245_000)?;
         Ok(self.get_final_result().map_err(|_| self.status))
     }

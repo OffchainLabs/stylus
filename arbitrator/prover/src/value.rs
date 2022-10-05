@@ -6,7 +6,10 @@ use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::convert::{TryFrom, TryInto};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt::Display,
+};
 use wasmer::wasmparser::{FuncType, Type as WpType};
 use wasmer_types::Type;
 
@@ -265,6 +268,13 @@ impl Value {
     }
 }
 
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = self.pretty_print();
+        write!(f, "{}", text)
+    }
+}
+
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         self.ty() == other.ty() && self.contents_for_proof() == other.contents_for_proof()
@@ -364,5 +374,44 @@ impl TryFrom<wasmer_types::FunctionType> for FunctionType {
             outputs.push(ArbValueType::try_from(*output)?)
         }
         Ok(Self { inputs, outputs })
+    }
+}
+
+impl Display for FunctionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut signature = "λ(".to_string();
+        if !self.inputs.is_empty() {
+            for arg in &self.inputs {
+                signature += &format!("{}, ", arg);
+            }
+            signature.pop();
+            signature.pop();
+            signature += ")";
+        }
+        if !self.outputs.is_empty() {
+            signature += " -> (";
+            for out in &self.outputs {
+                signature += &format!("{}, ", out);
+            }
+            signature.pop();
+            signature.pop();
+            signature += ")";
+        }
+        write!(f, "{}", signature)
+    }
+}
+
+impl Display for ArbValueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ArbValueType::*;
+        match self {
+            I32 => write!(f, "i32"),
+            I64 => write!(f, "i64"),
+            F32 => write!(f, "f32"),
+            F64 => write!(f, "f64"),
+            RefNull => write!(f, "null"),
+            FuncRef => write!(f, "func"),
+            InternalRef => write!(f, "internal"),
+        }
     }
 }

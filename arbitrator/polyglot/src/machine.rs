@@ -100,7 +100,7 @@ pub struct WasmEnvArc {
 #[derive(Default)]
 pub struct WasmEnv {
     pub args: Vec<u8>,
-    pub output: Vec<u8>,
+    pub outs: Vec<u8>,
     /// The price of wasm gas, measured in thousandths of an evm gas
     gas_price: u64,
     /// Mechanism for reading and writing the module's memory
@@ -221,13 +221,13 @@ fn read_args(env: &WasmEnvArc, dest: Pointer) {
     env.write_slice(dest, &env.args);
 }
 
-fn return_data(env: &WasmEnvArc, status: u32, len: u32, data: Pointer) -> MaybeEscape {
+fn return_data(env: &WasmEnvArc, len: u32, data: Pointer) -> MaybeEscape {
     let env = &mut *env.lock();
 
     let evm_words = |count: u64| count.saturating_add(31) / 32;
     let evm_gas = evm_words(len.into()).saturating_mul(3); // each byte is 3 evm gas per evm word
     env.buy_evm_gas(evm_gas)?;
 
-    env.output = env.read_slice(data as usize, len as usize);
-    Escape::exit(status)
+    env.outs = env.read_slice(data as usize, len as usize);
+    Ok(())
 }

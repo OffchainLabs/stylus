@@ -9,7 +9,7 @@ use prover::{
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
     },
-    Machine,
+    Machine, Value,
 };
 use std::fmt::Display;
 use wasmer::Instance;
@@ -66,7 +66,7 @@ impl PartialEq for ExecOutcome {
 
 pub trait ExecPolyglot {
     fn run_start(&mut self) -> ExecOutcome;
-    fn run_main(&self, env: WasmEnvArc) -> Result<ExecOutcome>;
+    fn run_main(&mut self, env: WasmEnvArc) -> Result<ExecOutcome>;
 }
 
 impl ExecPolyglot for Instance {
@@ -95,44 +95,47 @@ impl ExecPolyglot for Instance {
         }
     }
 
-    fn run_main(&self, env: WasmEnvArc) -> Result<ExecOutcome> {
-        let main = self.exports.get_function("arbitrum_main")?;
-        let main = main.native::<i32, ()>()?;
+    fn run_main(&mut self, env: WasmEnvArc) -> Result<ExecOutcome> {
+        let main = self.exports.get_function("user__arbitrum_main")?;
+        let main = main.native::<i32, i32>()?;
         let args = env.lock().args.len() as i32;
 
-        let escape = match main.call(args) {
-            Ok(()) => bail!("program failed to canonically exit"),
-            Err(outcome) => Escape::from(outcome),
+        let status = match main.call(args) {
+            Ok(status) => status,
+            Err(outcome) => {
+                let escape = Escape::from(outcome);
+
+                if self.stack_space_left() == 0 {
+                    return Ok(ExecOutcome::OutOfStack);
+                }
+                if self.gas_left() == MachineMeter::Exhausted {
+                    return Ok(ExecOutcome::OutOfGas);
+                };
+
+                return Ok(match escape {
+                    Escape::OutOfGas => ExecOutcome::OutOfGas,
+                    Escape::Failure(err) => ExecOutcome::Failure(err),
+                    Escape::HostIO(err) => ExecOutcome::Failure(err),
+                    Escape::Exit(code) => ExecOutcome::Failure(format!("exited with code {code}")),
+                });
+            }
         };
 
-        if self.stack_space_left() == 0 {
-            return Ok(ExecOutcome::OutOfStack);
-        }
-        if self.gas_left() == MachineMeter::Exhausted {
-            return Ok(ExecOutcome::OutOfGas);
-        };
-        let status = match escape {
-            Escape::OutOfGas => return Ok(ExecOutcome::OutOfGas),
-            Escape::Failure(err) => return Ok(ExecOutcome::Failure(err)),
-            Escape::HostIO(err) => return Ok(ExecOutcome::Failure(err)),
-            Escape::Exit(status) => status,
-        };
-
-        let output = env.lock().output.to_vec();
+        let outs = env.lock().outs.to_vec();
         Ok(match status {
-            0 => ExecOutcome::Success(output),
-            _ => ExecOutcome::Revert(output),
+            0 => ExecOutcome::Success(outs),
+            _ => ExecOutcome::Revert(outs),
         })
     }
 }
 
 impl ExecPolyglot for Machine {
     fn run_start(&mut self) -> ExecOutcome {
-        if self.get_function("polyglot_moved_start").is_none() {
+        if self.get_function("user", "polyglot_moved_start").is_err() {
             return ExecOutcome::NoStart;
         }
 
-        let call = match self.call_function("polyglot_moved_start", &vec![]) {
+        let call = match self.call_function("user", "polyglot_moved_start", &vec![]) {
             Ok(call) => call,
             Err(error) => return ExecOutcome::FatalError(error.to_string()),
         };
@@ -157,7 +160,47 @@ impl ExecPolyglot for Machine {
         }
     }
 
-    fn run_main(&self, _env: WasmEnvArc) -> Result<ExecOutcome> {
-        todo!()
+    fn run_main(&mut self, env: WasmEnvArc) -> Result<ExecOutcome> {
+        let args_len = Value::from(env.lock().args.len() as u32);
+        let args_ptr = match self.call_function("poly_host", "allocate_args", &vec![args_len])? {
+            Ok(ptr) => ptr[0],
+            Err(status) => bail!("failed to allocate memory: {}", status),
+        };
+        self.write_memory("poly_host", args_ptr.try_into().unwrap(), &env.lock().args)?;
+
+        let status: u32 = match self.call_function("user", "arbitrum_main", &vec![args_len])? {
+            Ok(value) => value[0].try_into().unwrap(),
+            Err(status) => {
+                if self.gas_left() == MachineMeter::Exhausted {
+                    return Ok(ExecOutcome::OutOfGas);
+                }
+                if self.stack_space_left() == 0 {
+                    return Ok(ExecOutcome::OutOfStack);
+                }
+
+                use MachineStatus::*;
+                return Ok(match status {
+                    Running => ExecOutcome::FatalError("not done".into()),
+                    Errored => ExecOutcome::Failure("error".into()),
+                    Finished => panic!("machine finished unsuccessfully"),
+                    TooFar => panic!("machine reached the too-far state"),
+                });
+            }
+        };
+
+        let outs_len = match self.call_function("poly_host", "read_output_len", &vec![])? {
+            Ok(output) => output[0].try_into().unwrap(),
+            Err(status) => bail!("failed to read output data length: {}", status),
+        };
+        let outs_ptr = match self.call_function("poly_host", "read_output_ptr", &vec![])? {
+            Ok(output) => output[0].try_into().unwrap(),
+            Err(status) => bail!("failed to read output data: {}", status),
+        };
+
+        let outs = self.read_memory("poly_host", outs_len, outs_ptr)?.to_vec();
+        Ok(match status {
+            0 => ExecOutcome::Success(outs),
+            _ => ExecOutcome::Revert(outs),
+        })
     }
 }
