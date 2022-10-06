@@ -6,12 +6,12 @@ use crate::{
         parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
     },
     console::Color,
-    host::get_host_impl,
+    host::{self, get_host_impl},
     memory::Memory,
     merkle::{Merkle, MerkleType},
     middlewares::{
         depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover,
-        FunctionMiddleware, Middleware, ModuleMod, PolyglotConfig,
+        FunctionMiddleware, Middleware, ModuleMod, PolyHostData, PolyglotConfig,
     },
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
@@ -123,7 +123,7 @@ impl Function {
         Ok(Function::new_from_wavm(insts, func_ty, locals_with_params))
     }
 
-    fn new_from_wavm(
+    pub fn new_from_wavm(
         code: Vec<Instruction>,
         ty: FunctionType,
         local_types: Vec<ArbValueType>,
@@ -247,15 +247,6 @@ impl Table {
     }
 }
 
-fn make_internal_func(opcode: Opcode, ty: FunctionType) -> Function {
-    let wavm = vec![
-        Instruction::simple(Opcode::InitFrame),
-        Instruction::simple(opcode),
-        Instruction::simple(Opcode::Return),
-    ];
-    Function::new_from_wavm(wavm, ty, Vec::new())
-}
-
 #[derive(Clone, Debug)]
 struct AvailableImport {
     ty: FunctionType,
@@ -350,11 +341,17 @@ impl Module {
             code.expr = build;
         }
 
+        let poly_host = PolyHostData {
+            gas_left: meter.gas_global.lock().unwrap(),
+            gas_status: meter.status_global.lock().unwrap(),
+        };
+
         Self::from_binary(
             &bin,
             &available_imports,
             &FloatingPointImpls::default(),
             false,
+            Some(poly_host),
         )
     }
 
@@ -363,6 +360,7 @@ impl Module {
         available_imports: &AvailableImports,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
+        poly_host: Option<PolyHostData>,
     ) -> Result<Module> {
         let mut code = Vec::new();
         let mut memory = Memory::default();
@@ -574,52 +572,10 @@ impl Module {
             code.len() < (1usize << 31),
             "Module function count must be under 2^31",
         );
-        //ensure!(!code.is_empty(), "Module has no code");
-
-        // Make internal functions
-        let internals_offset = code.len() as u32;
-        let mut memory_load_internal_type = FunctionType::default();
-        memory_load_internal_type.inputs.push(ArbValueType::I32);
-        memory_load_internal_type.outputs.push(ArbValueType::I32);
-        func_types.push(memory_load_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryLoad {
-                ty: ArbValueType::I32,
-                bytes: 1,
-                signed: false,
-            },
-            memory_load_internal_type.clone(),
-        ));
-        func_types.push(memory_load_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryLoad {
-                ty: ArbValueType::I32,
-                bytes: 4,
-                signed: false,
-            },
-            memory_load_internal_type,
-        ));
-        let mut memory_store_internal_type = FunctionType::default();
-        memory_store_internal_type.inputs.push(ArbValueType::I32);
-        memory_store_internal_type.inputs.push(ArbValueType::I32);
-        func_types.push(memory_store_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryStore {
-                ty: ArbValueType::I32,
-                bytes: 1,
-            },
-            memory_store_internal_type.clone(),
-        ));
-        func_types.push(memory_store_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryStore {
-                ty: ArbValueType::I32,
-                bytes: 4,
-            },
-            memory_store_internal_type,
-        ));
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
+        let internals_offset = code.len() as u32;
+        host::add_internal_funcs(&mut code, &mut func_types, poly_host);
 
         Ok(Self {
             name: bin.names.module.clone(),
@@ -1097,7 +1053,8 @@ impl Machine {
         }
 
         for lib in libraries {
-            let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
+            let module =
+                Module::from_binary(lib, &available_imports, &floating_point_impls, true, None)?;
             for (name, &func) in &*module.exports {
                 let ty = module.func_types[func as usize].clone();
                 if let Ok(op) = name.parse::<FloatInstruction>() {
@@ -1132,6 +1089,7 @@ impl Machine {
                 &available_imports,
                 &floating_point_impls,
                 allow_hostapi_from_main,
+                None,
             )?,
         };
         modules.push(main);
@@ -1545,11 +1503,9 @@ impl Machine {
             Some(module) => module,
             None => panic!("module {} not found", color::red(module)),
         };
-        let func = match self.modules[module]
-            .exports
-            .iter()
-            .find(|x| x.0 == qualified)
-        {
+
+        let exports = &self.modules[module].exports;
+        let func = match exports.iter().find(|x| x.0 == qualified || x.0 == func) {
             Some((_, func)) => *func as usize,
             None => panic!("func {} not found", color::red(func)),
         };
@@ -1686,6 +1642,10 @@ impl Machine {
                         caller_module_internals,
                     });
                 }
+                Opcode::CurrentModule => {
+                    let frame = self.frame_stack.last().unwrap();
+                    self.value_stack.push(frame.caller_module.into());
+                }
                 Opcode::ArbitraryJump => {
                     self.pc.inst = inst.argument_data as usize;
                     Machine::test_next_instruction(func, &self.pc);
@@ -1718,10 +1678,9 @@ impl Machine {
                 Opcode::Call => {
                     let current_frame = self.frame_stack.last().unwrap();
                     self.value_stack.push(Value::InternalRef(self.pc));
+                    self.value_stack.push(current_frame.caller_module.into());
                     self.value_stack
-                        .push(Value::I32(current_frame.caller_module));
-                    self.value_stack
-                        .push(Value::I32(current_frame.caller_module_internals));
+                        .push(current_frame.caller_module_internals.into());
                     self.pc.func = inst.argument_data as usize;
                     self.pc.inst = 0;
                     func = &module.funcs[self.pc.func];
@@ -1743,10 +1702,9 @@ impl Machine {
                     flush_module!();
                     let current_frame = self.frame_stack.last().unwrap();
                     self.value_stack.push(Value::InternalRef(self.pc));
+                    self.value_stack.push(current_frame.caller_module.into());
                     self.value_stack
-                        .push(Value::I32(current_frame.caller_module));
-                    self.value_stack
-                        .push(Value::I32(current_frame.caller_module_internals));
+                        .push(current_frame.caller_module_internals.into());
                     let (call_module, call_func) =
                         unpack_cross_module_call(inst.argument_data as u64);
                     self.pc.module = call_module as usize;
@@ -1793,10 +1751,9 @@ impl Machine {
                             Value::FuncRef(call_func) => {
                                 let current_frame = self.frame_stack.last().unwrap();
                                 self.value_stack.push(Value::InternalRef(self.pc));
+                                self.value_stack.push(current_frame.caller_module.into());
                                 self.value_stack
-                                    .push(Value::I32(current_frame.caller_module));
-                                self.value_stack
-                                    .push(Value::I32(current_frame.caller_module_internals));
+                                    .push(current_frame.caller_module_internals.into());
                                 self.pc.func = call_func as usize;
                                 self.pc.inst = 0;
                                 func = &module.funcs[self.pc.func];
@@ -1873,7 +1830,7 @@ impl Machine {
                     self.value_stack.push(Value::I32(inst.argument_data as u32));
                 }
                 Opcode::I64Const => {
-                    self.value_stack.push(Value::I64(inst.argument_data));
+                    self.value_stack.push(inst.argument_data.into());
                 }
                 Opcode::F32Const => {
                     self.value_stack
@@ -1935,7 +1892,7 @@ impl Machine {
                 Opcode::MemorySize => {
                     let pages = u32::try_from(module.memory.size() / Memory::PAGE_SIZE as u64)
                         .expect("Memory pages grew past a u32");
-                    self.value_stack.push(Value::I32(pages));
+                    self.value_stack.push(pages.into());
                 }
                 Opcode::MemoryGrow => {
                     let old_size = module.memory.size();
@@ -1959,10 +1916,10 @@ impl Machine {
                         module.memory.resize(usize::try_from(new_size).unwrap());
                         // Push the old number of pages
                         let old_pages = u32::try_from(old_size / page_size).unwrap();
-                        self.value_stack.push(Value::I32(old_pages));
+                        self.value_stack.push(old_pages.into());
                     } else {
                         // Push -1
-                        self.value_stack.push(Value::I32(u32::MAX));
+                        self.value_stack.push(u32::MAX.into());
                     }
                 }
                 Opcode::IUnOp(w, op) => {
@@ -1970,7 +1927,7 @@ impl Machine {
                     match w {
                         IntegerValType::I32 => {
                             if let Some(Value::I32(a)) = va {
-                                self.value_stack.push(Value::I32(exec_iun_op(a, op)));
+                                self.value_stack.push(exec_iun_op(a, op).into());
                             } else {
                                 bail!("WASM validation failed: wrong types for i32unop");
                             }
@@ -2000,7 +1957,7 @@ impl Machine {
                                     Some(value) => value,
                                     None => error!(),
                                 };
-                                self.value_stack.push(Value::I32(value))
+                                self.value_stack.push(value.into())
                             } else {
                                 bail!("WASM validation failed: wrong types for i32binop");
                             }
@@ -2017,7 +1974,7 @@ impl Machine {
                                     Some(value) => value,
                                     None => error!(),
                                 };
-                                self.value_stack.push(Value::I64(value))
+                                self.value_stack.push(value.into())
                             } else {
                                 bail!("WASM validation failed: wrong types for i64binop");
                             }
@@ -2040,7 +1997,7 @@ impl Machine {
                         true => x as i32 as i64 as u64,
                         false => x as u32 as u64,
                     };
-                    self.value_stack.push(Value::I64(x64));
+                    self.value_stack.push(x64.into());
                 }
                 Opcode::Reinterpret(dest, source) => {
                     let val = match self.value_stack.pop() {
@@ -2071,7 +2028,7 @@ impl Machine {
                     if x & (1 << (b - 1)) != 0 {
                         x |= !mask;
                     }
-                    self.value_stack.push(Value::I32(x));
+                    self.value_stack.push(x.into());
                 }
                 Opcode::I64ExtendS(b) => {
                     let mut x = self.value_stack.pop().unwrap().assume_u64();
@@ -2080,7 +2037,7 @@ impl Machine {
                     if x & (1 << (b - 1)) != 0 {
                         x |= !mask;
                     }
-                    self.value_stack.push(Value::I64(x));
+                    self.value_stack.push(x.into());
                 }
                 Opcode::MoveFromStackToInternal => {
                     self.internal_stack.push(self.value_stack.pop().unwrap());
@@ -2120,7 +2077,7 @@ impl Machine {
                         error!();
                     } else {
                         self.value_stack
-                            .push(Value::I64(self.global_state.u64_vals[idx]));
+                            .push(self.global_state.u64_vals[idx].into());
                     }
                 }
                 Opcode::SetGlobalStateU64 => {

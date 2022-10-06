@@ -386,16 +386,24 @@ impl Display for FunctionType {
             }
             signature.pop();
             signature.pop();
-            signature += ")";
         }
+        signature += ")";
+
+        let output_tuple = self.outputs.len() > 2;
+
         if !self.outputs.is_empty() {
-            signature += " -> (";
+            signature += " -> ";
+            if output_tuple {
+                signature += "(";
+            }
             for out in &self.outputs {
                 signature += &format!("{}, ", out);
             }
             signature.pop();
             signature.pop();
-            signature += ")";
+            if output_tuple {
+                signature += ")";
+            }
         }
         write!(f, "{}", signature)
     }

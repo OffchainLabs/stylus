@@ -16,8 +16,8 @@ use std::fmt::Display;
 use std::{fmt::Debug, mem, sync::Arc};
 
 pub struct Meter<F: Fn(&Operator) -> u64 + Send + Sync> {
-    gas_global: Mutex<Option<GlobalIndex>>,
-    status_global: Mutex<Option<GlobalIndex>>,
+    pub gas_global: Mutex<Option<GlobalIndex>>,
+    pub status_global: Mutex<Option<GlobalIndex>>,
     costs: Arc<F>,
     start_gas: u64,
 }
@@ -58,8 +58,8 @@ where
     type FM = FunctionMeter<'a, F>;
 
     fn update_module(&self, module: &mut M) -> Result<(), MiddlewareError> {
-        let start = GlobalInit::I64Const(self.start_gas as i64);
-        let gas = module.add_global("polyglot_gas_left", Type::I64, start);
+        let start_gas = GlobalInit::I64Const(self.start_gas as i64);
+        let gas = module.add_global("polyglot_gas_left", Type::I64, start_gas);
         let status = module.add_global("polyglot_gas_status", Type::I32, GlobalInit::I32Const(0));
         *self.gas_global.lock() = Some(gas);
         *self.status_global.lock() = Some(status);

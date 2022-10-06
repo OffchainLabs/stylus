@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 extern __attribute__((import_name("read_args"))) void read_args(const uint8_t * data);
-extern __attribute__((import_name("return_data"))) _Noreturn void return_data(size_t status, size_t len, const uint8_t * data);
+extern __attribute__((import_name("return_data"))) void return_data(size_t len, const uint8_t * data);
 
 typedef enum ArbStatus {
     Success = 0,
@@ -25,14 +25,15 @@ typedef struct ArbResult {
     const size_t output_len;
 } ArbResult;
 
-#define ARBITRUM_MAIN(user_main)                                        \
-    __attribute__((export_name("arbitrum_main")))                       \
-    void arbitrum_main(int args_len) {                                  \
-        const uint8_t * args = alloca(args_len * sizeof(*args));        \
-        read_args(args);                                                \
-        const ArbResult result = user_main(args, args_len);             \
-        return_data(result.status, result.output_len, result.output);   \
-    }                                                                   \
+#define ARBITRUM_MAIN(user_main)                                  \
+    __attribute__((export_name("arbitrum_main")))                 \
+    int arbitrum_main(int args_len) {                             \
+        const uint8_t * args = alloca(args_len * sizeof(*args));  \
+        read_args(args);                                          \
+        const ArbResult result = user_main(args, args_len);       \
+        return_data(result.output_len, result.output);            \
+        return result.status;                                     \
+    }
 
 #ifdef __cplusplus
 }

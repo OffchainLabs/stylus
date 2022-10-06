@@ -96,7 +96,7 @@ impl ExecPolyglot for Instance {
     }
 
     fn run_main(&mut self, env: WasmEnvArc) -> Result<ExecOutcome> {
-        let main = self.exports.get_function("user__arbitrum_main")?;
+        let main = self.exports.get_function("arbitrum_main")?;
         let main = main.native::<i32, i32>()?;
         let args = env.lock().args.len() as i32;
 

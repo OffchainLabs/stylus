@@ -30,7 +30,7 @@ pub (crate) fn output(data: Vec<u8>) {
 macro_rules! arbitrum_main {
     ($name:expr) => {
         #[no_mangle]
-        pub extern "C" fn user__arbitrum_main(len: usize) -> usize {
+        pub extern "C" fn arbitrum_main(len: usize) -> usize {
             let input = arbitrum::args(len);
             let (data, status) = match $name(input) {
                 Ok(data) => (data, 0),

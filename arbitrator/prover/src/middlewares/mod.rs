@@ -321,3 +321,17 @@ impl GlobalMod for Instance {
         global.set(value.into()).expect("failed to write global");
     }
 }
+
+pub struct PolyHostData {
+    pub gas_left: GlobalIndex,
+    pub gas_status: GlobalIndex,
+}
+
+impl PolyHostData {
+    pub fn globals(&self) -> (u64, u64) {
+        (
+            self.gas_left.as_u32() as u64,
+            self.gas_status.as_u32() as u64,
+        )
+    }
+}

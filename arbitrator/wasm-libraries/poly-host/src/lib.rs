@@ -1,8 +1,10 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+mod gas;
 mod util;
 
+pub use gas::set_gas_price;
 use hashbrown::HashMap;
 
 extern "C" {
@@ -24,6 +26,7 @@ struct Program {
 
 #[no_mangle]
 pub unsafe extern "C" fn poly_host__read_args(ptr: usize) {
+    //let module = wavm_get_caller_module();
     let program = match PROGRAMS.get(&0) {
         Some(program) => program,
         None => return,
@@ -34,10 +37,16 @@ pub unsafe extern "C" fn poly_host__read_args(ptr: usize) {
 
 #[no_mangle]
 pub unsafe extern "C" fn poly_host__return_data(len: usize, ptr: usize) {
+    //let module = wavm_get_caller_module();
     let program = match PROGRAMS.get_mut(&0) {
         Some(program) => program,
         None => return,
     };
+
+    let evm_words = |count: u64| count.saturating_add(31) / 32;
+    let evm_gas = evm_words(len as u64).saturating_mul(3); // each byte is 3 evm gas per evm word
+    gas::buy_evm_gas(evm_gas);
+
     program.outs = util::read_slice(ptr, len);
     println!("return data {}", hex::encode(&program.outs));
 }

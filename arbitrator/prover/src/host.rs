@@ -3,6 +3,7 @@
 
 use crate::{
     machine::{Function, InboxIdentifier},
+    middlewares::PolyHostData,
     value::{ArbValueType, FunctionType},
     wavm::{Instruction, Opcode},
 };
@@ -92,9 +93,27 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             opcode!(LocalGet, 2);
             opcode!(ReadInboxMessage, InboxIdentifier::Delayed as u64);
         }
+        ("env", "wavm_get_caller_module") => {
+            ty = FunctionType::default();
+            opcode!(CurrentModule);
+        }
         ("env", "wavm_halt_and_set_finished") => {
             ty = FunctionType::default();
             opcode!(HaltAndSetFinished);
+        }
+        ("env", "poly_wavm_gas_left") => {
+            ty = FunctionType::new(vec![], vec![ArbValueType::I64]);
+            opcode!(CallerModuleInternalCall, 4);
+        }
+        ("env", "poly_wavm_gas_status") => {
+            ty = FunctionType::new(vec![], vec![ArbValueType::I32]);
+            opcode!(CallerModuleInternalCall, 5);
+        }
+        ("env", "poly_wavm_set_gas") => {
+            ty = FunctionType::new(vec![ArbValueType::I64, ArbValueType::I32], vec![]);
+            opcode!(LocalGet, 0);
+            opcode!(LocalGet, 1);
+            opcode!(CallerModuleInternalCall, 6);
         }
         _ => eyre::bail!("Unsupported import of {:?} {:?}", module, name),
     }
@@ -105,4 +124,76 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
     };
 
     Function::new(&[], append, ty, &[])
+}
+
+pub fn add_internal_funcs(
+    funcs: &mut Vec<Function>,
+    func_types: &mut Vec<FunctionType>,
+    poly_host: Option<PolyHostData>,
+) {
+    use ArbValueType::*;
+    use Opcode::*;
+
+    fn code_func(code: Vec<Instruction>, ty: FunctionType) -> Function {
+        let mut wavm = vec![Instruction::simple(InitFrame)];
+        wavm.extend(code);
+        wavm.push(Instruction::simple(Return));
+        Function::new_from_wavm(wavm, ty, Vec::new())
+    }
+
+    fn op_func(opcode: Opcode, ty: FunctionType) -> Function {
+        code_func(vec![Instruction::simple(opcode)], ty)
+    }
+
+    macro_rules! host {
+        ($ins:expr, $outs:expr) => {{
+            let ty = FunctionType::new($ins, $outs);
+            func_types.push(ty.clone());
+            ty
+        }};
+    }
+
+    funcs.push(op_func(
+        MemoryLoad {
+            ty: I32,
+            bytes: 1,
+            signed: false,
+        },
+        host!(vec![I32], vec![I32]), // wavm_caller_load8
+    ));
+    funcs.push(op_func(
+        MemoryLoad {
+            ty: I32,
+            bytes: 4,
+            signed: false,
+        },
+        host!(vec![I32], vec![I32]), // wavm_caller_load32
+    ));
+    funcs.push(op_func(
+        MemoryStore { ty: I32, bytes: 1 },
+        host!(vec![I32], vec![I32]), // wavm_caller_store8
+    ));
+    funcs.push(op_func(
+        MemoryStore { ty: I32, bytes: 4 },
+        host!(vec![I32], vec![I32]), // wavm_caller_store32
+    ));
+
+    if let Some(poly_host) = poly_host {
+        let (gas, status) = poly_host.globals();
+        funcs.push(code_func(
+            vec![Instruction::with_data(GlobalGet, gas)],
+            host!(vec![], vec![I64]), // poly_wavm_gas_left
+        ));
+        funcs.push(code_func(
+            vec![Instruction::with_data(GlobalGet, status)],
+            host!(vec![], vec![I32]), // poly_wavm_gas_status
+        ));
+        funcs.push(code_func(
+            vec![
+                Instruction::with_data(GlobalSet, status),
+                Instruction::with_data(GlobalSet, gas),
+            ],
+            host!(vec![I64, I32], vec![]), // poly_wavm_set_gas
+        ));
+    }
 }

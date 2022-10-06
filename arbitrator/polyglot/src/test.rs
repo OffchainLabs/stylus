@@ -184,6 +184,8 @@ pub fn test_sha3() -> Result<()> {
         failure => bail!("call failed: {}", failure),
     }
     println!("Mach main: {}", format_time(time.elapsed()));
+
+    assert_eq!(instance.gas_left(), machine.gas_left());
     Ok(())
 }
 
