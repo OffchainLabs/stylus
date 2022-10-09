@@ -1133,6 +1133,7 @@ dependencies = [
  "static_assertions",
  "structopt",
  "wasmer 2.3.0",
+ "wasmer-compiler-singlepass",
  "wasmer-types 2.3.0",
 ]
 

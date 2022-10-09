@@ -8,6 +8,7 @@ use crate::{
     ExecOutcome, ExecPolyglot,
 };
 
+use common::brotli;
 use eyre::{bail, Result};
 use prover::{
     machine::MachineStatus,
@@ -36,7 +37,8 @@ fn test_gas() -> Result<()> {
     config.costs = expensive_add;
     config.max_depth = 1024;
 
-    let mut instance = machine::create(&wasm, WasmEnvArc::default(), &config)?;
+    let (module, store) = machine::instrument(&wasm, &config)?;
+    let mut instance = machine::create(&module, &store, WasmEnvArc::default())?;
     let add_one = instance.exports.get_function("add_one")?;
     let add_one = add_one.native::<i32, i32>().unwrap();
 
@@ -83,7 +85,8 @@ fn test_depth() -> Result<()> {
     let mut config = PolyglotConfig::default();
     config.max_depth = 32;
 
-    let mut instance = machine::create(&wasm, WasmEnvArc::default(), &config)?;
+    let (module, store) = machine::instrument(&wasm, &config)?;
+    let mut instance = machine::create(&module, &store, WasmEnvArc::default())?;
     let recurse = instance.exports.get_function("recurse")?;
     let recurse = recurse.native::<(), ()>().unwrap();
 
@@ -162,12 +165,17 @@ pub fn test_sha3() -> Result<()> {
     let hash = hasher.finalize().to_vec();
     println!("native:    {}", format_time(time.elapsed()));
 
-    let time = Instant::now();
+    let time = Instant::now();    
     let env = WasmEnvArc::new(preimage.as_bytes(), 1000);
-    let mut instance = machine::create(&wasm, env.clone(), &config)?;
+    let (module, store) = machine::instrument(&wasm, &config)?;
+    let compressed_wasm = brotli::compress(&wasm, 0, 22).unwrap();
+    let compressed_module = brotli::compress(&module, 0, 22).unwrap();
     println!("Ploy load: {}", format_time(time.elapsed()));
 
     let time = Instant::now();
+    let decompressed_module = brotli::decompress(&compressed_module).unwrap();
+    assert_eq!(module, decompressed_module);
+    let mut instance = machine::create(&module, &store, env.clone())?;
     match instance.run_main(env.clone())? {
         ExecOutcome::Success(output) => assert_eq!(output, hash),
         failure => bail!("call failed: {}", failure),
@@ -184,6 +192,9 @@ pub fn test_sha3() -> Result<()> {
         failure => bail!("call failed: {}", failure),
     }
     println!("Mach main: {}", format_time(time.elapsed()));
+
+    println!("Size {}KB {}KB", wasm.len() / 1024, module.len() / 1024);
+    println!("Size {}KB {}KB", compressed_wasm.len() / 1024, compressed_module.len() / 1024);
 
     assert_eq!(instance.gas_left(), machine.gas_left());
     Ok(())
@@ -214,10 +225,11 @@ pub fn test_eddsa() -> Result<()> {
     println!("Native:    {}", format_time(time.elapsed()));
 
     let time = Instant::now();
-    let mut instance = machine::create(&wasm, env.clone(), &config)?;
+    let (module, store) = machine::instrument(&wasm, &config)?;
     println!("Ploy load: {}", format_time(time.elapsed()));
 
     let time = Instant::now();
+    let mut instance = machine::create(&module, &store, env.clone())?;
     match instance.run_main(env.clone())? {
         ExecOutcome::Success(output) => assert_eq!(output, vec![]),
         ExecOutcome::Revert(output) => {

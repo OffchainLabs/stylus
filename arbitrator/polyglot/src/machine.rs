@@ -2,21 +2,16 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use prover::middlewares::{
-    depth::DepthChecker,
-    memory::MemoryChecker,
-    meter::{MachineMeter, Meter, MeteredMachine},
-    start::StartMover,
-    PolyglotConfig, WasmerMiddlewareWrapper,
+    meter::{MachineMeter, MeteredMachine},
+    PolyglotConfig,
 };
 
 use eyre::Result;
 use parking_lot::Mutex;
 use thiserror::Error;
 use wasmer::{
-    imports, CompilerConfig, Function, Global, Instance, Memory, MemoryView, Module, RuntimeError,
-    Store, Universal, WasmerEnv,
+    imports, Function, Global, Instance, Memory, MemoryView, Module, RuntimeError, Store, WasmerEnv,
 };
-use wasmer_compiler_singlepass::Singlepass;
 
 use std::{ops::Deref, sync::Arc};
 
@@ -46,25 +41,16 @@ pub fn validate(wasm: &[u8]) -> Result<()> {
     Ok(())
 }
 
-pub fn create(wasm: &[u8], env: WasmEnvArc, config: &PolyglotConfig) -> Result<Instance> {
-    let mut compiler = Singlepass::new();
-    compiler.canonicalize_nans(true);
-    compiler.enable_verifier();
-
-    let meter = WasmerMiddlewareWrapper::new(Meter::new(config.costs, config.start_gas));
-    let depth = WasmerMiddlewareWrapper::new(DepthChecker::new(config.max_depth));
-    let memory = WasmerMiddlewareWrapper::new(MemoryChecker::new(config.memory_limit)?); // 1 MB memory limit
-    let start = WasmerMiddlewareWrapper::new(StartMover::new("polyglot_moved_start"));
-
-    // add the instrumentation
-    compiler.push_middleware(Arc::new(meter));
-    compiler.push_middleware(Arc::new(depth));
-    compiler.push_middleware(Arc::new(memory));
-    compiler.push_middleware(Arc::new(start));
-
-    let engine = Universal::new(compiler).engine();
-    let store = Store::new(&engine);
+pub fn instrument(wasm: &[u8], config: &PolyglotConfig) -> Result<(Vec<u8>, Store)> {
+    let store = config.store()?;
     let module = Module::new(&store, wasm)?;
+    let module = module.serialize()?;
+    Ok((module, store))
+}
+
+pub fn create(module: &[u8], store: &Store, env: WasmEnvArc) -> Result<Instance> {
+    //let store = Store::new(engine);
+    let module = unsafe { Module::deserialize(&store, module)? };
 
     macro_rules! func {
         ($func:expr) => {

@@ -25,6 +25,7 @@ static_assertions = "1.1.0"
 structopt = "0.3.23"
 wasmer = { path = "/home/rachel/Documents/upstream/wasmer/lib/api/" }
 wasmer-types = { path = "/home/rachel/Documents/upstream/wasmer/lib/types" }
+wasmer-compiler-singlepass = { path = "/home/rachel/Documents/upstream/wasmer/lib/compiler-singlepass" }
 parking_lot = "0.12.1"
 loupe = "0.1.3"
 serde_with = "1.12.1"

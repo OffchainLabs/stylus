@@ -1083,6 +1083,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "brotli2",
+ "common",
  "digest",
  "eyre",
  "fnv",

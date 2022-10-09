@@ -20,10 +20,13 @@ use wasmer_types::{
     ModuleInfo, Mutability, Pages, SignatureIndex, Type as WpType, Value as WtValue,
 };
 
+pub mod config;
 pub mod depth;
 pub mod memory;
 pub mod meter;
 pub mod start;
+
+pub use config::PolyglotConfig;
 
 pub trait ModuleMod: Clone + Debug + Send + Sync {
     fn move_start_function(&mut self, name: &str);
@@ -268,25 +271,6 @@ where
         self.0
             .feed(op, out)
             .map_err(|err| MiddlewareError::new("Middleware", err))
-    }
-}
-
-pub struct PolyglotConfig {
-    pub costs: fn(&Operator) -> u64,
-    pub start_gas: u64,
-    pub max_depth: u32,
-    pub memory_limit: Bytes,
-}
-
-impl Default for PolyglotConfig {
-    fn default() -> Self {
-        let costs = |_: &Operator| 0;
-        Self {
-            costs,
-            start_gas: 0,
-            max_depth: 1024,
-            memory_limit: Bytes(2 * 1024 * 1024),
-        }
     }
 }
 

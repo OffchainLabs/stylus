@@ -1,23 +1,6 @@
 use go_abi::*;
 
-extern "C" {
-    pub fn BrotliDecoderDecompress(
-        encoded_size: usize,
-        encoded_buffer: *const u8,
-        decoded_size: *mut usize,
-        decoded_buffer: *mut u8,
-    ) -> u32;
-
-    pub fn BrotliEncoderCompress(
-        quality: u32,
-        lgwin: u32,
-        mode: u32,
-        input_size: usize,
-        input_buffer: *const u8,
-        encoded_size: *mut usize,
-        encoded_buffer: *mut u8,
-    ) -> u32;
-}
+use common::brotli::{BrotliDecoderDecompress, BrotliEncoderCompress};
 
 const BROTLI_MODE_GENERIC: u32 = 0;
 const BROTLI_RES_SUCCESS: u32 = 1;
