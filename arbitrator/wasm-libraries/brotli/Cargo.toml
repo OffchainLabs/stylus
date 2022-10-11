@@ -9,4 +9,3 @@ crate-type = ["cdylib"]
 
 [dependencies]
 go-abi = { path = "../go-abi" }
-common = { path = "../../common/" }

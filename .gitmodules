@@ -16,3 +16,9 @@
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
+[submodule "arbitrator/wasm-upstream/wasmer"]
+	path = arbitrator/wasm-upstream/wasmer
+	url = git@github.com:OffchainLabs/wasmer.git
+[submodule "arbitrator/wasm-upstream/wasm-tools"]
+	path = arbitrator/wasm-upstream/wasm-tools
+	url = git@github.com:OffchainLabs/wasm-tools.git

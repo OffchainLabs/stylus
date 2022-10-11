@@ -8,7 +8,7 @@ use crate::{
     ExecOutcome, ExecPolyglot,
 };
 
-use common::brotli;
+use brotli2::read::{BrotliEncoder, BrotliDecoder};
 use eyre::{bail, Result};
 use prover::{
     machine::MachineStatus,
@@ -20,7 +20,7 @@ use prover::{
     Machine, Value,
 };
 use sha3::{Digest, Keccak256};
-use std::time::{Duration, Instant};
+use std::{time::{Duration, Instant}, io::Read};
 use wasmparser::Operator;
 
 fn expensive_add(op: &Operator) -> u64 {
@@ -168,12 +168,12 @@ pub fn test_sha3() -> Result<()> {
     let time = Instant::now();    
     let env = WasmEnvArc::new(preimage.as_bytes(), 1000);
     let (module, store) = machine::instrument(&wasm, &config)?;
-    let compressed_wasm = brotli::compress(&wasm, 0, 22).unwrap();
-    let compressed_module = brotli::compress(&module, 0, 22).unwrap();
+    let compressed_wasm = compress(&wasm, 0);
+    let compressed_module = compress(&module, 0);
     println!("Ploy load: {}", format_time(time.elapsed()));
 
     let time = Instant::now();
-    let decompressed_module = brotli::decompress(&compressed_module).unwrap();
+    let decompressed_module = decompress(&compressed_module);
     assert_eq!(module, decompressed_module);
     let mut instance = machine::create(&module, &store, env.clone())?;
     match instance.run_main(env.clone())? {
@@ -241,8 +241,22 @@ pub fn test_eddsa() -> Result<()> {
     Ok(())
 }
 
+fn compress(data: &[u8], level: u32) -> Vec<u8> {
+    let mut output = vec![];
+    let mut compressor = BrotliEncoder::new(data, level);
+    compressor.read_to_end(&mut output).unwrap();
+    output
+}
+
+fn decompress(data: &[u8]) -> Vec<u8> {
+    let mut output = vec![];
+    let mut decompressor = BrotliDecoder::new(data);
+    decompressor.read_to_end(&mut output).unwrap();
+    output
+}
+
 fn format_time(span: Duration) -> String {
-    use common::color;
+    use arbutil::color;
     let mut span = span.as_nanos() as f64;
     let mut unit = 0;
     let units = vec!["ns", "μs", "ms", "s"];

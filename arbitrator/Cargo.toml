@@ -3,7 +3,7 @@ members = [
         "prover",
         "polyglot",
         "jit",
-        "common",
+        "arbutil",
 ]
 exclude = [
         "polyglot/fuzz",
