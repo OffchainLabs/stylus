@@ -50,17 +50,16 @@ function writeConfigs(argv: any) {
                 "retry-interval": "0.5s",
                 "seq-num-duration": "24h0m0s",
                 "update-interval": "3s",
-                "signer" : {
-                    "signing-key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-                }
             },
             "batch-poster": {
                 "enable": false,
-                "redis-lock": {
-                    "redis-url": argv.redisUrl,
-                    "key": "batchPosterLock",
-                },
+                "redis-url": argv.redisUrl,
                 "max-interval": "30s",
+                "data-poster": {
+                    "redis-signer": {
+                      "signing-key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    }
+                }
             }
         },
         "init": {

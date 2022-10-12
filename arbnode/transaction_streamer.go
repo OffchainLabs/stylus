@@ -23,9 +23,11 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -35,9 +37,10 @@ import (
 type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
-	db      ethdb.Database
-	bc      *core.BlockChain
-	chainId uint64
+	db           ethdb.Database
+	bc           *core.BlockChain
+	chainId      uint64
+	fatalErrChan chan<- error
 
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
 	createBlocksMutex  sync.Mutex // cannot be acquired while reorgMutex is held
@@ -63,6 +66,7 @@ func NewTransactionStreamer(
 	db ethdb.Database,
 	bc *core.BlockChain,
 	broadcastServer *broadcaster.Broadcaster,
+	fatalErrChan chan<- error,
 ) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
 		db:                 db,
@@ -71,6 +75,7 @@ func NewTransactionStreamer(
 		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
 		chainId:            bc.Config().ChainID.Uint64(),
+		fatalErrChan:       fatalErrChan,
 	}
 	err := inbox.cleanupInconsistentState()
 	if err != nil {
@@ -125,11 +130,7 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 		return err
 	}
 	if !hasMessageCount {
-		data, err := rlp.EncodeToBytes(uint64(0))
-		if err != nil {
-			return err
-		}
-		err = s.db.Put(messageCountKey, data)
+		err := setMessageCount(s.db, 0)
 		if err != nil {
 			return err
 		}
@@ -198,6 +199,11 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	if err != nil {
 		return err
 	}
+
+	return setMessageCount(batch, count)
+}
+
+func setMessageCount(batch ethdb.KeyValueWriter, count arbutil.MessageIndex) error {
 	countBytes, err := rlp.EncodeToBytes(count)
 	if err != nil {
 		return err
@@ -206,6 +212,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	if err != nil {
 		return err
 	}
+	sharedmetrics.UpdateSequenceNumberGauge(count)
 
 	return nil
 }
@@ -440,9 +447,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 }
 
 func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbos.L1IncomingMessage, error) {
-	if len(txErrors) != len(txes) {
-		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(txErrors), len(txes))
-	}
 	var l2Message []byte
 	if len(txes) == 1 && txErrors[0] == nil {
 		txBytes, err := txes[0].MarshalBinary()
@@ -474,7 +478,7 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 	}, nil
 }
 
-func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) error {
+func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 	s.createBlocksMutex.Lock()
@@ -484,30 +488,30 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 
 	pos, err := s.GetMessageCount()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	lastBlockHeader := s.bc.CurrentBlock().Header()
 	if lastBlockHeader == nil {
-		return errors.New("current block header not found")
+		return nil, errors.New("current block header not found")
 	}
 	expectedBlockNum, err := s.MessageCountToBlockNumber(pos)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if lastBlockHeader.Number.Int64() != expectedBlockNum {
-		return fmt.Errorf("%w: block production not caught up: last block number %v but expected %v", ErrRetrySequencer, lastBlockHeader.Number, expectedBlockNum)
+		return nil, fmt.Errorf("%w: block production not caught up: last block number %v but expected %v", ErrRetrySequencer, lastBlockHeader.Number, expectedBlockNum)
 	}
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var delayedMessagesRead uint64
 	if pos > 0 {
 		lastMsg, err := s.GetMessage(pos - 1)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		delayedMessagesRead = lastMsg.DelayedMessagesRead
 	}
@@ -524,11 +528,14 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		hooks,
 	)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if len(hooks.TxErrors) != len(txes) {
+		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
 
 	if len(receipts) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	allTxsErrored := true
@@ -539,12 +546,12 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		}
 	}
 	if allTxsErrored {
-		return nil
+		return nil, nil
 	}
 
 	msg, err := messageFromTxes(header, txes, hooks.TxErrors)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	msgWithMeta := arbstate.MessageWithMetadata{
@@ -554,17 +561,17 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 
 	if s.coordinator != nil {
 		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	if err := s.writeMessages(pos, []arbstate.MessageWithMetadata{msgWithMeta}, nil); err != nil {
-		return err
+		return nil, err
 	}
 
 	if s.broadcastServer != nil {
 		if err := s.broadcastServer.BroadcastSingle(msgWithMeta, pos); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -576,17 +583,17 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	}
 	status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, time.Since(startTime))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if status == core.SideStatTy {
-		return errors.New("geth rejected block as non-canonical")
+		return nil, errors.New("geth rejected block as non-canonical")
 	}
 
 	if s.validator != nil {
 		s.validator.NewBlock(block, lastBlockHeader, msgWithMeta)
 	}
 
-	return nil
+	return block, nil
 }
 
 func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
@@ -701,11 +708,8 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 			return err
 		}
 	}
-	newCount, err := rlp.EncodeToBytes(uint64(pos) + uint64(len(messages)))
-	if err != nil {
-		return err
-	}
-	err = batch.Put(messageCountKey, newCount)
+
+	err := setMessageCount(batch, pos+arbutil.MessageIndex(len(messages)))
 	if err != nil {
 		return err
 	}
@@ -817,6 +821,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			s.validator.NewBlock(block, lastBlockHeader, *msg)
 		}
 
+		sharedmetrics.UpdateSequenceNumberInBlockGauge(pos)
 		s.latestBlockAndMessageMutex.Lock()
 		s.latestBlock = block
 		s.latestMessage = msg.Message
@@ -839,6 +844,9 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) {
 			err := s.createBlocks(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				log.Error("error creating blocks", "err", err.Error())
+				if errors.Is(err, arbosState.ErrFatalNodeOutOfDate) {
+					s.fatalErrChan <- err
+				}
 			}
 			timer := time.NewTimer(10 * time.Second)
 			select {

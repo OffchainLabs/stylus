@@ -6,19 +6,18 @@ package broadcaster
 import (
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/metrics"
 	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 var (
-	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequence-number/confirmed", nil)
-	latestSequenceNumberGauge    = metrics.NewRegisteredGauge("arb/feed/sequence-number/latest", nil)
+	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
 )
 
 type SequenceNumberCatchupBuffer struct {
@@ -36,12 +35,14 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	}
 	var startingIndex int32
 	// Ignore messages older than requested sequence number
-	if b.messages[0].SequenceNumber < requestedSeqNum {
-		startingIndex = int32(requestedSeqNum - b.messages[0].SequenceNumber)
-		if startingIndex >= b.messageCount {
+	firstCachedSeqNum := b.messages[0].SequenceNumber
+	if firstCachedSeqNum < requestedSeqNum {
+		lastCachedSeqNum := firstCachedSeqNum + arbutil.MessageIndex(len(b.messages))
+		if lastCachedSeqNum < requestedSeqNum {
 			// Past end, nothing to return
 			return nil
 		}
+		startingIndex = int32(requestedSeqNum - firstCachedSeqNum)
 		if b.messages[startingIndex].SequenceNumber != requestedSeqNum {
 			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "seqNumZero", b.messages[0].SequenceNumber, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
 			return nil
@@ -68,7 +69,7 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 		// send the newly connected client the requested messages
 		err := clientConnection.Write(bm)
 		if err != nil {
-			log.Error("error sending client cached messages", err, "client", clientConnection.Name, "elapsed", time.Since(start))
+			log.Error("error sending client cached messages", "error", err, "client", clientConnection.Name, "elapsed", time.Since(start))
 			return err
 		}
 	}
@@ -131,11 +132,9 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 		if len(b.messages) == 0 {
 			// Add to empty list
 			b.messages = append(b.messages, newMsg)
-			latestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
 		} else if expectedSequenceNumber := b.messages[len(b.messages)-1].SequenceNumber + 1; newMsg.SequenceNumber == expectedSequenceNumber {
 			// Next sequence number to add to end of list
 			b.messages = append(b.messages, newMsg)
-			latestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
 		} else if newMsg.SequenceNumber > expectedSequenceNumber {
 			log.Warn(
 				"Message requested to be broadcast has unexpected sequence number; discarding to seqNum from catchup buffer",
@@ -144,7 +143,6 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 			)
 			b.messages = nil
 			b.messages = append(b.messages, newMsg)
-			latestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
 		} else {
 			log.Info("Skipping already seen message", "seqNum", newMsg.SequenceNumber)
 		}
