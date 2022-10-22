@@ -652,3 +652,14 @@ func deploySimple(
 	Require(t, err)
 	return addr, simple
 }
+
+func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
+	t.Helper()
+	for i := 0; i < max; i++ {
+		if lambda() {
+			return
+		}
+		time.Sleep(delay)
+	}
+	Fail(t, "failed to complete")
+}

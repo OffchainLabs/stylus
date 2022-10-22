@@ -8,7 +8,7 @@ use crate::{
     ExecOutcome, ExecPolyglot,
 };
 
-use brotli2::read::{BrotliEncoder, BrotliDecoder};
+use brotli2::read::{BrotliDecoder, BrotliEncoder};
 use eyre::{bail, Result};
 use prover::{
     machine::MachineStatus,
@@ -20,7 +20,10 @@ use prover::{
     Machine, Value,
 };
 use sha3::{Digest, Keccak256};
-use std::{time::{Duration, Instant}, io::Read};
+use std::{
+    io::Read,
+    time::{Duration, Instant},
+};
 use wasmparser::Operator;
 
 fn expensive_add(op: &Operator) -> u64 {
@@ -165,7 +168,7 @@ pub fn test_sha3() -> Result<()> {
     let hash = hasher.finalize().to_vec();
     println!("native:    {}", format_time(time.elapsed()));
 
-    let time = Instant::now();    
+    let time = Instant::now();
     let env = WasmEnvArc::new(preimage.as_bytes(), 1000);
     let (module, store) = machine::instrument(&wasm, &config)?;
     let compressed_wasm = compress(&wasm, 0);
@@ -194,7 +197,11 @@ pub fn test_sha3() -> Result<()> {
     println!("Mach main: {}", format_time(time.elapsed()));
 
     println!("Size {}KB {}KB", wasm.len() / 1024, module.len() / 1024);
-    println!("Size {}KB {}KB", compressed_wasm.len() / 1024, compressed_module.len() / 1024);
+    println!(
+        "Size {}KB {}KB",
+        compressed_wasm.len() / 1024,
+        compressed_module.len() / 1024
+    );
 
     assert_eq!(instance.gas_left(), machine.gas_left());
     Ok(())

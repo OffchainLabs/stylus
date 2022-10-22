@@ -21,3 +21,6 @@ brotli2 = "0.3.2"
 sha3 = "0.9.1"
 hex = "0.4.3"
 rand = "0.7"
+
+[lib]
+crate-type = ["staticlib", "lib"]

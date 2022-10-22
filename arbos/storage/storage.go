@@ -147,6 +147,10 @@ func (store *Storage) Set(key common.Hash, value common.Hash) error {
 	return nil
 }
 
+func (store *Storage) SetUint64(key common.Hash, value uint64) error {
+	return store.Set(key, util.UintToHash(value))
+}
+
 func (store *Storage) SetByUint64(key uint64, value common.Hash) error {
 	return store.Set(util.UintToHash(key), value)
 }
