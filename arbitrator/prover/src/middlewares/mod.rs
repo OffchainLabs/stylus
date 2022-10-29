@@ -7,21 +7,27 @@ use crate::{
 };
 use loupe::MemoryUsage;
 use std::{
-    convert::{TryFrom, TryInto},
-    fmt::Debug,
+    convert::TryInto,
+    fmt::{Debug, Display},
     marker::{PhantomData, Send, Sync},
 };
-use wasmer::{
-    wasmparser::{Operator, Type},
-    Function, Instance, MiddlewareError, ModuleMiddleware,
-};
+use thiserror::Error;
 use wasmer_types::{
     Bytes, ExportIndex, FunctionIndex, GlobalIndex, GlobalInit, GlobalType, LocalFunctionIndex,
-    ModuleInfo, Mutability, Pages, SignatureIndex, Type as WpType, Value as WtValue,
+    ModuleInfo, Mutability, Pages, SignatureIndex, Type as WpType,
+};
+use wasmparser::{Operator, Type};
+
+#[cfg(feature = "native")]
+use {
+    std::convert::TryFrom,
+    wasmer::{Function, Instance, MiddlewareError, MiddlewareReaderState, ModuleMiddleware},
+    wasmer_types::Value as WtValue,
 };
 
 pub mod config;
 pub mod depth;
+pub mod execute;
 pub mod memory;
 pub mod meter;
 pub mod start;
@@ -31,7 +37,7 @@ pub use config::PolyglotConfig;
 pub trait ModuleMod: Clone + Debug + Send + Sync {
     fn move_start_function(&mut self, name: &str);
     fn table_bytes(&self) -> Bytes;
-    fn limit_memory(&mut self, limit: Pages) -> Result<(), MiddlewareError>;
+    fn limit_memory(&mut self, limit: Pages) -> Result<(), TransformError>;
     fn add_global(&mut self, name: &str, ty: WpType, init: GlobalInit) -> GlobalIndex;
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType, String>;
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType, String>;
@@ -41,8 +47,8 @@ pub trait ModuleMod: Clone + Debug + Send + Sync {
 pub trait Middleware<'a, M: ModuleMod> {
     type FM: FunctionMiddleware<'a> + Debug + 'a;
 
-    fn update_module(&self, module: &mut M) -> Result<(), MiddlewareError>; // not mutable due to wasmer
-    fn instrument(&self, func_index: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError>;
+    fn update_module(&self, module: &mut M) -> Result<(), TransformError>; // not mutable due to wasmer
+    fn instrument(&self, func_index: LocalFunctionIndex) -> Result<Self::FM, TransformError>;
 }
 
 pub trait FunctionMiddleware<'a> {
@@ -89,7 +95,7 @@ impl ModuleMod for ModuleInfo {
         Bytes(total as usize)
     }
 
-    fn limit_memory(&mut self, limit: Pages) -> Result<(), MiddlewareError> {
+    fn limit_memory(&mut self, limit: Pages) -> Result<(), TransformError> {
         for (_, memory) in &mut self.memories {
             let limit = memory.maximum.unwrap_or(limit);
             let pages = limit.min(limit);
@@ -99,7 +105,7 @@ impl ModuleMod for ModuleInfo {
                 let Pages(minimum) = memory.minimum;
                 let Pages(limit) = limit;
                 let message = format!("module memory minimum {minimum} exceeds {limit} limit");
-                return Err(MiddlewareError::new("Memory Limiter", message));
+                return Err(TransformError::new("Memory Limiter", message));
             }
         }
         Ok(())
@@ -155,7 +161,7 @@ impl<'a> ModuleMod for WasmBinary<'a> {
         Bytes(total as usize)
     }
 
-    fn limit_memory(&mut self, limit: Pages) -> Result<(), MiddlewareError> {
+    fn limit_memory(&mut self, limit: Pages) -> Result<(), TransformError> {
         for memory in &mut self.memories {
             let Pages(limit) = limit;
             let limit = memory.maximum.unwrap_or(limit.into());
@@ -165,7 +171,7 @@ impl<'a> ModuleMod for WasmBinary<'a> {
             let minimum = memory.initial;
             if minimum > limit {
                 let message = format!("module memory minimum {minimum} exceeds {limit} limit");
-                return Err(MiddlewareError::new("Memory Limiter", message));
+                return Err(TransformError::new("Memory Limiter", message));
             }
         }
         Ok(())
@@ -231,12 +237,13 @@ where
     }
 }
 
+#[cfg(feature = "native")]
 impl<T> ModuleMiddleware for WasmerMiddlewareWrapper<T, ModuleInfo>
 where
     T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<'a, ModuleInfo>,
 {
     fn transform_module_info(&self, module: &mut ModuleInfo) -> Result<(), MiddlewareError> {
-        self.0.update_module(module)
+        self.0.update_module(module).map_err(|err| err.into())
     }
 
     fn generate_function_middleware<'a>(
@@ -250,11 +257,13 @@ where
     }
 }
 
+#[cfg(feature = "native")]
 #[derive(Debug)]
 pub struct WasmerFunctionMiddlewareWrapper<'a, T: 'a>(T, PhantomData<&'a T>)
 where
     T: Debug + FunctionMiddleware<'a>;
 
+#[cfg(feature = "native")]
 impl<'a, T> wasmer::FunctionMiddleware<'a> for WasmerFunctionMiddlewareWrapper<'a, T>
 where
     T: Debug + FunctionMiddleware<'a>,
@@ -266,14 +275,15 @@ where
     fn feed(
         &mut self,
         op: Operator<'a>,
-        out: &mut wasmer::MiddlewareReaderState<'a>,
-    ) -> Result<(), wasmer::MiddlewareError> {
+        out: &mut MiddlewareReaderState<'a>,
+    ) -> Result<(), MiddlewareError> {
         self.0
             .feed(op, out)
             .map_err(|err| MiddlewareError::new("Middleware", err))
     }
 }
 
+#[cfg(feature = "native")]
 pub trait GlobalMod {
     fn get_global<T>(&self, name: &str) -> T
     where
@@ -285,6 +295,7 @@ pub trait GlobalMod {
         T: Into<WtValue<Function>>;
 }
 
+#[cfg(feature = "native")]
 impl GlobalMod for Instance {
     fn get_global<T>(&self, name: &str) -> T
     where
@@ -303,6 +314,37 @@ impl GlobalMod for Instance {
         let error = format!("global {name} does not exist");
         let global = self.exports.get_global(name).expect(&error);
         global.set(value.into()).expect("failed to write global");
+    }
+}
+
+#[derive(Debug, Error)]
+pub struct TransformError {
+    name: String,
+    message: String,
+}
+
+impl TransformError {
+    fn new<A: Into<String>, B: Into<String>>(name: A, message: B) -> Self {
+        Self {
+            name: name.into(),
+            message: message.into(),
+        }
+    }
+}
+
+impl Display for TransformError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.name, self.message)
+    }
+}
+
+#[cfg(feature = "native")]
+impl From<TransformError> for MiddlewareError {
+    fn from(error: TransformError) -> Self {
+        Self {
+            name: error.name,
+            message: error.message,
+        }
     }
 }
 

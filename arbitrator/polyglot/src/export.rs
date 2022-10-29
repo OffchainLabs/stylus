@@ -46,8 +46,7 @@ pub unsafe extern "C" fn polyglot_call(
     output: *mut *const u8,
     output_len: *mut usize,
     output_cap: *mut usize,
-    gas: u64,
-    gas_burnt: *mut u64,
+    gas: *mut u64,
     gas_price: u64,
 ) -> usize {
     let module = std::slice::from_raw_parts(module, module_len);
@@ -79,14 +78,13 @@ pub unsafe extern "C" fn polyglot_call(
         Ok(instance) => instance,
         Err(error) => error!(error),
     };
-    instance.set_gas(gas);
+    instance.set_gas(*gas);
 
     let outcome = match instance.run_main(env.clone()) {
         Ok(outcome) => outcome,
         Err(error) => error!(error),
     };
-    let gas_left: u64 = instance.gas_left().into();
-    *gas_burnt = gas - gas_left;
+    *gas = instance.gas_left().into();
 
     match outcome {
         ExecOutcome::Success(output) => finish!(output, POLYGLOT_SUCCESS),

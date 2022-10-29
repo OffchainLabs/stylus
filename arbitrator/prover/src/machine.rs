@@ -26,7 +26,6 @@ use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
@@ -41,10 +40,11 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use wasmer::wasmparser::{
-    DataKind, ElementItem, ElementKind, ImportSectionEntryType, Operator, TableType,
-};
 use wasmer_types::{FunctionIndex, LocalFunctionIndex};
+use wasmparser::{DataKind, ElementItem, ElementKind, ImportSectionEntryType, Operator, TableType};
+
+#[cfg(feature = "native")]
+use rayon::prelude::*;
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -132,9 +132,17 @@ impl Function {
             u32::try_from(code.len()).is_ok(),
             "Function instruction count doesn't fit in a u32",
         );
+
+        #[cfg(feature = "native")]
         let code_merkle = Merkle::new(
             MerkleType::Instruction,
             code.par_iter().map(|i| i.hash()).collect(),
+        );
+
+        #[cfg(not(feature = "native"))]
+        let code_merkle = Merkle::new(
+            MerkleType::Instruction,
+            code.iter().map(|i| i.hash()).collect(),
         );
 
         Function {
@@ -1294,6 +1302,7 @@ impl Machine {
         Ok(mach)
     }
 
+    #[cfg(feature = "native")]
     pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
         let f = BufReader::new(File::open(wavm_binary)?);
         let decompressor = brotli2::read::BrotliDecoder::new(f);
@@ -1342,6 +1351,7 @@ impl Machine {
         Ok(mach)
     }
 
+    #[cfg(feature = "native")]
     pub fn serialize_binary<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         ensure!(
             self.hash() == self.initial_hash,

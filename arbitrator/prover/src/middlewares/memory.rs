@@ -1,11 +1,10 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{DefaultFunctionMiddleware, Middleware, ModuleMod};
+use super::{DefaultFunctionMiddleware, Middleware, ModuleMod, TransformError};
 
 use eyre::Result;
 use loupe::MemoryUsage;
-use wasmer::MiddlewareError;
 use wasmer_types::{Bytes, LocalFunctionIndex, Pages};
 
 use std::{convert::TryFrom, mem};
@@ -32,11 +31,11 @@ impl MemoryChecker {
 impl<'a, M: ModuleMod> Middleware<'a, M> for MemoryChecker {
     type FM = DefaultFunctionMiddleware;
 
-    fn update_module(&self, module: &mut M) -> Result<(), MiddlewareError> {
+    fn update_module(&self, module: &mut M) -> Result<(), TransformError> {
         let Bytes(table_bytes) = module.table_bytes();
         let Bytes(limit) = self.limit;
         if table_bytes > limit {
-            return Err(MiddlewareError::new(
+            return Err(TransformError::new(
                 "Memory Checker",
                 "tables exceed memory limit",
             ));
@@ -46,7 +45,7 @@ impl<'a, M: ModuleMod> Middleware<'a, M> for MemoryChecker {
         module.limit_memory(limit)
     }
 
-    fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError> {
+    fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, TransformError> {
         Ok(DefaultFunctionMiddleware)
     }
 }

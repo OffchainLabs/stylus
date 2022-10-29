@@ -12,7 +12,7 @@ use fnv::FnvHashMap as HashMap;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
-use wasmer::wasmparser::{Operator, Type, TypeOrFuncType};
+use wasmparser::{Operator, Type, TypeOrFuncType};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IRelOpType {

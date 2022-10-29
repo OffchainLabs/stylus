@@ -10,8 +10,8 @@ use std::{
     convert::{TryFrom, TryInto},
     fmt::Display,
 };
-use wasmer::wasmparser::{FuncType, Type as WpType};
 use wasmer_types::Type;
+use wasmparser::{FuncType, Type as WpType};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]

@@ -3,9 +3,18 @@
 
 package arbutil
 
+import "unsafe"
+
 func SliceToPointer[T any](slice []T) *T {
 	if len(slice) == 0 {
 		return nil
 	}
 	return &slice[0]
+}
+
+func PointerToSlice[T any](pointer *T, length int) []T {
+	output := make([]T, length)
+	source := unsafe.Slice(pointer, length)
+	copy(output, source)
+	return output
 }

@@ -5,12 +5,15 @@ package programs
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
 )
+
+const MaxWASMSize = 64 * 1024
 
 type Programs struct {
 	backingStorage  *storage.Storage
@@ -29,27 +32,24 @@ func Open(sto *storage.Storage) *Programs {
 	return &Programs{sto, machineInfo, &wasmGasPrice}
 }
 
-func (p Programs) AddProgram(statedb vm.StateDB, wasm []byte) common.Hash {
-	hash := crypto.Keccak256Hash(wasm)
-	polyAddProgram(statedb, hash, wasm)
-	return hash
-}
-
-func (p Programs) CompileProgram(statedb vm.StateDB, wasm_hash common.Hash) error {
-	err := polyCompile(statedb, wasm_hash)
+func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) error {
+	wasm, err := getWasm(statedb, program)
 	if err != nil {
 		return err
 	}
-	return p.machineVersions.SetUint64(wasm_hash, 1)
+	if err := polyCompile(statedb, program, wasm); err != nil {
+		return err
+	}
+	return p.machineVersions.SetUint64(program.Hash(), 1)
 }
 
 func (p Programs) CallProgram(
 	statedb vm.StateDB,
-	wasm_hash common.Hash,
+	program common.Address,
 	calldata []byte,
-	gas uint64,
+	gas func() uint64,
 ) (uint64, uint64, []byte, error) {
-	version, err := p.machineVersions.GetUint64(wasm_hash)
+	version, err := p.machineVersions.GetUint64(program.Hash())
 	if err != nil {
 		return 0, 0, nil, err
 	}
@@ -60,6 +60,14 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	burnt, status, output := polyExecute(statedb, wasm_hash, calldata, gas, gasPrice)
-	return burnt, status, output, nil
+	gasLeft, status, output := polyCall(statedb, program, calldata, gas(), gasPrice)
+	return gasLeft, status, output, nil
+}
+
+func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
+	wasm := statedb.GetCode(program)
+	if wasm == nil {
+		return nil, fmt.Errorf("missing wasm at address %v", program)
+	}
+	return arbcompress.Decompress(wasm, MaxWASMSize)
 }

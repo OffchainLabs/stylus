@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -47,6 +48,8 @@ func TestKeccakProgram(t *testing.T) {
 	file := "../arbitrator/polyglot/programs/sha3/target/wasm32-unknown-unknown/release/sha3.wasm"
 	wasm, err := os.ReadFile(file)
 	Require(t, err)
+	wasm, err = arbcompress.CompressWell(wasm)
+	Require(t, err)
 
 	colors.PrintMint("WASM len ", len(wasm))
 
@@ -58,27 +61,23 @@ func TestKeccakProgram(t *testing.T) {
 		return receipt
 	}
 
-	hash := crypto.Keccak256Hash(wasm)
-	receipt := ensure(arbWASM.AddProgram(&auth, wasm))
-	wasm_hash := receipt.Logs[0].Topics[1]
-	if wasm_hash != hash {
-		Fail(t, "unexpected handle", wasm_hash)
-	}
+	programAddress := deployContract(t, ctx, auth, l2client, wasm)
+	colors.PrintBlue("program deployed to ", programAddress.Hex())
 
-	ensure(arbWASM.CompileProgram(&auth, wasm_hash))
+	ensure(arbWASM.CompileProgram(&auth, programAddress))
 
 	preimage := []byte("°º¤ø,¸¸,ø¤º°`°º¤ø,¸,ø¤°º¤ø,¸¸,ø¤º°`°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
 	correct := crypto.Keccak256Hash(preimage)
 
 	now := time.Now()
-	result, err := arbWASM.CallProgram(&bind.CallOpts{}, wasm_hash, preimage)
+	result, err := arbWASM.CallProgram(&bind.CallOpts{}, programAddress, preimage)
 	Require(t, err)
 
 	if result.Status != 0 || len(result.Result) != 32 {
 		Fail(t, "unexpected return result: Status", result.Status, "Result:", result.Result)
 	}
 
-	hash = common.BytesToHash(result.Result)
+	hash := common.BytesToHash(result.Result)
 	if hash != correct {
 		Fail(t, "computed hash mismatch", hash, correct)
 	}
@@ -89,7 +88,7 @@ func TestKeccakProgram(t *testing.T) {
 	// do a mutating call for proving's sake
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
-	ensure(mock.CallKeccak(&auth, wasm_hash, preimage))
+	ensure(mock.CallKeccak(&auth, programAddress, preimage))
 
 	doUntil(t, 10*time.Millisecond, 10, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()

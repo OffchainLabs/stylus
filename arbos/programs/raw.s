@@ -6,10 +6,14 @@
 
 #include "textflag.h"
 
-TEXT ·polyCompile(SB), NOSPLIT, $0
+TEXT ·polyglotCheck(SB), NOSPLIT, $0
   CallImport
   RET
 
-TEXT ·polyExecute(SB), NOSPLIT, $0
+TEXT ·polyglotCall(SB), NOSPLIT, $0
+  CallImport
+  RET
+
+TEXT ·polyglotFree(SB), NOSPLIT, $0
   CallImport
   RET

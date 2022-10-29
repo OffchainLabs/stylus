@@ -9,13 +9,13 @@ extern "C" {
 
 static mut GAS_PRICE: u64 = 1000;
 
-pub (crate) unsafe fn buy_evm_gas(evm_gas: u64) {
+pub(crate) unsafe fn buy_evm_gas(evm_gas: u64) {
     if poly_wavm_gas_status() != 0 {
         panic!("out of gas");
     }
     let mut gas_left = poly_wavm_gas_left();
     let gas_price = GAS_PRICE;
-    
+
     let mut evm_gas_left = gas_left.saturating_mul(1000) / gas_price;
     if evm_gas > evm_gas_left {
         poly_wavm_set_gas(gas_left, 1);

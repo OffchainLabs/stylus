@@ -3,17 +3,19 @@
 
 use crate::{Machine, Value};
 
-use super::{FunctionMiddleware, GlobalMod, Middleware, ModuleMod};
+use super::{FunctionMiddleware, Middleware, ModuleMod, TransformError};
 
 use loupe::{MemoryUsage, MemoryUsageTracker};
 use parking_lot::Mutex;
-use wasmer::{
-    wasmparser::{Operator, Type as WpType, TypeOrFuncType},
-    GlobalInit, Instance, LocalFunctionIndex, MiddlewareError, Type,
+use wasmer_types::{
+    FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type,
 };
-use wasmer_types::{FunctionIndex, GlobalIndex, SignatureIndex};
+use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 
 use std::{mem, sync::Arc};
+
+#[cfg(feature = "native")]
+use {super::GlobalMod, wasmer::Instance};
 
 /// This middleware ensures stack overflows are deterministic across different compilers and targets.
 /// The internal notion of "stack space left" that makes this possible is strictly smaller than that of
@@ -51,7 +53,7 @@ impl<M: ModuleMod + MemoryUsage> MemoryUsage for DepthChecker<M> {
 impl<'a, M: ModuleMod + 'a> Middleware<'a, M> for DepthChecker<M> {
     type FM = FunctionDepthChecker<'a, M>;
 
-    fn update_module(&self, module: &mut M) -> Result<(), MiddlewareError> {
+    fn update_module(&self, module: &mut M) -> Result<(), TransformError> {
         let limit = GlobalInit::I32Const(self.limit as i32);
         let space = module.add_global("polyglot_stack_space_left", Type::I32, limit);
 
@@ -63,7 +65,7 @@ impl<'a, M: ModuleMod + 'a> Middleware<'a, M> for DepthChecker<M> {
         Ok(())
     }
 
-    fn instrument(&self, func: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError> {
+    fn instrument(&self, func: LocalFunctionIndex) -> Result<Self::FM, TransformError> {
         let global = self.global.lock().expect("no global");
         let module = self.module.lock().clone().expect("no module");
         Ok(FunctionDepthChecker::new(global, self.limit, func, module))
@@ -454,6 +456,7 @@ pub trait DepthCheckedMachine {
     fn set_stack_limit(&mut self, new_limit: u32);
 }
 
+#[cfg(feature = "native")]
 impl DepthCheckedMachine for Instance {
     fn stack_space_left(&self) -> u32 {
         self.get_global("polyglot_stack_space_left")

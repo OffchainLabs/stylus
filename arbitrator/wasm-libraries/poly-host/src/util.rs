@@ -1,4 +1,3 @@
-
 extern "C" {
     fn wavm_caller_load8(ptr: usize) -> u8;
     fn wavm_caller_load32(ptr: usize) -> u32;
@@ -6,7 +5,7 @@ extern "C" {
     fn wavm_caller_store32(ptr: usize, val: u32);
 }
 
-pub (crate) unsafe fn write_slice(mut src: &[u8], mut ptr: usize) {
+pub(crate) unsafe fn write_slice(mut src: &[u8], mut ptr: usize) {
     while src.len() >= 4 {
         let mut arr = [0u8; 4];
         arr.copy_from_slice(&src[..4]);
@@ -20,7 +19,7 @@ pub (crate) unsafe fn write_slice(mut src: &[u8], mut ptr: usize) {
     }
 }
 
-pub (crate) unsafe fn read_slice(mut ptr: usize, mut len: usize) -> Vec<u8> {
+pub(crate) unsafe fn read_slice(mut ptr: usize, mut len: usize) -> Vec<u8> {
     let mut data = Vec::with_capacity(len as usize);
     if len == 0 {
         return data;

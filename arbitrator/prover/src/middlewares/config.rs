@@ -1,15 +1,20 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/
 
-use super::{
-    depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover,
-    WasmerMiddlewareWrapper,
-};
-use eyre::Result;
-use std::sync::Arc;
-use wasmer::{wasmparser::Operator, CompilerConfig, Store, Universal};
-use wasmer_compiler_singlepass::Singlepass;
 use wasmer_types::Bytes;
+use wasmparser::Operator;
+
+#[cfg(feature = "native")]
+use {
+    super::{
+        depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover,
+        WasmerMiddlewareWrapper,
+    },
+    eyre::Result,
+    std::sync::Arc,
+    wasmer::{CompilerConfig, Store, Universal},
+    wasmer_compiler_singlepass::Singlepass,
+};
 
 pub struct PolyglotConfig {
     pub costs: fn(&Operator) -> u64,
@@ -30,6 +35,7 @@ impl Default for PolyglotConfig {
     }
 }
 
+#[cfg(feature = "native")]
 impl PolyglotConfig {
     pub fn store(&self) -> Result<Store> {
         let mut compiler = Singlepass::new();

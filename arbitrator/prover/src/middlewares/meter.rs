@@ -3,17 +3,19 @@
 
 use crate::{Machine, Value};
 
-use super::{FunctionMiddleware, GlobalMod, Middleware, ModuleMod};
+use super::{FunctionMiddleware, Middleware, ModuleMod, TransformError};
 
 use loupe::{MemoryUsage, MemoryUsageTracker};
 use parking_lot::Mutex;
-use wasmer::wasmparser::{Operator, Type as WpType, TypeOrFuncType};
-use wasmer::{Instance, MiddlewareError};
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
+use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 
 use std::convert::TryInto;
 use std::fmt::Display;
 use std::{fmt::Debug, mem, sync::Arc};
+
+#[cfg(feature = "native")]
+use {super::GlobalMod, wasmer::Instance};
 
 pub struct Meter<F: Fn(&Operator) -> u64 + Send + Sync> {
     pub gas_global: Mutex<Option<GlobalIndex>>,
@@ -57,7 +59,7 @@ where
 {
     type FM = FunctionMeter<'a, F>;
 
-    fn update_module(&self, module: &mut M) -> Result<(), MiddlewareError> {
+    fn update_module(&self, module: &mut M) -> Result<(), TransformError> {
         let start_gas = GlobalInit::I64Const(self.start_gas as i64);
         let gas = module.add_global("polyglot_gas_left", Type::I64, start_gas);
         let status = module.add_global("polyglot_gas_status", Type::I32, GlobalInit::I32Const(0));
@@ -66,7 +68,7 @@ where
         Ok(())
     }
 
-    fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, MiddlewareError> {
+    fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, TransformError> {
         let gas = self.gas_global.lock().expect("no global");
         let status = self.status_global.lock().expect("no global");
         Ok(FunctionMeter::new(gas, status, self.costs.clone()))
@@ -226,6 +228,7 @@ impl MeteredMachine for Machine {
     }
 }
 
+#[cfg(feature = "native")]
 impl MeteredMachine for Instance {
     fn gas_left(&self) -> MachineMeter {
         let gas = self.get_global("polyglot_gas_left");

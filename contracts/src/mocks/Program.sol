@@ -9,8 +9,8 @@ import "../precompiles/ArbWASM.sol";
 contract ProgramTest {
     event Hash(uint64 status, bytes32 result);
 
-    function callKeccak(bytes32 wasm_hash, bytes calldata data) external {
-        (uint64 status, bytes memory result) = ArbWASM(address(0xa0)).callProgram(wasm_hash, data);
+    function callKeccak(address program, bytes calldata data) external {
+        (uint64 status, bytes memory result) = ArbWASM(address(0xa0)).callProgram(program, data);
         bytes32 hash = bytes32(result);
         emit Hash(status, hash);
         require(hash == keccak256(data));

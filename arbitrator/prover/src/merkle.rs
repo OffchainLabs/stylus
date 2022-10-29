@@ -4,9 +4,11 @@
 use crate::utils::Bytes32;
 use digest::Digest;
 use fnv::FnvHashMap as HashMap;
-use rayon::prelude::*;
 use sha3::Keccak256;
 use std::convert::TryFrom;
+
+#[cfg(feature = "native")]
+use rayon::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MerkleType {
@@ -85,10 +87,14 @@ impl Merkle {
         let mut empty_layers = vec![empty_hash];
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
             let empty_layer = *empty_layers.last().unwrap();
-            let new_layer = layers
-                .last()
-                .unwrap()
-                .par_chunks(2)
+
+            #[cfg(feature = "native")]
+            let new_layer = layers.last().unwrap().par_chunks(2);
+
+            #[cfg(not(feature = "native"))]
+            let new_layer = layers.last().unwrap().chunks(2);
+
+            let new_layer = new_layer
                 .map(|window| {
                     let a = window[0];
                     let b = window.get(1).cloned().unwrap_or(empty_layer);

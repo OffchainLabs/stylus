@@ -6,17 +6,45 @@
 
 package programs
 
-func polyAddProgram(statedb vm.StateDB, hash common.Hash, wasm []byte) {
-	// do nothing
+import (
+	"errors"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
+)
+
+func polyglotCheck(wasm []byte) (status uint64, output *byte, outlen, outcap uint64)
+func polyglotCall(wasm, calldata []byte, gas_price uint64, output *byte, outlen, outcap, gas *uint64) (status uint64)
+func polyglotFree(output *byte, outlen, outcap uint64)
+
+func polyCompile(statedb vm.StateDB, program common.Address, wasm []byte) error {
+
+	status, outptr, outlen, outcap := polyglotCheck(wasm)
+	defer polyglotFree(outptr, outlen, outcap)
+
+	output := arbutil.PointerToSlice(outptr, int(outlen))
+	if status != 0 {
+		return errors.New(string(output))
+	}
+	return nil
 }
 
-func polyCompile(statedb vm.StateDB, wasm_hash common.Hash) error {
-	// use the preimage oracle
-}
+func polyCall(
+	statedb vm.StateDB, program common.Address, calldata []byte, gas uint64, gas_price uint64,
+) (uint64, uint64, []byte) {
+	wasm, err := getWasm(statedb, program)
+	if err != nil {
+		log.Crit("failed to get wasm", "program", program, "err", err)
+	}
 
-func polyExecute(statedb vm.StateDB, wasm_hash common.Hash, calldata []byte, gas uint64) (uint64, uint64, []byte, error) {
+	var outptr *byte
+	var outlen, outcap *uint64
 
-	// get the program
+	status := polyglotCall(wasm, calldata, gas_price, outptr, outlen, outcap, &gas)
+	defer polyglotFree(outptr, *outlen, *outcap)
 
-	return 0, 0, nil, nil
+	output := arbutil.PointerToSlice(outptr, int(*outlen))
+	return gas, status, output
 }
