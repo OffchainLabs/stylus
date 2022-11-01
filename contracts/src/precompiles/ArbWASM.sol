@@ -21,5 +21,5 @@ interface ArbWASM {
     function callProgram(address program, bytes calldata data)
         external
         view
-        returns (uint64 status, bytes memory result);
+        returns (uint32 status, bytes memory result);
 }

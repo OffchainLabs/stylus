@@ -3,7 +3,7 @@
 
 use crate::{
     machine::{Function, InboxIdentifier},
-    middlewares::PolyHostData,
+    programs::PolyHostData,
     value::{ArbValueType, FunctionType},
     wavm::{Instruction, Opcode},
 };

@@ -27,12 +27,13 @@ use {
 
 pub mod config;
 pub mod depth;
-pub mod execute;
+pub mod exec;
 pub mod memory;
 pub mod meter;
 pub mod start;
 
 pub use config::PolyglotConfig;
+pub use exec::{ExecOutcome, ExecProgram};
 
 pub trait ModuleMod: Clone + Debug + Send + Sync {
     fn move_start_function(&mut self, name: &str);

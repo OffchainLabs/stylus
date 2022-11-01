@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{machine, machine::WasmEnvArc, ExecOutcome, ExecPolyglot};
-use prover::middlewares::{meter::MeteredMachine, PolyglotConfig};
+use prover::programs::{meter::MeteredMachine, PolyglotConfig};
 
 const POLYGLOT_SUCCESS: usize = 0;
 const POLYGLOT_FAILURE: usize = 1;

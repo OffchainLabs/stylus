@@ -10,5 +10,6 @@ crate-type = ["cdylib"]
 [dependencies]
 prover = { path = "../../prover/", default-features = false }
 go-abi = { path = "../go-abi" }
+arbutil = { path = "../../arbutil/" }
 hashbrown = "0.12.3"
 hex = "0.4.3"

@@ -48,7 +48,7 @@ func (p Programs) CallProgram(
 	program common.Address,
 	calldata []byte,
 	gas func() uint64,
-) (uint64, uint64, []byte, error) {
+) (uint64, uint32, []byte, error) {
 	version, err := p.machineVersions.GetUint64(program.Hash())
 	if err != nil {
 		return 0, 0, nil, err

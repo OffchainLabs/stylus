@@ -63,7 +63,7 @@ fn test_gas_arbitrator() -> Result<()> {
     let mut config = PolyglotConfig::default();
     config.costs = expensive_add;
 
-    let mut machine = Machine::from_polyglot_binary(&wasm, &config)?;
+    let mut machine = Machine::from_polyglot_binary(&wasm, false, &config)?;
     assert_eq!(machine.get_status(), MachineStatus::Running);
     assert_eq!(machine.gas_left(), MachineMeter::Ready(0));
 
@@ -130,7 +130,7 @@ fn test_depth_arbitrator() -> Result<()> {
     config.start_gas = 1024;
     config.max_depth = 32;
 
-    let mut machine = Machine::from_polyglot_binary(&wasm, &config)?;
+    let mut machine = Machine::from_polyglot_binary(&wasm, false, &config)?;
     let status = machine
         .call_function("user", "recurse", &vec![])?
         .unwrap_err();
@@ -186,7 +186,7 @@ pub fn test_sha3() -> Result<()> {
     println!("Poly main: {}", format_time(time.elapsed()));
 
     let time = Instant::now();
-    let mut machine = Machine::from_polyglot_binary(&wasm, &config)?;
+    let mut machine = Machine::from_polyglot_binary(&wasm, false, &config)?;
     println!("Mach load: {}", format_time(time.elapsed()));
 
     let time = Instant::now();

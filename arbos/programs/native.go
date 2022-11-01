@@ -28,6 +28,9 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
+type u32 = uint32
+type u64 = uint64
+
 func polyCompile(statedb vm.StateDB, program common.Address, wasm []byte) error {
 
 	// call into rust with C-signature
@@ -53,9 +56,7 @@ func polyCompile(statedb vm.StateDB, program common.Address, wasm []byte) error 
 	return nil
 }
 
-func polyCall(
-	statedb vm.StateDB, program common.Address, calldata []byte, gas uint64, gas_price uint64,
-) (uint64, uint64, []byte) {
+func polyCall(statedb vm.StateDB, program common.Address, calldata []byte, gas, gas_price u64) (u64, u32, []byte) {
 
 	machine, err := statedb.GetPolyMachine(1, program)
 	if err != nil {
@@ -86,7 +87,7 @@ func polyCall(
 	defer polyFree(outptr, outlen, outcap)
 
 	output := arbutil.PointerToSlice((*byte)(outptr), outlen)
-	return gas, uint64(status), output
+	return gas, u32(status), output
 }
 
 func polyFree(ptr *C.uint8_t, len, cap int) {

@@ -5,7 +5,7 @@ use crate::machine::{Escape, WasmEnvArc};
 use eyre::{bail, Result};
 use prover::{
     machine::MachineStatus,
-    middlewares::{
+    programs::{
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
     },

@@ -9,7 +9,7 @@ use crate::{
     host::{self, get_host_impl},
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    middlewares::{
+    programs::{
         depth::DepthChecker, memory::MemoryChecker, meter::Meter, start::StartMover,
         FunctionMiddleware, Middleware, ModuleMod, PolyHostData, PolyglotConfig,
     },
@@ -992,13 +992,26 @@ impl Machine {
         )
     }
 
-    pub fn from_polyglot_binary(wasm: &[u8], config: &PolyglotConfig) -> Result<Machine> {
+    pub fn from_polyglot_binary(
+        wasm: &[u8],
+        stub: bool,
+        config: &PolyglotConfig,
+    ) -> Result<Machine> {
         let bin = parse(wasm, "user")?;
-        let forwarder = std::fs::read("../../target/machines/latest/forwarder.wasm")?;
+        let forwarder = match stub {
+            false => std::fs::read("../../target/machines/latest/forwarder.wasm")?,
+            true => include_bytes!("../../../target/machines/latest/forwarder_stub.wasm").to_vec(),
+        };
         let forwarder = parse(&forwarder, "forwarder")?;
-        let poly_host = std::fs::read("../../target/machines/latest/poly_host.wasm")?;
+        let poly_host = match stub {
+            false => std::fs::read("../../target/machines/latest/poly_host.wasm")?,
+            true => include_bytes!("../../../target/machines/latest/empty_module.wasm").to_vec(),
+        };
         let poly_host = parse(&poly_host, "poly_host")?;
-        let wasi_stub = std::fs::read("../../target/machines/latest/wasi_stub.wasm")?;
+        let wasi_stub = match stub {
+            false => std::fs::read("../../target/machines/latest/wasi_stub.wasm")?,
+            true => include_bytes!("../../../target/machines/latest/wasi_stub.wasm").to_vec(),
+        };
         let wasi_stub = parse(&wasi_stub, "wasi_stub")?;
 
         Self::from_binaries(

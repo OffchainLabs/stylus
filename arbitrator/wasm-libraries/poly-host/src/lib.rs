@@ -1,11 +1,8 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use core::slice;
-
-use go_abi::GoStack;
-
 mod gas;
+mod prove;
 mod util;
 
 pub use gas::set_gas_price;
@@ -85,36 +82,4 @@ pub unsafe extern "C" fn poly_host__read_output_ptr() -> usize {
         Some(program) => program.outs.as_ptr() as usize,
         None => panic!("no program"),
     }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polyglotCheck(
-    sp: GoStack,
-) {
-    // func (wasm []byte) (status uint64, output *byte, outlen, outcap uint64)
-    let wasm_ptr = sp.read_u64(0);
-    let wasm_len = sp.read_u64(1);
-    let wasm = go_abi::read_slice(wasm_ptr, wasm_len);
-
-    
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polyglotCall(
-    sp: GoStack,
-) {
-    // func (wasm, calldata []byte, gas_price uint64, output *byte, outlen, outcap, gas *uint64) (status uint64)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polyglotFree(
-    sp: GoStack,
-) {
-    // func(output *byte, outlen, outcap uint64)
-    let ptr = usize::try_from(sp.read_u64(0)).expect("Go pointer didn't fit in usize") as *mut u8;
-    let len = sp.read_u64(1).try_into().unwrap();
-    let cap = sp.read_u64(2).try_into().unwrap();
-
-    let vec = Vec::from_raw_parts(ptr, len, cap);
-    std::mem::drop(vec)
 }

@@ -21,7 +21,7 @@ func (con *ArbWASM) CompileProgram(c ctx, evm mech, address addr) error {
 	return c.State.Programs().CompileProgram(evm.StateDB, address)
 }
 
-func (con *ArbWASM) CallProgram(c ctx, evm mech, address addr, calldata []byte) (uint64, []byte, error) {
+func (con *ArbWASM) CallProgram(c ctx, evm mech, address addr, calldata []byte) (uint32, []byte, error) {
 	// TODO: require some intrinsic amount of gas
 	programs := c.State.Programs()
 

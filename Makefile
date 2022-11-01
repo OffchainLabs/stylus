@@ -53,6 +53,7 @@ arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(patsubst %,$(output_root)/ma
 arbitrator_prover_lib=$(output_root)/lib/libprover.a
 arbitrator_prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
+arbitrator_direct_includes=$(patsubst %,$(output_root)/machines/latest/%.wasm, forwarder_stub wasi_stub empty_module)
 
 arbitrator_cases=arbitrator/prover/test-cases
 
@@ -66,9 +67,9 @@ WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 arbitrator_wasm_lib_flags_nogo=$(patsubst %, -l %, $(arbitrator_wasm_libs_nogo))
 arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
-arbitrator_wasm_wasistub_files = $(wildcard arbitrator/wasm-libraries/wasi-stub/src/*/*)
-arbitrator_wasm_gostub_files = $(wildcard arbitrator/wasm-libraries/go-stub/src/*/*)
-arbitrator_wasm_hostio_files = $(wildcard arbitrator/wasm-libraries/host-io/src/*/*)
+arbitrator_wasm_wasistub_files = $(wildcard arbitrator/wasm-libraries/wasi-stub/src/*)
+arbitrator_wasm_gostub_files = $(wildcard arbitrator/wasm-libraries/go-stub/src/*)
+arbitrator_wasm_hostio_files = $(wildcard arbitrator/wasm-libraries/host-io/src/*)
 arbitrator_wasm_polyhost_files = $(wildcard arbitrator/wasm-libraries/poly-host/src/*) arbitrator/wasm-libraries/poly-host/Cargo.toml
 
 # user targets
@@ -185,7 +186,7 @@ $(arbitrator_prover_bin): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover
 	install arbitrator/target/release/prover $@
 
-$(arbitrator_prover_lib): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+$(arbitrator_prover_lib): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml $(arbitrator_direct_includes)
 	mkdir -p `dirname $(arbitrator_prover_lib)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p prover
 	install arbitrator/target/release/libprover.a $@
@@ -261,6 +262,14 @@ $(output_root)/machines/latest/forwarder.wasm: $(DEP_PREDICATE) arbitrator/wasm-
 	wat2wasm $< -o $@
 	chmod +x $@
 
+$(output_root)/machines/latest/forwarder_stub.wasm: $(DEP_PREDICATE) arbitrator/wasm-libraries/poly-host/forwarder_stub.wat .make/machines
+	wat2wasm $< -o $@
+	chmod +x $@
+
+$(output_root)/machines/latest/empty_module.wasm: $(DEP_PREDICATE) .make/machines
+	echo "(module)" | wat2wasm - -o $@
+	chmod +x $@
+
 $(output_root)/machines/latest/poly_host.wasm: $(DEP_PREDICATE) $(arbitrator_wasm_polyhost_files) .make/machines
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package poly-host
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/poly_host.wasm $@
@@ -271,7 +280,7 @@ $(output_root)/machines/latest/brotli.wasm: $(DEP_PREDICATE) $(wildcard arbitrat
 
 $(output_root)/machines/latest/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_root)/machines/latest \
-		$(patsubst %,-l $(output_root)/machines/latest/%.wasm, forwarder poly_host soft-float wasi_stub go_stub host_io brotli)
+		$(patsubst %,-l $(output_root)/machines/latest/%.wasm, forwarder soft-float wasi_stub go_stub host_io poly_host brotli)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@

@@ -11,7 +11,7 @@ pub mod machine;
 /// cbindgen:ignore
 mod memory;
 mod merkle;
-pub mod middlewares;
+pub mod programs;
 mod reinterpret;
 pub mod utils;
 pub mod value;
@@ -19,7 +19,7 @@ pub mod wavm;
 
 use crate::machine::argument_data_to_inbox;
 pub use crate::machine::Machine;
-pub use crate::middlewares::meter::MachineMeter;
+pub use crate::programs::meter::MachineMeter;
 pub use crate::value::Value;
 
 use eyre::Result;
