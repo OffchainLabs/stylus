@@ -2,7 +2,6 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 mod gas;
-mod prove;
 mod util;
 
 pub use gas::set_gas_price;

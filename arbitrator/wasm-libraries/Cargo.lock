@@ -577,6 +577,15 @@ name = "poly-host"
 version = "0.1.0"
 dependencies = [
  "arbutil",
+ "hashbrown",
+ "hex",
+]
+
+[[package]]
+name = "poly-link"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
  "go-abi",
  "hashbrown",
  "hex",

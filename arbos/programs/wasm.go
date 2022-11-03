@@ -24,7 +24,6 @@ func polyglotCall(wasm, calldata []byte, gas_price u64, gas *u64) (status u64, o
 func polyglotFree(output *byte, outlen, outcap u64)
 
 func polyCompile(statedb vm.StateDB, program common.Address, wasm []byte) error {
-	colors.PrintRed("go: polyCompile")
 	status, outptr, outlen, outcap := polyglotCheck(wasm)
 	defer polyglotFree(outptr, outlen, outcap)
 
@@ -43,9 +42,12 @@ func polyCall(statedb vm.StateDB, program common.Address, calldata []byte, gas u
 	}
 
 	status, outptr, outlen, outcap := polyglotCall(wasm, calldata, gas_price, &gas)
-	colors.PrintRed("go: polyCall bacc", outptr, outlen, outcap, "\n")
+	colors.PrintRed("go: polyCall bacc ", outptr, outlen, outcap, "\n")
 	defer polyglotFree(outptr, outlen, outcap)
 
 	output := arbutil.PointerToSlice(outptr, int(outlen))
+	if status != 0 {
+		colors.PrintYellow("wasm call failed ", string(output))
+	}
 	return gas, u32(status), output
 }

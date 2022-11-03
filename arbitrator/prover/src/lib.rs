@@ -90,6 +90,7 @@ unsafe fn arbitrator_load_machine_impl(
         Default::default(),
         Default::default(),
         get_empty_preimage_resolver(),
+        &[],
     )?;
     Ok(Box::into_raw(Box::new(mach)))
 }

@@ -97,6 +97,11 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             ty = FunctionType::default();
             opcode!(CurrentModule);
         }
+        ("env", "wavm_link_module") => {
+            ty = FunctionType::new(vec![ArbValueType::I32], vec![]);
+            opcode!(LocalGet, 0);
+            opcode!(LinkModule);
+        }
         ("env", "wavm_halt_and_set_finished") => {
             ty = FunctionType::default();
             opcode!(HaltAndSetFinished);

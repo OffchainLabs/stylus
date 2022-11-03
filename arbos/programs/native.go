@@ -7,7 +7,7 @@
 package programs
 
 //#cgo CFLAGS: -g -Wall
-//#cgo LDFLAGS: ${SRCDIR}/../../arbitrator/target/release/libpolyglot.a -ldl -lm
+//#cgo LDFLAGS: ${SRCDIR}/../../target/lib/libpolyglot.a -ldl -lm
 //#include <stdint.h>
 // extern size_t polyglot_compile(const uint8_t * wasm, size_t len, uint8_t ** out, size_t * out_len, size_t * out_cap);
 // size_t polyglot_call(

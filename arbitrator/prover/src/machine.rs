@@ -271,7 +271,7 @@ impl AvailableImport {
 type AvailableImports = HashMap<String, AvailableImport>;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-struct Module {
+pub(crate) struct Module {
     #[serde(default)]
     name: String,
     globals: Vec<Value>,
@@ -817,6 +817,7 @@ pub struct Machine {
     preimage_resolver: PreimageResolverWrapper,
     initial_hash: Bytes32,
     context: u64,
+    programs: HashMap<Bytes32, Module>, // Not part of machine hash
 }
 
 fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
@@ -963,6 +964,7 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
+        programs: &[Vec<u8>],
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
         let bin = parse(&bin_source, &binary_path.to_string_lossy())
@@ -978,7 +980,7 @@ impl Machine {
             let library = parse(source, &name).wrap_err_with(|| error_message.clone())?;
             libraries.push(library);
         }
-        let polyglot_config = None;
+        let polyglot_config = &PolyglotConfig::default();
         Self::from_binaries(
             &libraries,
             bin,
@@ -989,6 +991,8 @@ impl Machine {
             global_state,
             inbox_contents,
             preimage_resolver,
+            programs,
+            false,
         )
     }
 
@@ -1020,10 +1024,12 @@ impl Machine {
             false,
             false,
             false,
-            Some(config),
+            config,
             GlobalState::default(),
             HashMap::default(),
             Arc::new(|_, _| panic!("user program read preimage")),
+            &[],
+            true,
         )
     }
 
@@ -1033,10 +1039,12 @@ impl Machine {
         runtime_support: bool,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
-        polyglot_config: Option<&PolyglotConfig>,
+        polyglot_config: &PolyglotConfig,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
+        programs: &[Vec<u8>],
+        user_program: bool,
     ) -> Result<Machine> {
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
@@ -1103,9 +1111,9 @@ impl Machine {
 
         // Shouldn't be necessary, but to be safe, don't allow the main binary to import its own guest calls
         available_imports.retain(|_, i| i.module as usize != modules.len());
-        let main = match polyglot_config {
-            Some(config) => Module::from_polyglot_binary(bin, &mut available_imports, config)?,
-            None => Module::from_binary(
+        let main = match user_program {
+            true => Module::from_polyglot_binary(bin, &mut available_imports, polyglot_config)?,
+            false => Module::from_binary(
                 &bin,
                 &available_imports,
                 &floating_point_impls,
@@ -1294,6 +1302,14 @@ impl Machine {
             .max()
             .unwrap_or(0);
 
+        let programs = programs
+            .into_iter()
+            .map(|p| Machine::from_polyglot_binary(p, true, polyglot_config))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .map(Machine::into_main_module)
+            .collect::<HashMap<_, _>>();
+
         let mut mach = Machine {
             status: MachineStatus::Running,
             steps: 0,
@@ -1310,6 +1326,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             initial_hash: Bytes32::default(),
             context: 0,
+            programs,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1329,7 +1346,6 @@ impl Machine {
             }
             let tables: Result<_> = module.tables.iter().map(Table::hash).collect();
             module.tables_merkle = Merkle::new(MerkleType::Table, tables?);
-
             let funcs =
                 Arc::get_mut(&mut module.funcs).expect("Multiple copies of module functions");
             for func in funcs.iter_mut() {
@@ -1359,6 +1375,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             initial_hash: Bytes32::default(),
             context: 0,
+            programs: HashMap::default(),
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1453,6 +1470,15 @@ impl Machine {
         for module in &mut self.modules {
             module.memory.merkle = None;
         }
+    }
+
+    pub(crate) fn into_main_module(mut self) -> (Bytes32, Module) {
+        let module = self.modules.pop().unwrap();
+        (module.hash(), module)
+    }
+
+    pub fn get_main_module_hash(&self) -> Bytes32 {
+        self.modules.last().unwrap().hash()
     }
 
     fn get_module(&self, module: &str) -> Result<&Module> {
@@ -2168,6 +2194,21 @@ impl Machine {
                         self.status = MachineStatus::TooFar;
                         break;
                     }
+                }
+                Opcode::LinkModule => {
+                    let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    let hash = match module.memory.load_32_byte_aligned(ptr.into()) {
+                        Some(hash) => hash,
+                        None => error!(),
+                    };
+                    let program = match self.programs.get(&hash) {
+                        Some(program) => program,
+                        None => error!(),
+                    };
+                    flush_module!();
+                    self.modules.push(program.clone());
+                    module = &mut self.modules[self.pc.module];
+                    func = &module.funcs[self.pc.func];
                 }
                 Opcode::HaltAndSetFinished => {
                     self.status = MachineStatus::Finished;

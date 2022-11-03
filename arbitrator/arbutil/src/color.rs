@@ -87,3 +87,23 @@ pub fn when<S: fmt::Display>(cond: bool, text: S, when_color: &str) -> String {
         false => format!("{text}"),
     }
 }
+
+fn println_colored<S: Into<String>>(text: S, color_code: &str) {
+    println!("{}", color(&text.into(), color_code));
+}
+
+fn eprintln_colored<S: Into<String>>(text: S, color_code: &str) {
+    eprintln!("{}", color(&text.into(), color_code));
+}
+
+pub fn blueln<S: Into<String>>(text: S) {
+    println_colored(text, BLUE)
+}
+
+pub fn eblueln<S: Into<String>>(text: S) {
+    eprintln_colored(text, BLUE)
+}
+
+pub fn redln<S: Into<String>>(text: S) {
+    println_colored(text, BLUE)
+}
