@@ -127,9 +127,8 @@ impl WasmEnv {
     }
 
     pub fn buy_evm_gas(&mut self, evm_gas: u64) -> MaybeEscape {
-        let mut gas_left = match self.gas_left() {
-            MachineMeter::Ready(gas) => gas,
-            MachineMeter::Exhausted => return Escape::out_of_gas(),
+        let MachineMeter::Ready(mut gas_left) = self.gas_left() else {
+            return Escape::out_of_gas()
         };
 
         let mut evm_gas_left = gas_left.saturating_mul(1000) / self.gas_price;

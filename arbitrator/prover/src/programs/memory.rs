@@ -28,8 +28,8 @@ impl MemoryChecker {
     }
 }
 
-impl<'a, M: ModuleMod> Middleware<'a, M> for MemoryChecker {
-    type FM = DefaultFunctionMiddleware;
+impl<M: ModuleMod> Middleware<M> for MemoryChecker {
+    type FM<'a> = DefaultFunctionMiddleware where M: 'a;
 
     fn update_module(&self, module: &mut M) -> Result<(), TransformError> {
         let Bytes(table_bytes) = module.table_bytes();
@@ -45,7 +45,10 @@ impl<'a, M: ModuleMod> Middleware<'a, M> for MemoryChecker {
         module.limit_memory(limit)
     }
 
-    fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, TransformError> {
+    fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>, TransformError>
+    where
+        M: 'a,
+    {
         Ok(DefaultFunctionMiddleware)
     }
 }

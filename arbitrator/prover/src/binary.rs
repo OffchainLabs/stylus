@@ -408,9 +408,8 @@ pub fn parse<'a>(input: &'a [u8], name: &'_ str) -> eyre::Result<WasmBinary<'a>>
             }
             ImportSection(imports) => {
                 for import in flatten!(Import, imports) {
-                    let sig = match import.ty {
-                        ImportSectionEntryType::Function(sig) => sig,
-                        _ => bail!("unsupported import kind {:?}", import),
+                    let ImportSectionEntryType::Function(sig) = import.ty else {
+                        bail!("unsupported import kind {:?}", import)
                     };
                     binary.imports.push(import);
                     binary.imported_functions.push(sig);

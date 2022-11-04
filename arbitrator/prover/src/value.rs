@@ -1,7 +1,8 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{binary::FloatType, console::Color, utils::Bytes32};
+use crate::{binary::FloatType, utils::Bytes32};
+use arbutil::color;
 use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -222,20 +223,20 @@ impl Value {
     }
 
     pub fn pretty_print(&self) -> String {
-        let lparem = Color::grey("(");
-        let rparem = Color::grey(")");
+        let lparem = color::grey("(");
+        let rparem = color::grey(")");
 
         macro_rules! single {
             ($ty:expr, $value:expr) => {{
-                format!("{}{}{}{}", Color::grey($ty), lparem, $value, rparem)
+                format!("{}{}{}{}", color::grey($ty), lparem, $value, rparem)
             }};
         }
         macro_rules! pair {
             ($ty:expr, $left:expr, $right:expr) => {{
-                let eq = Color::grey("=");
+                let eq = color::grey("=");
                 format!(
                     "{}{}{} {} {}{}",
-                    Color::grey($ty),
+                    color::grey($ty),
                     lparem,
                     $left,
                     eq,

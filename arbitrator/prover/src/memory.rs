@@ -193,9 +193,8 @@ impl Memory {
 
     #[must_use]
     pub fn store_value(&mut self, idx: u64, value: u64, bytes: u8) -> bool {
-        let end_idx = match idx.checked_add(bytes.into()) {
-            Some(x) => x,
-            None => return false,
+        let Some(end_idx) = idx.checked_add(bytes.into()) else {
+            return false;
         };
         if end_idx > self.buffer.len() as u64 {
             return false;
@@ -223,9 +222,8 @@ impl Memory {
         if idx % Self::LEAF_SIZE as u64 != 0 {
             return false;
         }
-        let end_idx = match idx.checked_add(value.len() as u64) {
-            Some(x) => x,
-            None => return false,
+        let Some(end_idx) = idx.checked_add(value.len() as u64) else {
+            return false;
         };
         if end_idx > self.buffer.len() as u64 {
             return false;
@@ -249,9 +247,8 @@ impl Memory {
         if idx % Self::LEAF_SIZE as u64 != 0 {
             return None;
         }
-        let idx = match usize::try_from(idx) {
-            Ok(x) => x,
-            Err(_) => return None,
+        let Ok(idx) = usize::try_from(idx) else {
+            return None;
         };
 
         let slice = self.get_range(idx, 32)?;

@@ -1,10 +1,10 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use arbutil::color;
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
-    console::Color,
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
     utils::{Bytes32, CBytes},
     wavm::Opcode,
@@ -361,7 +361,7 @@ fn main() -> Result<()> {
     println!("End machine backtrace:");
     for (module, func, pc) in mach.get_backtrace() {
         let func = rustc_demangle::demangle(&func);
-        println!("  {} {} @ {}", module, Color::mint(func), Color::blue(pc));
+        println!("  {} {} @ {}", module, color::mint(func), color::blue(pc));
     }
 
     if let Some(out) = opts.output {

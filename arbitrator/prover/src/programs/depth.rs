@@ -50,8 +50,8 @@ impl<M: ModuleMod + MemoryUsage> MemoryUsage for DepthChecker<M> {
     }
 }
 
-impl<'a, M: ModuleMod + 'a> Middleware<'a, M> for DepthChecker<M> {
-    type FM = FunctionDepthChecker<'a, M>;
+impl<M: ModuleMod> Middleware<M> for DepthChecker<M> {
+    type FM<'a> = FunctionDepthChecker<'a, M> where M: 'a;
 
     fn update_module(&self, module: &mut M) -> Result<(), TransformError> {
         let limit = GlobalInit::I32Const(self.limit as i32);
@@ -65,7 +65,7 @@ impl<'a, M: ModuleMod + 'a> Middleware<'a, M> for DepthChecker<M> {
         Ok(())
     }
 
-    fn instrument(&self, func: LocalFunctionIndex) -> Result<Self::FM, TransformError> {
+    fn instrument<'a>(&self, func: LocalFunctionIndex) -> Result<Self::FM<'a>, TransformError> {
         let global = self.global.lock().expect("no global");
         let module = self.module.lock().clone().expect("no module");
         Ok(FunctionDepthChecker::new(global, self.limit, func, module))

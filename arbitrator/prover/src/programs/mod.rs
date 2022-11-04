@@ -45,11 +45,18 @@ pub trait ModuleMod: Clone + Debug + Send + Sync {
 }
 
 // when GAT's are stabalized, move 'a to instrument
-pub trait Middleware<'a, M: ModuleMod> {
-    type FM: FunctionMiddleware<'a> + Debug + 'a;
+pub trait Middleware<M: ModuleMod> {
+    type FM<'a>: FunctionMiddleware<'a> + Debug
+    where
+        M: 'a;
 
     fn update_module(&self, module: &mut M) -> Result<(), TransformError>; // not mutable due to wasmer
-    fn instrument(&self, func_index: LocalFunctionIndex) -> Result<Self::FM, TransformError>;
+    fn instrument<'a>(
+        &self,
+        func_index: LocalFunctionIndex,
+    ) -> Result<Self::FM<'a>, TransformError>
+    where
+        M: 'a;
 }
 
 pub trait FunctionMiddleware<'a> {
@@ -226,12 +233,12 @@ impl<'a> ModuleMod for WasmBinary<'a> {
 pub struct WasmerMiddlewareWrapper<T, M>(pub T, PhantomData<M>)
 where
     M: ModuleMod,
-    T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<'a, M>;
+    T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<M>;
 
 impl<T, M> WasmerMiddlewareWrapper<T, M>
 where
     M: ModuleMod,
-    T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<'a, M>,
+    T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<M>,
 {
     pub fn new(middleware: T) -> Self {
         WasmerMiddlewareWrapper(middleware, PhantomData)
@@ -241,7 +248,7 @@ where
 #[cfg(feature = "native")]
 impl<T> ModuleMiddleware for WasmerMiddlewareWrapper<T, ModuleInfo>
 where
-    T: Debug + Send + Sync + MemoryUsage + for<'a> Middleware<'a, ModuleInfo>,
+    T: Debug + Send + Sync + MemoryUsage + Middleware<ModuleInfo> + 'static,
 {
     fn transform_module_info(&self, module: &mut ModuleInfo) -> Result<(), MiddlewareError> {
         self.0.update_module(module).map_err(|err| err.into())

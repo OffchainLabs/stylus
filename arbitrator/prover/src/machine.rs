@@ -5,7 +5,6 @@ use crate::{
     binary::{
         parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
     },
-    console::Color,
     host::{self, get_host_impl},
     memory::Memory,
     merkle::{Merkle, MerkleType},
@@ -379,9 +378,8 @@ impl Module {
             if let ImportSectionEntryType::Function(ty) = import.ty {
                 let have_ty = &bin.types[ty as usize];
 
-                let mut import_name = match import.field {
-                    Some(name) => name,
-                    None => bail!("Missing name for import in {}", import.module),
+                let Some(mut import_name) = import.field else {
+                    bail!("Missing name for import in {}", import.module)
                 };
                 let mut forward = false;
                 if let Some(name) = import_name.strip_prefix("arbitrator_forward__") {
@@ -537,9 +535,8 @@ impl Module {
                 (Operator::I32Const { value }, Operator::End, true) => value as usize,
                 x => bail!("Non-constant element segment offset expression {:?}", x),
             };
-            let table = match tables.get_mut(t as usize) {
-                Some(t) => t,
-                None => bail!("Element segment for non-exsistent table {}", t),
+            let Some(table) = tables.get_mut(t as usize) else {
+                bail!("Element segment for non-exsistent table {}", t)
             };
             let expected_ty = table.ty.element_type;
             ensure!(
@@ -553,11 +550,8 @@ impl Module {
             let mut item_reader = elem.items.get_items_reader()?;
             for _ in 0..item_reader.get_count() {
                 let item = item_reader.read()?;
-                let index = match item {
-                    ElementItem::Func(index) => index,
-                    ElementItem::Expr(_) => {
-                        bail!("Non-constant element initializers are not supported")
-                    }
+                let ElementItem::Func(index) = item else {
+                    bail!("Non-constant element initializers are not supported")
                 };
                 let func_ty = func_types[index as usize].clone();
                 contents.push(TableElement {
@@ -1548,15 +1542,13 @@ impl Machine {
         self.value_stack = args;
 
         let qualified = &format!("{module}__{func}");
-        let module = match self.modules.iter().position(|m| m.name == module) {
-            Some(module) => module,
-            None => panic!("module {} not found", color::red(module)),
+        let Some(module) = self.modules.iter().position(|m| m.name == module) else {
+            panic!("module {} not found", color::red(module))
         };
 
         let exports = &self.modules[module].exports;
-        let func = match exports.iter().find(|x| x.0 == qualified || x.0 == func) {
-            Some((_, func)) => *func as usize,
-            None => panic!("func {} not found", color::red(func)),
+        let Some((_, &func)) = exports.iter().find(|x| x.0 == qualified || x.0 == func) else {
+            panic!("func {} not found", color::red(func))
         };
 
         self.frame_stack.clear();
@@ -1564,7 +1556,7 @@ impl Machine {
 
         self.pc = ProgramCounter {
             module,
-            func,
+            func: func as usize,
             inst: 0,
         };
         self.status = MachineStatus::Running;
@@ -2002,9 +1994,8 @@ impl Machine {
                                 {
                                     error!();
                                 }
-                                let value = match exec_ibin_op(a, b, op) {
-                                    Some(value) => value,
-                                    None => error!(),
+                                let Some(value) = exec_ibin_op(a, b, op) else {
+                                    error!()
                                 };
                                 self.value_stack.push(value.into())
                             } else {
@@ -2019,9 +2010,8 @@ impl Machine {
                                 {
                                     error!();
                                 }
-                                let value = match exec_ibin_op(a, b, op) {
-                                    Some(value) => value,
-                                    None => error!(),
+                                let Some(value) = exec_ibin_op(a, b, op) else {
+                                    error!()
                                 };
                                 self.value_stack.push(value.into())
                             } else {
@@ -2152,8 +2142,8 @@ impl Machine {
                         } else {
                             eprintln!(
                                 "{} for hash {}",
-                                Color::red("Missing requested preimage"),
-                                Color::red(hash),
+                                color::red("Missing requested preimage"),
+                                color::red(hash),
                             );
                             self.eprint_backtrace();
                             bail!("missing requested preimage for hash {}", hash);
@@ -2184,7 +2174,7 @@ impl Machine {
                     } else {
                         let delayed = inbox_identifier == InboxIdentifier::Delayed;
                         if msg_num < self.first_too_far || delayed {
-                            eprintln!("{} {msg_num}", Color::red("Missing inbox message"));
+                            eprintln!("{} {msg_num}", color::red("Missing inbox message"));
                             self.eprint_backtrace();
                             bail!(
                                 "missing inbox message {msg_num} of {}",
@@ -2197,13 +2187,11 @@ impl Machine {
                 }
                 Opcode::LinkModule => {
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    let hash = match module.memory.load_32_byte_aligned(ptr.into()) {
-                        Some(hash) => hash,
-                        None => error!(),
+                    let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
+                        error!()
                     };
-                    let program = match self.programs.get(&hash) {
-                        Some(program) => program,
-                        None => error!(),
+                    let Some(program) = self.programs.get(&hash) else {
+                        error!()
                     };
                     flush_module!();
                     self.modules.push(program.clone());
@@ -2221,7 +2209,7 @@ impl Machine {
             // If we halted, print out any trailing output that didn't have a newline.
             println!(
                 "{} {}",
-                Color::yellow("WASM says:"),
+                color::yellow("WASM says:"),
                 String::from_utf8_lossy(&self.stdio_output),
             );
             self.stdio_output.clear();
@@ -2566,9 +2554,8 @@ impl Machine {
                     data.extend(mem_merkle.prove(idx).unwrap_or_default());
                     if next_inst.opcode == Opcode::ReadPreImage {
                         let hash = Bytes32(prev_data);
-                        let preimage = match self.preimage_resolver.get_const(self.context, hash) {
-                            Some(b) => b,
-                            None => panic!("Missing requested preimage for hash {}", hash),
+                        let Some(preimage) = self.preimage_resolver.get_const(self.context, hash) else {
+                            panic!("Missing requested preimage for hash {hash}")
                         };
                         data.push(0); // preimage proof type
                         data.extend(preimage);
@@ -2655,7 +2642,7 @@ impl Machine {
         eprintln!("Backtrace:");
         for (module, func, pc) in self.get_backtrace() {
             let func = rustc_demangle::demangle(&func);
-            eprintln!("  {} {} @ {}", module, Color::mint(func), Color::blue(pc));
+            eprintln!("  {} {} @ {}", module, color::mint(func), color::blue(pc));
         }
     }
 }

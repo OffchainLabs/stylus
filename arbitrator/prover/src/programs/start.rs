@@ -18,15 +18,18 @@ impl StartMover {
     }
 }
 
-impl<'a, M: ModuleMod> Middleware<'a, M> for StartMover {
-    type FM = DefaultFunctionMiddleware;
+impl<M: ModuleMod> Middleware<M> for StartMover {
+    type FM<'a> = DefaultFunctionMiddleware where M: 'a;
 
     fn update_module(&self, module: &mut M) -> Result<(), TransformError> {
         module.move_start_function(&self.name);
         Ok(())
     }
 
-    fn instrument(&self, _: LocalFunctionIndex) -> Result<Self::FM, TransformError> {
+    fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>, TransformError>
+    where
+        M: 'a,
+    {
         Ok(DefaultFunctionMiddleware)
     }
 }
