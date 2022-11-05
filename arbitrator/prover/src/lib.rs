@@ -19,6 +19,7 @@ pub mod wavm;
 use crate::machine::argument_data_to_inbox;
 pub use crate::machine::Machine;
 pub use crate::programs::meter::MachineMeter;
+use crate::programs::PolyglotConfig;
 pub use crate::value::Value;
 
 use eyre::Result;
@@ -89,7 +90,6 @@ unsafe fn arbitrator_load_machine_impl(
         Default::default(),
         Default::default(),
         get_empty_preimage_resolver(),
-        &[],
     )?;
     Ok(Box::into_raw(Box::new(mach)))
 }
@@ -183,6 +183,22 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
     } else {
         1
     }
+}
+
+/// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
+/// Returns a c string error (freeable with libc's free) on compilation error, or nullptr on success.
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_add_program(
+    mach: *mut Machine,
+    wasm: *const u8,
+    wasm_len: u32,
+) -> *mut libc::c_char {
+    let config = PolyglotConfig::default();
+    let wasm = std::slice::from_raw_parts(wasm, wasm_len as usize);
+    if let Err(error) = (*mach).add_program(wasm, &config) {
+        return err_to_c_string(error);
+    }
+    std::ptr::null_mut()
 }
 
 /// Like arbitrator_step, but stops early if it hits a host io operation.

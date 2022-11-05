@@ -958,7 +958,6 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
-        programs: &[Vec<u8>],
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
         let bin = parse(&bin_source, &binary_path.to_string_lossy())
@@ -985,7 +984,6 @@ impl Machine {
             global_state,
             inbox_contents,
             preimage_resolver,
-            programs,
             false,
         )
     }
@@ -1022,7 +1020,6 @@ impl Machine {
             GlobalState::default(),
             HashMap::default(),
             Arc::new(|_, _| panic!("user program read preimage")),
-            &[],
             true,
         )
     }
@@ -1037,7 +1034,6 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
-        programs: &[Vec<u8>],
         user_program: bool,
     ) -> Result<Machine> {
         // `modules` starts out with the entrypoint module, which will be initialized later
@@ -1296,14 +1292,6 @@ impl Machine {
             .max()
             .unwrap_or(0);
 
-        let programs = programs
-            .into_iter()
-            .map(|p| Machine::from_polyglot_binary(p, true, polyglot_config))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .map(Machine::into_main_module)
-            .collect::<HashMap<_, _>>();
-
         let mut mach = Machine {
             status: MachineStatus::Running,
             steps: 0,
@@ -1320,7 +1308,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             initial_hash: Bytes32::default(),
             context: 0,
-            programs,
+            programs: HashMap::default(),
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1630,6 +1618,11 @@ impl Machine {
             };
         }
         macro_rules! error {
+            ($format:expr, $($message:expr),*) => {{
+                println!($format, $(color::red($message)),*);
+                self.status = MachineStatus::Errored;
+                break;
+            }};
             () => {{
                 self.status = MachineStatus::Errored;
                 break;
@@ -2188,10 +2181,10 @@ impl Machine {
                 Opcode::LinkModule => {
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
                     let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
-                        error!()
+                        error!("no hash for {}", ptr)
                     };
                     let Some(program) = self.programs.get(&hash) else {
-                        error!()
+                        error!("no program {} of {}", hash, self.programs.len())
                     };
                     flush_module!();
                     self.modules.push(program.clone());
@@ -2608,6 +2601,13 @@ impl Machine {
         if index >= self.first_too_far && identifier == InboxIdentifier::Sequencer {
             self.first_too_far = index + 1
         }
+    }
+
+    pub fn add_program(&mut self, wasm: &[u8], config: &PolyglotConfig) -> Result<()> {
+        let machine = Machine::from_polyglot_binary(&wasm, true, &config)?;
+        let (hash, module) = machine.into_main_module();
+        self.programs.insert(hash, module);
+        Ok(())
     }
 
     pub fn get_module_names(&self, module: usize) -> Option<&NameCustomSection> {

@@ -27,9 +27,8 @@ struct Program {
 #[no_mangle]
 pub unsafe extern "C" fn poly_host__read_args(ptr: usize) {
     //let module = wavm_get_caller_module();
-    let program = match PROGRAMS.get(&0) {
-        Some(program) => program,
-        None => return,
+    let Some(program) = PROGRAMS.get(&0) else {
+        return
     };
     println!(
         "read args {} {}",
@@ -42,9 +41,8 @@ pub unsafe extern "C" fn poly_host__read_args(ptr: usize) {
 #[no_mangle]
 pub unsafe extern "C" fn poly_host__return_data(len: usize, ptr: usize) {
     //let module = wavm_get_caller_module();
-    let program = match PROGRAMS.get_mut(&0) {
-        Some(program) => program,
-        None => return,
+    let Some(program) = PROGRAMS.get_mut(&0) else {
+        return
     };
 
     let evm_words = |count: u64| count.saturating_add(31) / 32;

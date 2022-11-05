@@ -420,7 +420,9 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	var batchInfo []BatchInfo
 	if tooFar {
 		// Just record the part of block creation before the message is read
-		_, preimages, readBatchInfo, err := RecordBlockCreation(ctx, m.blockchain, m.inboxReader, blockHeader, nil, true)
+		_, preimages, programs, readBatchInfo, err := RecordBlockCreation(
+			ctx, m.blockchain, m.inboxReader, blockHeader, nil, true,
+		)
 		if err != nil {
 			return err
 		}
@@ -431,6 +433,11 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		}
 		if err := machine.SetPreimageResolver(resolver); err != nil {
 			return err
+		}
+		for _, program := range programs {
+			if err := machine.AddProgram(program); err != nil {
+				return err
+			}
 		}
 	} else {
 		// Get the next message and block header, and record the full block creation
@@ -446,7 +453,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		if nextHeader == nil {
 			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
 		}
-		preimages, readBatchInfo, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(
+		preimages, programs, readBatchInfo, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(
 			ctx, m.blockchain, m.inboxReader, nextHeader, blockHeader, *message, false,
 		)
 		if err != nil {
@@ -475,6 +482,11 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			}
 			err = machine.AddDelayedInboxMessage(delayedMsgNr, delayedBytes)
 			if err != nil {
+				return err
+			}
+		}
+		for _, program := range programs {
+			if err := machine.AddProgram(program); err != nil {
 				return err
 			}
 		}

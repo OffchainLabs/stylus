@@ -4,14 +4,17 @@
 use arbutil::color;
 use go_abi::GoStack;
 use prover::{
-    programs::{ExecOutcome, ExecProgram, PolyglotConfig},
+    programs::{ExecOutcome, ExecProgram, PolyglotConfig, meter::MeteredMachine},
     utils::Bytes32,
     Machine,
 };
 
 extern "C" {
-    fn wavm_link_module(hash: Bytes32);
+    fn wavm_link_module(hash: *const MemoryLeaf);
 }
+
+#[repr(C, align(256))]
+struct MemoryLeaf([u8; 32]);
 
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polyglotCheck(
@@ -47,6 +50,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polygl
     const WASM_LEN: usize = 1;
     const CALL_PTR: usize = 3;
     const CALL_LEN: usize = 4;
+    const GAS_LEFT: usize = 7;
     const STATUS: usize = 8;
     const OUTPTR: usize = 9;
     const OUTLEN: usize = 10;
@@ -65,18 +69,21 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polygl
     let wasm = read_go_slice(sp, WASM_PTR, WASM_LEN);
     let data = read_go_slice(sp, CALL_PTR, CALL_LEN);
 
-    color::redln("from binary");
-
     let config = PolyglotConfig::default();
-    let machine = match Machine::from_polyglot_binary(&wasm, true, &config) {
+    let mut machine = match Machine::from_polyglot_binary(&wasm, true, &config) {
         Ok(machine) => machine,
         Err(error) => output!(1, error.to_string()),
     };
 
+    //machine.set_gas(sp.read_u64(GAS_LEFT));
+    
     let hash = machine.get_main_module_hash();
     color::blueln(format!("Linking Module {hash}"));
-    wavm_link_module(hash);
-    color::blueln(format!("Linked Module {hash}"));
+
+    let hash = MemoryLeaf(hash.0);
+    wavm_link_module(&hash);
+
+    color::blueln(format!("Linked Module"));
 
     /*let outcome = match machine.run_main(data) {
         Ok(outcome) => outcome,

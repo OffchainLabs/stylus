@@ -189,7 +189,6 @@ fn main() -> Result<()> {
         global_state,
         inbox_contents,
         preimage_resolver,
-        &[],
     )?;
     if let Some(output_path) = opts.generate_binaries {
         let mut module_root_file = File::create(output_path.join("module-root.txt"))?;

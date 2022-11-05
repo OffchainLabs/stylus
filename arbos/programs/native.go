@@ -23,6 +23,7 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -57,6 +58,10 @@ func polyCompile(statedb vm.StateDB, program common.Address, wasm []byte) error 
 }
 
 func polyCall(statedb vm.StateDB, program common.Address, calldata []byte, gas, gas_price u64) (u64, u32, []byte) {
+
+	if db, ok := statedb.(*state.StateDB); ok {
+		db.RecordProgram(program)
+	}
 
 	machine, err := statedb.GetPolyMachine(1, program)
 	if err != nil {

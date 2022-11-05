@@ -109,7 +109,7 @@ func TestKeccakProgram(t *testing.T) {
 		Require(t, err)
 
 		correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, true, common.Hash{})
-		Require(t, err, block)
+		Require(t, err, "block", block)
 		if correct {
 			colors.PrintMint("yay!! we validated block ", block)
 		} else {

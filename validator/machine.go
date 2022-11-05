@@ -19,6 +19,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/pkg/errors"
 )
 
@@ -325,5 +326,15 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	m.contextId = &id
 	runtime.SetFinalizer(m.contextId, freeContextId)
 	C.arbitrator_set_context(m.ptr, C.uint64_t(id))
+	return nil
+}
+
+func (m *ArbitratorMachine) AddProgram(program []byte) error {
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+	programPtr := (*C.uint8_t)(arbutil.SliceToPointer(program))
+	programLen := C.uint32_t(len(program))
+	C.arbitrator_add_program(m.ptr, programPtr, programLen)
 	return nil
 }
