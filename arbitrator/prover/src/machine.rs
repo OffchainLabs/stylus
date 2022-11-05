@@ -1459,8 +1459,9 @@ impl Machine {
         (module.hash(), module)
     }
 
-    pub fn get_main_module_hash(&self) -> Bytes32 {
-        self.modules.last().unwrap().hash()
+    pub fn main_module_info(&self) -> (Bytes32, u32) {
+        let module = self.modules.last().unwrap();
+        (module.hash(), module.internals_offset)
     }
 
     fn get_module(&self, module: &str) -> Result<&Module> {
@@ -1624,6 +1625,7 @@ impl Machine {
                 break;
             }};
             () => {{
+                println!("Machine errored on line {}", color::red(line!()));
                 self.status = MachineStatus::Errored;
                 break;
             }};
@@ -1741,6 +1743,19 @@ impl Machine {
                         .push(current_frame.caller_module_internals.into());
                     let (call_module, call_func) =
                         unpack_cross_module_call(inst.argument_data as u64);
+                    self.pc.module = call_module as usize;
+                    self.pc.func = call_func as usize;
+                    self.pc.inst = 0;
+                    module = &mut self.modules[self.pc.module];
+                    func = &module.funcs[self.pc.func];
+                }
+                Opcode::CrossModuleDynamicCall => {
+                    flush_module!();
+                    let call_func = self.value_stack.pop().unwrap().assume_u32();
+                    let call_module = self.value_stack.pop().unwrap().assume_u32();
+                    self.value_stack.push(Value::InternalRef(self.pc));
+                    self.value_stack.push(Value::I32(self.pc.module as u32));
+                    self.value_stack.push(Value::I32(module.internals_offset));
                     self.pc.module = call_module as usize;
                     self.pc.func = call_func as usize;
                     self.pc.inst = 0;
@@ -2187,6 +2202,8 @@ impl Machine {
                         error!("no program {} of {}", hash, self.programs.len())
                     };
                     flush_module!();
+                    let index: u32 = self.modules.len().try_into().unwrap();
+                    self.value_stack.push(index.into());
                     self.modules.push(program.clone());
                     module = &mut self.modules[self.pc.module];
                     func = &module.funcs[self.pc.func];

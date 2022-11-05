@@ -10,7 +10,8 @@ use prover::{
 };
 
 extern "C" {
-    fn wavm_link_module(hash: *const MemoryLeaf);
+    fn wavm_link_program(hash: *const MemoryLeaf) -> u32;
+    fn wavm_prep_program(module: u32, internals: u32, gas: u64);
 }
 
 #[repr(C, align(256))]
@@ -75,15 +76,17 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polygl
         Err(error) => output!(1, error.to_string()),
     };
 
-    //machine.set_gas(sp.read_u64(GAS_LEFT));
-    
-    let hash = machine.get_main_module_hash();
+    let (hash, internals) = machine.main_module_info();
     color::blueln(format!("Linking Module {hash}"));
 
     let hash = MemoryLeaf(hash.0);
-    wavm_link_module(&hash);
+    let module = wavm_link_program(&hash);
 
-    color::blueln(format!("Linked Module"));
+    color::blueln(format!("Linked Module, #{module}"));
+    wavm_prep_program(module, internals, sp.read_u64(GAS_LEFT));
+    color::blueln(format!("Prepped Module, #{module}"));
+
+
 
     /*let outcome = match machine.run_main(data) {
         Ok(outcome) => outcome,

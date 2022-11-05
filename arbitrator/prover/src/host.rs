@@ -4,8 +4,8 @@
 use crate::{
     machine::{Function, InboxIdentifier},
     programs::PolyHostData,
-    value::{ArbValueType, FunctionType},
-    wavm::{Instruction, Opcode},
+    value::{ArbValueType, FunctionType, IntegerValType},
+    wavm::{IBinOpType, Instruction, Opcode},
 };
 
 pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
@@ -13,81 +13,77 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
     let ty;
 
     macro_rules! opcode {
-        ($opcode:ident) => {
-            out.push(Instruction::simple(Opcode::$opcode))
+        ($opcode:expr) => {
+            out.push(Instruction::simple($opcode))
         };
-        ($opcode:ident, $value:expr) => {
-            out.push(Instruction::with_data(Opcode::$opcode, $value))
+        ($opcode:expr, $value:expr) => {
+            out.push(Instruction::with_data($opcode, $value))
         };
     }
 
+    use ArbValueType::*;
+    use Opcode::*;
     match (module, name) {
         ("env", "wavm_caller_load8") => {
-            ty = FunctionType::new(vec![ArbValueType::I32], vec![ArbValueType::I32]);
+            ty = FunctionType::new(vec![I32], vec![I32]);
             opcode!(LocalGet, 0);
             opcode!(CallerModuleInternalCall, 0);
         }
         ("env", "wavm_caller_load32") => {
-            ty = FunctionType::new(vec![ArbValueType::I32], vec![ArbValueType::I32]);
+            ty = FunctionType::new(vec![I32], vec![I32]);
             opcode!(LocalGet, 0);
             opcode!(CallerModuleInternalCall, 1);
         }
         ("env", "wavm_caller_store8") => {
-            ty = FunctionType::new(vec![ArbValueType::I32; 2], vec![]);
+            ty = FunctionType::new(vec![I32; 2], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
             opcode!(CallerModuleInternalCall, 2);
         }
         ("env", "wavm_caller_store32") => {
-            ty = FunctionType::new(vec![ArbValueType::I32; 2], vec![]);
+            ty = FunctionType::new(vec![I32; 2], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
             opcode!(CallerModuleInternalCall, 3);
         }
         ("env", "wavm_get_globalstate_bytes32") => {
-            ty = FunctionType::new(vec![ArbValueType::I32; 2], vec![]);
+            ty = FunctionType::new(vec![I32; 2], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
             opcode!(GetGlobalStateBytes32);
         }
         ("env", "wavm_set_globalstate_bytes32") => {
-            ty = FunctionType::new(vec![ArbValueType::I32; 2], vec![]);
+            ty = FunctionType::new(vec![I32; 2], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
             opcode!(SetGlobalStateBytes32);
         }
         ("env", "wavm_get_globalstate_u64") => {
-            ty = FunctionType::new(vec![ArbValueType::I32], vec![ArbValueType::I64]);
+            ty = FunctionType::new(vec![I32], vec![I64]);
             opcode!(LocalGet, 0);
             opcode!(GetGlobalStateU64);
         }
         ("env", "wavm_set_globalstate_u64") => {
-            ty = FunctionType::new(vec![ArbValueType::I32, ArbValueType::I64], vec![]);
+            ty = FunctionType::new(vec![I32, I64], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
             opcode!(SetGlobalStateU64);
         }
         ("env", "wavm_read_pre_image") => {
-            ty = FunctionType::new(vec![ArbValueType::I32; 2], vec![ArbValueType::I32]);
+            ty = FunctionType::new(vec![I32; 2], vec![I32]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
             opcode!(ReadPreImage);
         }
         ("env", "wavm_read_inbox_message") => {
-            ty = FunctionType::new(
-                vec![ArbValueType::I64, ArbValueType::I32, ArbValueType::I32],
-                vec![ArbValueType::I32],
-            );
+            ty = FunctionType::new(vec![I64, I32, I32], vec![I32]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
             opcode!(LocalGet, 2);
             opcode!(ReadInboxMessage, InboxIdentifier::Sequencer as u64);
         }
         ("env", "wavm_read_delayed_inbox_message") => {
-            ty = FunctionType::new(
-                vec![ArbValueType::I64, ArbValueType::I32, ArbValueType::I32],
-                vec![ArbValueType::I32],
-            );
+            ty = FunctionType::new(vec![I64, I32, I32], vec![I32]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
             opcode!(LocalGet, 2);
@@ -97,25 +93,35 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             ty = FunctionType::default();
             opcode!(CurrentModule);
         }
-        ("env", "wavm_link_module") => {
-            ty = FunctionType::new(vec![ArbValueType::I32], vec![]);
+        ("env", "wavm_link_program") => {
+            ty = FunctionType::new(vec![I32], vec![I32]);
             opcode!(LocalGet, 0);
             opcode!(LinkModule);
+        }
+        ("env", "wavm_prep_program") => {
+            ty = FunctionType::new(vec![I32, I32, I64], vec![]);
+            opcode!(LocalGet, 2); // gas left
+            opcode!(I32Const, 0); // gas status
+            opcode!(LocalGet, 0); // the module
+            opcode!(LocalGet, 1); // the internals offset
+            opcode!(I32Const, 6); // the relative position of poly_wavm_set_gas
+            opcode!(IBinOp(IntegerValType::I32, IBinOpType::Add)); // absolute position of poly_wavm_set_gas
+            opcode!(CrossModuleDynamicCall); // consumes module and func, forwarding the others
         }
         ("env", "wavm_halt_and_set_finished") => {
             ty = FunctionType::default();
             opcode!(HaltAndSetFinished);
         }
         ("env", "poly_wavm_gas_left") => {
-            ty = FunctionType::new(vec![], vec![ArbValueType::I64]);
+            ty = FunctionType::new(vec![], vec![I64]);
             opcode!(CallerModuleInternalCall, 4);
         }
         ("env", "poly_wavm_gas_status") => {
-            ty = FunctionType::new(vec![], vec![ArbValueType::I32]);
+            ty = FunctionType::new(vec![], vec![I32]);
             opcode!(CallerModuleInternalCall, 5);
         }
         ("env", "poly_wavm_set_gas") => {
-            ty = FunctionType::new(vec![ArbValueType::I64, ArbValueType::I32], vec![]);
+            ty = FunctionType::new(vec![I64, I32], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
             opcode!(CallerModuleInternalCall, 6);
