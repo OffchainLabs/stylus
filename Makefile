@@ -67,11 +67,13 @@ WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 arbitrator_wasm_lib_flags_nogo=$(patsubst %, -l %, $(arbitrator_wasm_libs_nogo))
 arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
-arbitrator_wasm_wasistub_files = $(wildcard arbitrator/wasm-libraries/wasi-stub/src/*)
-arbitrator_wasm_gostub_files = $(wildcard arbitrator/wasm-libraries/go-stub/src/*)
-arbitrator_wasm_hostio_files = $(wildcard arbitrator/wasm-libraries/host-io/src/*)
-arbitrator_wasm_polyhost_files = $(wildcard arbitrator/wasm-libraries/poly-host/src/*) arbitrator/wasm-libraries/poly-host/Cargo.toml
-arbitrator_wasm_polylink_files = $(wildcard arbitrator/wasm-libraries/poly-link/src/*) arbitrator/wasm-libraries/poly-link/Cargo.toml
+wlib_paths = arbitrator/wasm-libraries
+arbitrator_wasm_wasistub_files = $(wildcard $(wlib_paths)/wasi-stub/src/*)
+arbitrator_wasm_gostub_files = $(wildcard $(wlib_paths)/go-stub/src/*)
+arbitrator_wasm_hostio_files = $(wildcard $(wlib_paths)/host-io/src/*)
+arbitrator_wasm_polyhost_files = $(wildcard $(wlib_paths)/poly-host/src/*) $(wlib_paths)/poly-host/Cargo.toml
+arbitrator_wasm_polylink_files = $(wildcard $(wlib_paths)/poly-link/src/*) $(wlib_paths)/poly-link/Cargo.toml
+arbitrator_wasm_brotli_files = $(wildcard $(wlib_paths)/brotli/src/*) $(wlib_paths)/brotli/Cargo.toml $(wlib_paths)/brotli/build.rs
 
 # user targets
 
@@ -279,7 +281,7 @@ $(output_root)/machines/latest/poly_link.wasm: $(DEP_PREDICATE) $(arbitrator_was
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package poly-link
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/poly_link.wasm $@
 
-$(output_root)/machines/latest/brotli.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/brotli/src/*/*) .make/cbrotli-wasm .make/machines
+$(output_root)/machines/latest/brotli.wasm: $(DEP_PREDICATE) $(arbitrator_wasm_brotli_files) .make/cbrotli-wasm .make/machines
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
 

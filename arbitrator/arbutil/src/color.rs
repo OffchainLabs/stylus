@@ -88,22 +88,26 @@ pub fn when<S: fmt::Display>(cond: bool, text: S, when_color: &str) -> String {
     }
 }
 
-fn println_colored<S: Into<String>>(text: S, color_code: &str) {
-    println!("{}", color(&text.into(), color_code));
+fn println_colored<S: Into<String>>(color_code: &str, text: S) {
+    println!("{}{}{}", color_code, &text.into(), RESET);
 }
 
-fn eprintln_colored<S: Into<String>>(text: S, color_code: &str) {
-    eprintln!("{}", color(&text.into(), color_code));
+fn eprintln_colored<S: Into<String>>(color_code: &str, text: S) {
+    eprintln!("{}{}{}", color_code, &text.into(), RESET);
 }
 
 pub fn blueln<S: Into<String>>(text: S) {
-    println_colored(text, BLUE)
+    println_colored(BLUE, text)
 }
 
 pub fn eblueln<S: Into<String>>(text: S) {
-    eprintln_colored(text, BLUE)
+    eprintln_colored(BLUE, text)
 }
 
 pub fn redln<S: Into<String>>(text: S) {
-    println_colored(text, BLUE)
+    println_colored(RED, text)
+}
+
+pub fn greyln<S: Into<String>>(text: S) {
+    println_colored(GREY, text)
 }

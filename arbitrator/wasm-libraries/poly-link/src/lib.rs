@@ -2,16 +2,24 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::color;
+use wavm_util;
 use go_abi::GoStack;
 use prover::{
     programs::{ExecOutcome, ExecProgram, PolyglotConfig, meter::MeteredMachine},
-    utils::Bytes32,
     Machine,
 };
 
 extern "C" {
     fn wavm_link_program(hash: *const MemoryLeaf) -> u32;
     fn wavm_prep_program(module: u32, internals: u32, gas: u64);
+    fn wavm_call_program(module: u32, main: u32) -> u32;
+}
+
+#[link(wasm_import_module = "poly_host")]
+extern "C" {
+    fn allocate_args(module: u32, bytes: u32) -> usize;
+    fn read_output_len(module: u32) -> usize;
+    fn read_output_ptr(module: u32) -> usize;
 }
 
 #[repr(C, align(256))]
@@ -71,46 +79,40 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polygl
     let data = read_go_slice(sp, CALL_PTR, CALL_LEN);
 
     let config = PolyglotConfig::default();
-    let mut machine = match Machine::from_polyglot_binary(&wasm, true, &config) {
+    let machine = match Machine::from_polyglot_binary(&wasm, true, &config) {
         Ok(machine) => machine,
         Err(error) => output!(1, error.to_string()),
     };
 
     let (hash, internals) = machine.main_module_info();
-    color::blueln(format!("Linking Module {hash}"));
+    color::blueln(format!("Compiled Module {hash}"));
 
     let hash = MemoryLeaf(hash.0);
     let module = wavm_link_program(&hash);
-
     color::blueln(format!("Linked Module, #{module}"));
+
     wavm_prep_program(module, internals, sp.read_u64(GAS_LEFT));
     color::blueln(format!("Prepped Module, #{module}"));
 
+    let args = allocate_args(module, data.len() as u32);
+    color::blueln(format!("Args {args} {}", data.len()));
+    wavm_util::write_slice(&data, args);
+    color::blueln(format!("Wrote args {args} {}", data.len()));
 
+    // call into machine
+    let status = 1;
 
-    /*let outcome = match machine.run_main(data) {
-        Ok(outcome) => outcome,
-        Err(error) => output!(1, error.to_string()),
-    };
-
-    println!("{} {outcome}", color::red("post main"));
-
-    use ExecOutcome::*;
-    match outcome {
-        Success(data) => output!(0, data),
-        Revert(data) => output!(1, data),
-        Failure(error) => output!(1, error.to_string()),
-        OutOfGas => output!(1, "out of gas"),
-        OutOfStack => output!(1, "stack overflow"),
-        DivergingFailure => output!(2, "diverging failure"),
-    }*/
+    let output_len = read_output_len(module);
+    let output_ptr = read_output_ptr(module);
+    let output = wavm_util::read_slice(output_ptr, output_len);
+    output!(status, output);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polyglotFree(
     sp: GoStack,
 ) {
-    println!("{}", color::red("polyglotFree"));
+    color::redln("polyglotFree");
 
     // func(output *byte, outlen, outcap uint64)
     let ptr = usize::try_from(sp.read_u64(0)).expect("Go pointer didn't fit in usize") as *mut u8;

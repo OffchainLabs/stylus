@@ -579,6 +579,7 @@ dependencies = [
  "arbutil",
  "hashbrown",
  "hex",
+ "wavm-util",
 ]
 
 [[package]]
@@ -590,6 +591,7 @@ dependencies = [
  "hashbrown",
  "hex",
  "prover",
+ "wavm-util",
 ]
 
 [[package]]
@@ -1001,6 +1003,10 @@ name = "wasmparser"
 version = "0.83.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "718ed7c55c2add6548cca3ddd6383d738cd73b892df400e96b9aa876f0141d7a"
+
+[[package]]
+name = "wavm-util"
+version = "0.1.0"
 
 [[package]]
 name = "winapi"

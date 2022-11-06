@@ -40,7 +40,10 @@ pub trait ExecProgram {
 }
 
 impl ExecProgram for Machine {
+    #[allow(unreachable_code, unused_variables)] // TODO: remove this macro
     fn run_main(&mut self, args: Vec<u8>) -> Result<ExecOutcome> {
+        todo!("use the right module");
+
         let args_len = Value::from(args.len() as u32);
         let args_ptr = match self.call_function("poly_host", "allocate_args", &vec![args_len])? {
             Ok(ptr) => ptr[0].try_into().unwrap(),

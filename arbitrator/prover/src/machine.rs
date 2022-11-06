@@ -5,7 +5,7 @@ use crate::{
     binary::{
         parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
     },
-    host::{self, get_host_impl},
+    host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
     programs::{
@@ -414,7 +414,7 @@ impl Module {
                             "Calling hostapi directly is not allowed. Function {}",
                             color::red(import_name),
                         );
-                        func = get_host_impl(import.module, import_name)?;
+                        func = host::get_host_impl(import.module, import_name)?;
                         &func.ty
                     }
                 };

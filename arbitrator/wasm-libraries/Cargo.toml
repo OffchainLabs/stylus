@@ -7,4 +7,5 @@ members = [
 	"host-io",
         "poly-host",
         "poly-link",
+        "wavm-util",
 ]
