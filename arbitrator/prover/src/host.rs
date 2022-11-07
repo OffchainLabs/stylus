@@ -27,24 +27,24 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
         ("env", "wavm_caller_load8") => {
             ty = FunctionType::new(vec![I32], vec![I32]);
             opcode!(LocalGet, 0);
-            opcode!(CallerModuleInternalCall, 0);
+            opcode!(CallerModuleInternalCall, WAVM_CALLER_LOAD8);
         }
         ("env", "wavm_caller_load32") => {
             ty = FunctionType::new(vec![I32], vec![I32]);
             opcode!(LocalGet, 0);
-            opcode!(CallerModuleInternalCall, 1);
+            opcode!(CallerModuleInternalCall, WAVM_CALLER_LOAD32);
         }
         ("env", "wavm_caller_store8") => {
             ty = FunctionType::new(vec![I32; 2], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
-            opcode!(CallerModuleInternalCall, 2);
+            opcode!(CallerModuleInternalCall, WAVM_CALLER_STORE8);
         }
         ("env", "wavm_caller_store32") => {
             ty = FunctionType::new(vec![I32; 2], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
-            opcode!(CallerModuleInternalCall, 3);
+            opcode!(CallerModuleInternalCall, WAVM_CALLER_STORE32);
         }
         ("env", "wavm_get_globalstate_bytes32") => {
             ty = FunctionType::new(vec![I32; 2], vec![]);
@@ -90,7 +90,7 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             opcode!(ReadInboxMessage, InboxIdentifier::Delayed as u64);
         }
         ("env", "wavm_get_caller_module") => {
-            ty = FunctionType::default();
+            ty = FunctionType::new(vec![], vec![I32]);
             opcode!(CurrentModule);
         }
         ("env", "wavm_link_program") => {
@@ -104,9 +104,16 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             opcode!(I32Const, 0); // gas status
             opcode!(LocalGet, 0); // the module
             opcode!(LocalGet, 1); // the internals offset
-            opcode!(I32Const, 6); // the relative position of poly_wavm_set_gas
+            opcode!(I32Const, POLY_WAVM_SET_GAS); // the relative position of poly_wavm_set_gas
             opcode!(IBinOp(IntegerValType::I32, IBinOpType::Add)); // absolute position of poly_wavm_set_gas
             opcode!(CrossModuleDynamicCall); // consumes module and func, forwarding the others
+        }
+        ("env", "wavm_call_program") => {
+            ty = FunctionType::new(vec![I32, I32, I32], vec![I32]);
+            opcode!(LocalGet, 2); // the args len
+            opcode!(LocalGet, 0); // the module
+            opcode!(LocalGet, 1); // the function
+            opcode!(CrossModuleDynamicCall) // consumes module and func, forwarding the args len
         }
         ("env", "wavm_halt_and_set_finished") => {
             ty = FunctionType::default();
@@ -114,17 +121,41 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
         }
         ("env", "poly_wavm_gas_left") => {
             ty = FunctionType::new(vec![], vec![I64]);
-            opcode!(CallerModuleInternalCall, 4);
+            opcode!(CallerModuleInternalCall, POLY_WAVM_GAS_LEFT);
         }
         ("env", "poly_wavm_gas_status") => {
             ty = FunctionType::new(vec![], vec![I32]);
-            opcode!(CallerModuleInternalCall, 5);
+            opcode!(CallerModuleInternalCall, POLY_WAVM_GAS_STATUS);
         }
         ("env", "poly_wavm_set_gas") => {
             ty = FunctionType::new(vec![I64, I32], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
-            opcode!(CallerModuleInternalCall, 6);
+            opcode!(CallerModuleInternalCall, POLY_WAVM_SET_GAS);
+        }
+        ("dynamic_host", "wavm_read_program_gas_left") => {
+            ty = FunctionType::new(vec![I32, I32], vec![I64]);
+            opcode!(LocalGet, 0); // the module
+            opcode!(LocalGet, 1); // the internals offset
+            opcode!(I32Const, POLY_WAVM_GAS_LEFT); // the relative position of poly_wavm_gas_left
+            opcode!(IBinOp(IntegerValType::I32, IBinOpType::Add)); // absolute position of poly_wavm_gas_left
+            opcode!(CrossModuleDynamicCall);
+        }
+        ("dynamic_host", "wavm_read_program_gas_status") => {
+            ty = FunctionType::new(vec![I32, I32], vec![I32]);
+            opcode!(LocalGet, 0); // the module
+            opcode!(LocalGet, 1); // the internals offset
+            opcode!(I32Const, POLY_WAVM_GAS_STATUS); // the relative position of poly_wavm_gas_status
+            opcode!(IBinOp(IntegerValType::I32, IBinOpType::Add)); // absolute position of poly_wavm_gas_status
+            opcode!(CrossModuleDynamicCall);
+        }
+        ("dynamic_host", "wavm_read_program_depth_left") => {
+            ty = FunctionType::new(vec![I32, I32], vec![I32]);
+            opcode!(LocalGet, 0); // the module
+            opcode!(LocalGet, 1); // the internals offset
+            opcode!(I32Const, POLY_WAVM_DEPTH_LEFT); // the relative position of poly_wavm_depth_left
+            opcode!(IBinOp(IntegerValType::I32, IBinOpType::Add)); // absolute position of poly_wavm_depth_left
+            opcode!(CrossModuleDynamicCall);
         }
         _ => eyre::bail!("Unsupported import of {:?} {:?}", module, name),
     }
@@ -137,6 +168,17 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
     Function::new(&[], append, ty, &[])
 }
 
+const WAVM_CALLER_LOAD8: u64 = 0;
+const WAVM_CALLER_LOAD32: u64 = 1;
+const WAVM_CALLER_STORE8: u64 = 2;
+const WAVM_CALLER_STORE32: u64 = 3;
+const POLY_WAVM_GAS_LEFT: u64 = 4;
+const POLY_WAVM_GAS_STATUS: u64 = 5;
+const POLY_WAVM_DEPTH_LEFT: u64 = 6;
+const POLY_WAVM_SET_GAS: u64 = 7;
+
+/// Adds internal functions to a module.
+/// Note: the order of the functions matters and must match the dynamic calls in the wavm hostio impls
 pub fn add_internal_funcs(
     funcs: &mut Vec<Function>,
     func_types: &mut Vec<FunctionType>,
@@ -190,7 +232,7 @@ pub fn add_internal_funcs(
     ));
 
     if let Some(poly_host) = poly_host {
-        let (gas, status) = poly_host.globals();
+        let (gas, status, depth) = poly_host.globals();
         funcs.push(code_func(
             vec![Instruction::with_data(GlobalGet, gas)],
             host!(vec![], vec![I64]), // poly_wavm_gas_left
@@ -198,6 +240,10 @@ pub fn add_internal_funcs(
         funcs.push(code_func(
             vec![Instruction::with_data(GlobalGet, status)],
             host!(vec![], vec![I32]), // poly_wavm_gas_status
+        ));
+        funcs.push(code_func(
+            vec![Instruction::with_data(GlobalGet, depth)],
+            host!(vec![], vec![I32]), // poly_wavm_depth_left
         ));
         funcs.push(code_func(
             vec![

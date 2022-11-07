@@ -27,7 +27,7 @@ use {super::GlobalMod, wasmer::Instance};
 pub struct DepthChecker<M: ModuleMod> {
     /// The amount of stack space left. Note, this is not the only global the depth checker installs.
     /// One more for the initial limit is added but no handle to it is needed when instrumenting functions.
-    global: Mutex<Option<GlobalIndex>>,
+    pub global: Mutex<Option<GlobalIndex>>,
     /// The maximum size of the stack, measured in words
     limit: u32,
     /// Info about the module being instrumented.

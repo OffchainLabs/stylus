@@ -8,6 +8,17 @@ extern "C" {
     pub fn wavm_caller_store32(ptr: usize, val: u32);
 }
 
+pub unsafe fn wavm_caller_load64(ptr: usize) -> u64 {
+    let lower = wavm_caller_load32(ptr);
+    let upper = wavm_caller_load32(ptr + 4);
+    lower as u64 | ((upper as u64) << 32)
+}
+
+pub unsafe fn wavm_caller_store64(ptr: usize, val: u64) {
+    wavm_caller_store32(ptr, val as u32);
+    wavm_caller_store32(ptr + 4, (val >> 32) as u32);
+}
+
 pub unsafe fn write_slice(mut src: &[u8], mut ptr: usize) {
     while src.len() >= 4 {
         let mut arr = [0u8; 4];

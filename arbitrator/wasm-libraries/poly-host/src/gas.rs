@@ -7,25 +7,20 @@ extern "C" {
     fn poly_wavm_set_gas(gas: u64, status: u32);
 }
 
-static mut GAS_PRICE: u64 = 1000;
-
-pub(crate) unsafe fn buy_evm_gas(evm_gas: u64) {
+pub(crate) unsafe fn buy_evm_gas(evm_gas: u64, gas_price: u64) {
     if poly_wavm_gas_status() != 0 {
         panic!("out of gas");
     }
     let mut gas_left = poly_wavm_gas_left();
-    let gas_price = GAS_PRICE;
-
     let mut evm_gas_left = gas_left.saturating_mul(1000) / gas_price;
     if evm_gas > evm_gas_left {
         poly_wavm_set_gas(gas_left, 1);
         panic!("out of gas");
     }
+    arbutil::color::redln(format!("HAVE {} gas", gas_left));
     evm_gas_left -= evm_gas;
     gas_left = evm_gas_left.saturating_mul(1000) / gas_price;
     poly_wavm_set_gas(gas_left, 0);
-}
 
-pub unsafe fn set_gas_price(gas_price: u64) {
-    GAS_PRICE = gas_price;
+    arbutil::color::redln(format!("BOUGHT {evm_gas} = {} gas", gas_left));
 }

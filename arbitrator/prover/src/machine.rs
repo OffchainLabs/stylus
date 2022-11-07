@@ -351,6 +351,7 @@ impl Module {
         let poly_host = PolyHostData {
             gas_left: meter.gas_global.lock().unwrap(),
             gas_status: meter.status_global.lock().unwrap(),
+            depth_left: depth.global.lock().unwrap(),
         };
 
         Self::from_binary(
@@ -1459,9 +1460,12 @@ impl Machine {
         (module.hash(), module)
     }
 
-    pub fn main_module_info(&self) -> (Bytes32, u32) {
+    pub fn main_module_info(&self) -> (Bytes32, u32, u32) {
         let module = self.modules.last().unwrap();
-        (module.hash(), module.internals_offset)
+        let main = module
+            .get_export("arbitrum_main", ExportKind::Func)
+            .unwrap();
+        (module.hash(), main, module.internals_offset)
     }
 
     fn get_module(&self, module: &str) -> Result<&Module> {

@@ -359,13 +359,15 @@ impl From<TransformError> for MiddlewareError {
 pub struct PolyHostData {
     pub gas_left: GlobalIndex,
     pub gas_status: GlobalIndex,
+    pub depth_left: GlobalIndex,
 }
 
 impl PolyHostData {
-    pub fn globals(&self) -> (u64, u64) {
+    pub fn globals(&self) -> (u64, u64, u64) {
         (
             self.gas_left.as_u32() as u64,
             self.gas_status.as_u32() as u64,
+            self.depth_left.as_u32() as u64,
         )
     }
 }

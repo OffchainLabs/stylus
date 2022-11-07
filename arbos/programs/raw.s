@@ -14,6 +14,10 @@ TEXT ·polyglotCall(SB), NOSPLIT, $0
   CallImport
   RET
 
+TEXT ·polyglotCopy(SB), NOSPLIT, $0
+  CallImport
+  RET
+
 TEXT ·polyglotFree(SB), NOSPLIT, $0
   CallImport
   RET

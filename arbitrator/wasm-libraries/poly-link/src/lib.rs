@@ -1,25 +1,30 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use arbutil::color;
-use wavm_util;
+use core::slice;
+
 use go_abi::GoStack;
-use prover::{
-    programs::{ExecOutcome, ExecProgram, PolyglotConfig, meter::MeteredMachine},
-    Machine,
-};
+use prover::{programs::PolyglotConfig, Machine};
 
 extern "C" {
     fn wavm_link_program(hash: *const MemoryLeaf) -> u32;
     fn wavm_prep_program(module: u32, internals: u32, gas: u64);
-    fn wavm_call_program(module: u32, main: u32) -> u32;
+    fn wavm_call_program(module: u32, main: u32, args_len: usize) -> u32;
+}
+
+#[link(wasm_import_module = "dynamic_host")]
+extern "C" {
+    fn wavm_read_program_gas_left(module: u32, internals: u32) -> u64;
+    fn wavm_read_program_gas_status(module: u32, internals: u32) -> u32;
+    fn wavm_read_program_depth_left(module: u32, internals: u32) -> u32;
 }
 
 #[link(wasm_import_module = "poly_host")]
 extern "C" {
-    fn allocate_args(module: u32, bytes: u32) -> usize;
+    fn write_args(module: u32, args: *const u8, args_len: usize, gas_price: u64) -> usize;
+    fn read_output(module: u32, output: *mut u8);
     fn read_output_len(module: u32) -> usize;
-    fn read_output_ptr(module: u32) -> usize;
+    fn clear_program(module: u32);
 }
 
 #[repr(C, align(256))]
@@ -59,24 +64,33 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polygl
     const WASM_LEN: usize = 1;
     const CALL_PTR: usize = 3;
     const CALL_LEN: usize = 4;
-    const GAS_LEFT: usize = 7;
+    const GAS_PRICE: usize = 6;
+    const GAS_PTR: usize = 7;
     const STATUS: usize = 8;
-    const OUTPTR: usize = 9;
-    const OUTLEN: usize = 10;
-    const OUTCAP: usize = 11;
+    const OUTPUT_PTR: usize = 9;
+    const OUTPUT_LEN: usize = 10;
+    const OUTPUT_CAP: usize = 11;
+
+    let gas_ptr = sp.read_u64(GAS_PTR) as usize;
+
+    let mut need_to_clear = None;
 
     macro_rules! output {
         ($status:expr, $output:expr) => {{
             let output: Vec<u8> = $output.into();
             sp.write_u64(STATUS, $status);
-            write_output(sp, &output, OUTPTR, OUTLEN, OUTCAP);
+            write_output(sp, &output, OUTPUT_PTR, OUTPUT_LEN, OUTPUT_CAP);
             std::mem::forget(output);
+            if let Some(module) = need_to_clear {
+                clear_program(module);
+            }
             return;
         }};
     }
 
     let wasm = read_go_slice(sp, WASM_PTR, WASM_LEN);
-    let data = read_go_slice(sp, CALL_PTR, CALL_LEN);
+    let args = read_go_slice(sp, CALL_PTR, CALL_LEN);
+    let args_len = args.len();
 
     let config = PolyglotConfig::default();
     let machine = match Machine::from_polyglot_binary(&wasm, true, &config) {
@@ -84,36 +98,46 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polygl
         Err(error) => output!(1, error.to_string()),
     };
 
-    let (hash, internals) = machine.main_module_info();
-    color::blueln(format!("Compiled Module {hash}"));
+    let (hash, main, internals) = machine.main_module_info();
+    let module = wavm_link_program(&MemoryLeaf(hash.0));
+    wavm_prep_program(module, internals, wavm_util::wavm_caller_load64(gas_ptr));
+    write_args(module, args.as_ptr(), args_len, sp.read_u64(GAS_PRICE));
+    need_to_clear = Some(module);
 
-    let hash = MemoryLeaf(hash.0);
-    let module = wavm_link_program(&hash);
-    color::blueln(format!("Linked Module, #{module}"));
-
-    wavm_prep_program(module, internals, sp.read_u64(GAS_LEFT));
-    color::blueln(format!("Prepped Module, #{module}"));
-
-    let args = allocate_args(module, data.len() as u32);
-    color::blueln(format!("Args {args} {}", data.len()));
-    wavm_util::write_slice(&data, args);
-    color::blueln(format!("Wrote args {args} {}", data.len()));
-
-    // call into machine
-    let status = 1;
+    let status = wavm_call_program(module, main, args_len);
+    if wavm_read_program_depth_left(module, internals) == 0 {
+        output!(1, "out of stack");
+    }
+    if wavm_read_program_gas_status(module, internals) != 0 {
+        output!(1, "out of gas");
+    }
+    let gas_left = wavm_read_program_gas_left(module, internals);
+    wavm_util::wavm_caller_store64(gas_ptr, gas_left);
 
     let output_len = read_output_len(module);
-    let output_ptr = read_output_ptr(module);
-    let output = wavm_util::read_slice(output_ptr, output_len);
-    output!(status, output);
+    let mut output = Vec::with_capacity(output_len);
+    read_output(module, output.as_mut_ptr());
+    output.set_len(output_len);
+    output!(status.into(), output);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polyglotCopy(
+    sp: GoStack,
+) {
+    // func(dest *byte, source *byte, len uint64)
+    let dest = usize::try_from(sp.read_u64(0)).expect("Go pointer didn't fit in usize");
+    let src = usize::try_from(sp.read_u64(1)).expect("Go pointer didn't fit in usize") as *mut u8;
+    let len = sp.read_u64(2).try_into().unwrap();
+
+    let input = slice::from_raw_parts(src, len);
+    wavm_util::write_slice(input, dest)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_polyglotFree(
     sp: GoStack,
 ) {
-    color::redln("polyglotFree");
-
     // func(output *byte, outlen, outcap uint64)
     let ptr = usize::try_from(sp.read_u64(0)).expect("Go pointer didn't fit in usize") as *mut u8;
     let len = sp.read_u64(1).try_into().unwrap();

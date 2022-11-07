@@ -23,7 +23,6 @@ import (
 )
 
 func TestKeccakProgram(t *testing.T) {
-	//	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -82,6 +81,7 @@ func TestKeccakProgram(t *testing.T) {
 	if hash != correct {
 		Fail(t, "computed hash mismatch", hash, correct)
 	}
+	colors.PrintMint("keccak(x) = ", hash)
 
 	passed := time.Since(now)
 	colors.PrintMint("Time to execute: ", passed.String())
