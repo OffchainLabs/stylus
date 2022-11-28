@@ -12,7 +12,7 @@ use brotli2::read::{BrotliDecoder, BrotliEncoder};
 use eyre::{bail, Result};
 use prover::{
     machine::MachineStatus,
-    middlewares::{
+    programs::{
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
         GlobalMod, PolyglotConfig,
