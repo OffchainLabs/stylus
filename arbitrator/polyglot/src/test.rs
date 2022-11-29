@@ -4,7 +4,7 @@
 #![cfg(test)]
 
 use crate::{
-    machine::{self, WasmEnvArc},
+    machine::{self, WasmEnvArc, Escape},
     ExecOutcome, ExecPolyglot,
 };
 
@@ -12,7 +12,7 @@ use brotli2::read::{BrotliDecoder, BrotliEncoder};
 use eyre::{bail, Result};
 use prover::{
     machine::MachineStatus,
-    middlewares::{
+    programs::{
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
         GlobalMod, PolyglotConfig,
@@ -247,6 +247,62 @@ pub fn test_eddsa() -> Result<()> {
     println!("Poly main: {}", format_time(time.elapsed()));
     Ok(())
 }
+
+#[test]
+#[should_panic]
+pub fn invalid_gas_price() {
+    let args: Vec<u8> = vec![0];
+    let _wasm_env_arc = WasmEnvArc::new(&args, 0);
+}
+
+#[test]
+pub fn buy_evm_gas() -> Result<()> {
+    let wasm = std::fs::read("../jit/programs/pure/main.wat")?;
+    let mut config = PolyglotConfig::default();
+    config.costs = expensive_add;
+    config.max_depth = 1024;
+
+    let (module, store) = machine::instrument(&wasm, &config)?;
+
+    let gas_price: u64 = 1000;
+    let env = WasmEnvArc::new(&vec![], gas_price);
+
+    let mut instance = machine::create(&module, &store, env.clone())?;
+    let add_one = instance.exports.get_function("add_one")?;
+    let add_one = add_one.native::<i32, i32>().unwrap();
+
+    instance.set_gas(1000);
+    assert_eq!(instance.gas_left(), MachineMeter::Ready(1000));
+    assert_eq!(add_one.call(32)?, 33);
+    assert_eq!(instance.gas_left(), MachineMeter::Ready(900));
+
+    let mut env = env.lock();
+    let MachineMeter::Ready(gas_left) = instance.gas_left() else {
+        bail!("could not get instance's gas left");
+    };
+    // Expect buying EVM gas > gas left to fail.
+    let Err(Escape::OutOfGas) = env.buy_evm_gas(gas_left+1) else {
+        bail!("expected instance to run out of gas when buying more than what is left");
+    };
+    assert_eq!(instance.gas_left(), MachineMeter::Exhausted);
+
+    // Expect buying EVM gas < gas_left to succeed.
+    let gas_left = 1000;
+    instance.set_gas(gas_left);
+    let Ok(()) = env.buy_evm_gas(gas_left-1) else {
+        bail!("expected to be able to buy evm gas");
+    };
+    assert_eq!(instance.gas_left(), MachineMeter::Ready(1));
+
+    // Expect buying EVM gas == gas_left to succeed.
+    let gas_left = 1000;
+    instance.set_gas(gas_left);
+    let Ok(()) = env.buy_evm_gas(gas_left) else {
+        bail!("expected to be able to purchase gas equal to as much gas is left");
+    };
+    Ok(())
+}
+
 
 fn compress(data: &[u8], level: u32) -> Vec<u8> {
     let mut output = vec![];

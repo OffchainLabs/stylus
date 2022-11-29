@@ -104,6 +104,7 @@ impl Deref for WasmEnvArc {
 
 impl WasmEnvArc {
     pub fn new(args: &[u8], gas_price: u64) -> Self {
+        assert!(gas_price > 0, "gas price must be > 0");
         let mut env = WasmEnv::default();
         env.args = args.to_owned();
         env.gas_price = gas_price;
