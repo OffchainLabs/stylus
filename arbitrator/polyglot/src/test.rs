@@ -12,7 +12,7 @@ use brotli2::read::{BrotliDecoder, BrotliEncoder};
 use eyre::{bail, Result};
 use prover::{
     machine::MachineStatus,
-    middlewares::{
+    programs::{
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
         GlobalMod, PolyglotConfig,
@@ -212,7 +212,7 @@ pub fn test_eddsa() -> Result<()> {
     use ed25519_dalek::{Keypair, Signer, Verifier};
     use rand::rngs::OsRng;
 
-    let wasm = std::fs::read("programs/eddsa/eddsa.wasm")?;
+    let wasm = std::fs::read("programs/monocypher/eddsa.wasm")?;
     let mut config = PolyglotConfig::default();
     config.costs = |_: &Operator| 1;
     config.start_gas = 10_000_000;

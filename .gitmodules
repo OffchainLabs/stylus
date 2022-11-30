@@ -22,3 +22,6 @@
 [submodule "arbitrator/wasm-upstream/wasm-tools"]
 	path = arbitrator/wasm-upstream/wasm-tools
 	url = git@github.com:OffchainLabs/wasm-tools.git
+[submodule "arbitrator/polyglot/programs/monocypher"]
+	path = arbitrator/polyglot/programs/monocypher
+	url = git@github.com:OffchainLabs/monocypher.git
