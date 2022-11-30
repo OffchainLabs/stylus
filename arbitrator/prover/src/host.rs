@@ -91,7 +91,7 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
         }
         ("env", "wavm_get_caller_module") => {
             ty = FunctionType::new(vec![], vec![I32]);
-            opcode!(CurrentModule);
+            opcode!(CallerModule);
         }
         ("env", "wavm_link_program") => {
             ty = FunctionType::new(vec![I32], vec![I32]);

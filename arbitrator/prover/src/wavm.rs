@@ -138,8 +138,8 @@ pub enum Opcode {
     MoveFromInternalToStack,
     /// Duplicate the top value on the stack
     Dup,
-    /// Reads the stack frame
-    CurrentModule,
+    /// Reads the stack frame for the calling module, which may have been forwarded
+    CallerModule,
     /// Call a function in a different module
     CrossModuleCall,
     /// Call a function in a different module, acting as the caller's module
@@ -266,18 +266,18 @@ impl Opcode {
             Opcode::MoveFromInternalToStack => 0x8006,
             Opcode::Dup => 0x8008,
             Opcode::CrossModuleCall => 0x8009,
-            Opcode::CrossModuleForward => 0x800D,
-            Opcode::CrossModuleDynamicCall => 0x800E,
+            Opcode::CrossModuleForward => 0x800C,
+            Opcode::CrossModuleDynamicCall => 0x800D,
             Opcode::CallerModuleInternalCall => 0x800A,
-            Opcode::CurrentModule => 0x800B,
             Opcode::GetGlobalStateBytes32 => 0x8010,
             Opcode::SetGlobalStateBytes32 => 0x8011,
             Opcode::GetGlobalStateU64 => 0x8012,
             Opcode::SetGlobalStateU64 => 0x8013,
             Opcode::ReadPreImage => 0x8020,
             Opcode::ReadInboxMessage => 0x8021,
-            Opcode::LinkModule => 0x800C,
             Opcode::HaltAndSetFinished => 0x8022,
+            Opcode::CallerModule => 0x8023,
+            Opcode::LinkModule => 0x8024,
         }
     }
 

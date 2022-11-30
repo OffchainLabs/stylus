@@ -1682,7 +1682,7 @@ impl Machine {
                         caller_module_internals,
                     });
                 }
-                Opcode::CurrentModule => {
+                Opcode::CallerModule => {
                     let frame = self.frame_stack.last().unwrap();
                     self.value_stack.push(frame.caller_module.into());
                 }

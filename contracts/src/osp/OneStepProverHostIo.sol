@@ -17,6 +17,7 @@ contract OneStepProverHostIo is IOneStepProver {
     using ModuleMemoryLib for ModuleMemory;
     using ValueLib for Value;
     using ValueStackLib for ValueStack;
+    using StackFrameLib for StackFrameWindow;
 
     uint256 private constant LEAF_SIZE = 32;
     uint256 private constant INBOX_NUM = 2;
@@ -286,6 +287,29 @@ contract OneStepProverHostIo is IOneStepProver {
         mach.status = MachineStatus.FINISHED;
     }
 
+    function executeCallerModule(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory,
+        Instruction calldata,
+        bytes calldata
+    ) internal pure {
+        StackFrame memory frame = mach.frameStack.peek();
+        mach.valueStack.push(ValueLib.newI32(frame.callerModule));
+    }
+
+    function executeLinkModule(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory,
+        Instruction calldata,
+        bytes calldata proof
+    ) internal pure {
+        /*Value memory pointer = mach.valueStack.pop();
+        Value memory module = // get memory
+        mach.*/
+    }
+
     function executeGlobalStateAccess(
         ExecutionContext calldata,
         Machine memory mach,
@@ -347,6 +371,10 @@ contract OneStepProverHostIo is IOneStepProver {
             impl = executeReadInboxMessage;
         } else if (opcode == Instructions.HALT_AND_SET_FINISHED) {
             impl = executeHaltAndSetFinished;
+        } else if (opcode == Instructions.CALLER_MODULE) {
+            impl = executeCallerModule;
+        } else if (opcode == Instructions.LINK_MODULE) {
+            impl = executeLinkModule;
         } else {
             revert("INVALID_MEMORY_OPCODE");
         }
