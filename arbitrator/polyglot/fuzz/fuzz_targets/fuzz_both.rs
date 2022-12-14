@@ -6,7 +6,7 @@ use common::color;
 use libfuzzer_sys::fuzz_target;
 use polyglot::{self, ExecPolyglot};
 use prover::{
-    middlewares::{depth::DepthCheckedMachine, meter::MeteredMachine},
+    programs::{depth::DepthCheckedMachine, meter::MeteredMachine},
     Machine,
 };
 use std::time::{Duration, Instant};

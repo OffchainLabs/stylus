@@ -47,6 +47,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbutil"
+version = "0.1.0"
+dependencies = [
+ "wasmparser 0.83.0",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -206,10 +213,6 @@ checksum = "e8ad8cef104ac57b68b89df3208164d228503abbdce70f6880ffa3d970e7443a"
 dependencies = [
  "cc",
 ]
-
-[[package]]
-name = "common"
-version = "0.1.0"
 
 [[package]]
 name = "corosensei"
@@ -1006,7 +1009,8 @@ checksum = "e0a7ae3ac2f1173085d398531c705756c94a4c56843785df85a60c1a0afac116"
 name = "polyglot"
 version = "0.1.0"
 dependencies = [
- "common",
+ "arbutil",
+ "brotli2",
  "ed25519-dalek",
  "eyre",
  "hex",
@@ -1027,7 +1031,7 @@ name = "polyglot-fuzz"
 version = "0.0.0"
 dependencies = [
  "arbitrary",
- "common",
+ "arbutil",
  "hex",
  "libfuzzer-sys",
  "polyglot",
@@ -1081,9 +1085,9 @@ dependencies = [
 name = "prover"
 version = "0.1.0"
 dependencies = [
+ "arbutil",
  "bincode",
  "brotli2",
- "common",
  "digest",
  "eyre",
  "fnv",
@@ -1102,8 +1106,11 @@ dependencies = [
  "sha3",
  "static_assertions",
  "structopt",
+ "thiserror",
  "wasmer",
+ "wasmer-compiler-singlepass",
  "wasmer-types",
+ "wasmparser 0.83.0",
 ]
 
 [[package]]

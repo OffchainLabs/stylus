@@ -10,8 +10,9 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-wasmer = { path = "/home/rachel/Documents/upstream/wasmer/lib/api/" }
-wasm-smith = { path = "/home/rachel/Documents/upstream/wasm-tools/crates/wasm-smith/" }
+wasmer = { path = "../../wasm-upstream/wasmer/lib/api/" }
+wasm-smith = { path = "../../wasm-upstream/wasm-tools/crates/wasm-smith/" }
+arbutil = { path = "../../arbutil/" }
 
 #wasmer = "2.3.0"
 #wasm-smith = "0.11.5"
@@ -21,7 +22,7 @@ arbitrary = "1.1.6"
 wasmparser = "0.83.0"
 polyglot = { path = "../" }
 prover = { path = "../../prover/" }
-common = { path = "../../common/" }
+#common = { path = "../../common/" }
 
 # Prevent this from interfering with workspaces
 [workspace]

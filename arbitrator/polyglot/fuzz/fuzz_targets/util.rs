@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use polyglot::machine::WasmEnvArc;
-use prover::middlewares::PolyglotConfig;
+use prover::programs::PolyglotConfig;
 use wasmer::wasmparser::Operator;
 
 pub fn fuzz_config() -> (PolyglotConfig, WasmEnvArc) {

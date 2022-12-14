@@ -2,10 +2,10 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 #![no_main]
-use common::color;
+use arbutil::color;
 use libfuzzer_sys::fuzz_target;
-use polyglot::{self, ExecOutcome, ExecPolyglot};
-use prover::middlewares::{
+use polyglot::{self, ExecOutcome, ExecPolyglot, machine};
+use prover::programs::{
     depth::DepthCheckedMachine,
     meter::{MachineMeter, MeteredMachine},
 };
@@ -21,8 +21,11 @@ fuzz_target!(|data: &[u8]| {
         warn!("Failed to validate wasm {}", error);
     }
 
+    //warn!("{}", wat!(module));
+
     let (config, env) = fuzz_config();
-    let mut instance = match polyglot::machine::create(&module, env, &config) {
+    let (module, store) = machine::instrument(&module, &config).unwrap();
+    let mut instance = match polyglot::machine::create(&module, &store, env) {
         Ok(instance) => instance,
         Err(error) => warn!("Failed to create instance: {}", error),
     };
@@ -52,5 +55,12 @@ fuzz_target!(|data: &[u8]| {
             space,
             gas
         ),
+        FatalError(error) => fail!(
+            module,
+            "Fatal: {} {} words and {} gas left",
+            error,
+            space,
+            gas
+        )
     }
 });
