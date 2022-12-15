@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -21,6 +22,79 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 )
+
+func TestPersistWasmProgram(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	l2config := arbnode.ConfigDefaultL1Test()
+	l2config.BlockValidator.ArbitratorValidator = true
+	l2config.BlockValidator.JitValidator = true
+	l2config.BatchPoster.Enable = true
+	l2config.L1Reader.Enable = true
+
+	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
+	defer requireClose(t, l1stack)
+	defer node.StopAndWait()
+
+	if node.StatelessBlockValidator == nil {
+		Fail(t, "no stateless block validator")
+	}
+
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	arbWASM, err := precompilesgen.NewArbWASM(common.HexToAddress("0xa0"), l2client)
+	Require(t, err)
+
+	file := "../arbitrator/polyglot/programs/sha3/target/wasm32-unknown-unknown/release/sha3.wasm"
+	wasm, err := os.ReadFile(file)
+	Require(t, err)
+	wasm, err = arbcompress.CompressWell(wasm)
+	Require(t, err)
+
+	// Add Polyglot EOF format prefix bytes to differentiate WASM programs
+	// from EVM bytecode deployed on-chain.
+	polyglotWasmPrefix := hexutil.MustDecode("0xEF0000")
+	code := append(polyglotWasmPrefix, wasm...)
+
+	colors.PrintMint("WASM len ", len(code))
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	colors.PrintMint("Deploying program")
+	programAddress := deployContract(t, ctx, auth, l2client, code)
+	colors.PrintBlue("program deployed to ", programAddress.Hex())
+
+	colors.PrintMint("Compiling program...")
+	ensure(arbWASM.CompileProgram(&auth, programAddress))
+	colors.PrintBlue("Compiled!")
+
+	preimage := []byte("°º¤ø,¸¸,ø¤º°`°º¤ø,¸,ø¤°º¤ø,¸¸,ø¤º°`°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
+	correct := crypto.Keccak256Hash(preimage)
+
+	// Sends a contract call.
+	colors.PrintMint("Sending non-mutating call to contract as a normal Ethereum tx")
+	now := time.Now()
+	result := sendContractCall(t, ctx, programAddress, l2client, preimage)
+	passed := time.Since(now)
+
+	if len(result) != 32 {
+		Fail(t, "unexpected return result", result)
+	}
+
+	hash := common.BytesToHash(result)
+	if hash != correct {
+		Fail(t, "computed hash mismatch", hash, correct)
+	}
+	colors.PrintMint("keccak(x) = ", hash)
+	colors.PrintMint("Time to execute: ", passed.String())
+}
 
 func TestKeccakProgram(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

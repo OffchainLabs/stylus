@@ -22,17 +22,13 @@ import (
 	"errors"
 	"unsafe"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
 type u32 = uint32
 type u64 = uint64
 
-func polyCompile(statedb vm.StateDB, program common.Address, wasm []byte) error {
+func polyCompile(wasm []byte) (machineOutput []byte, err error) {
 
 	// call into rust with C-signature
 	//     size_t polyglot_compile(uint8_t * wasm, size_t len, uint8_t ** out, size_t * out_len, size_t * out_cap)
@@ -49,25 +45,15 @@ func polyCompile(statedb vm.StateDB, program common.Address, wasm []byte) error 
 	)
 	defer polyFree(outptr, outlen, outcap)
 
-	output := arbutil.PointerToSlice((*byte)(outptr), outlen)
+	machineOutput = arbutil.PointerToSlice((*byte)(outptr), outlen)
 	if status != 0 {
-		return errors.New(string(output))
+		err = errors.New(string(machineOutput))
+		return
 	}
-	statedb.AddPolyMachine(1, program, output)
-	return nil
+	return
 }
 
-func polyCall(statedb vm.StateDB, program common.Address, calldata []byte, gas, gas_price u64) (u64, u32, []byte) {
-
-	if db, ok := statedb.(*state.StateDB); ok {
-		db.RecordProgram(program)
-	}
-
-	machine, err := statedb.GetPolyMachine(1, program)
-	if err != nil {
-		log.Crit("machine does not exist")
-	}
-
+func polyCall(machine, calldata []byte, gas, gas_price u64) (u64, u32, []byte) {
 	// call into rust with C-signature
 	//     size_t polyglot_call(
 	//         const uint8_t * module, size_t module_len,

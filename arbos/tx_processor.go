@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	glog "github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbos/programs"
 )
 
 var arbosAddress = types.ArbosAddress
@@ -96,9 +97,20 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 	}
 }
 
+// This hook is called before gas charging and will end the state transition if endTxNow is set to true
+// Hence, we must charge for any l2 resources if endTxNow is returned true
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
-	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
-	// Hence, we must charge for any l2 resources if endTxNow is returned true
+	if p.msg.To() != nil && len(p.msg.Data()) > 0 {
+		addr := *p.msg.To()
+		code := p.evm.StateDB.GetCode(addr)
+		if vm.IsPolyglotProgram(code) {
+			_, output, err := programs.Call(p.state.Programs(), p.msg.Gas(), p.evm, addr, p.msg.Data())
+			if err != nil {
+				return false, 0, err, nil
+			}
+			return true, 0, nil, output
+		}
+	}
 
 	underlyingTx := p.msg.UnderlyingTransaction()
 	if underlyingTx == nil {
