@@ -30,6 +30,7 @@ pub mod depth;
 pub mod exec;
 pub mod memory;
 pub mod meter;
+pub mod counter;
 pub mod start;
 
 pub use config::PolyglotConfig;

@@ -13,6 +13,7 @@ libfuzzer-sys = "0.4"
 wasmer = { path = "../../wasm-upstream/wasmer/lib/api/" }
 wasm-smith = { path = "../../wasm-upstream/wasm-tools/crates/wasm-smith/" }
 arbutil = { path = "../../arbutil/" }
+parking_lot = "0.12.1"
 
 #wasmer = "2.3.0"
 #wasm-smith = "0.11.5"

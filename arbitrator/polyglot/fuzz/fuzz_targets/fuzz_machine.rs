@@ -2,8 +2,10 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 #![no_main]
+
 use arbutil::color;
 use libfuzzer_sys::fuzz_target;
+use parking_lot::Mutex;
 use polyglot::{self, ExecOutcome, ExecPolyglot, machine};
 use prover::programs::{
     depth::DepthCheckedMachine,
@@ -14,6 +16,7 @@ mod util;
 mod wasm;
 
 use util::{fail, fuzz_config, warn, wat};
+use std::{collections::HashMap, sync::Arc};
 
 fuzz_target!(|data: &[u8]| {
     let module = wasm::random(data, 0);
@@ -24,6 +27,8 @@ fuzz_target!(|data: &[u8]| {
     //warn!("{}", wat!(module));
 
     let (config, env) = fuzz_config();
+    //config.opcode_counts_global_indexes = Some(Arc::new(Mutex::new(Vec::new())));
+    //config.operator_code_to_count_index = Some(Arc::new(Mutex::new(HashMap::new())));
     let (module, store) = machine::instrument(&module, &config).unwrap();
     let mut instance = match polyglot::machine::create(&module, &store, env) {
         Ok(instance) => instance,

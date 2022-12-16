@@ -1034,6 +1034,7 @@ dependencies = [
  "arbutil",
  "hex",
  "libfuzzer-sys",
+ "parking_lot",
  "polyglot",
  "prover",
  "wabt",
