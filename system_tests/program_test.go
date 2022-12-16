@@ -94,42 +94,6 @@ func TestPersistWasmProgram(t *testing.T) {
 	}
 	colors.PrintMint("keccak(x) = ", hash)
 	colors.PrintMint("Time to execute: ", passed.String())
-
-	// do a mutating call for proving's sake
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
-	ensure(tx, err)
-	ensure(mock.CallKeccak(&auth, programAddress, preimage))
-
-	doUntil(t, 10*time.Millisecond, 10, func() bool {
-		batchCount, err := node.InboxTracker.GetBatchCount()
-		Require(t, err)
-		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
-		Require(t, err)
-		messageCount, err := node.ArbInterface.TransactionStreamer().GetMessageCount()
-		Require(t, err)
-		return meta.MessageCount == messageCount
-	})
-
-	blockHeight, err := l2client.BlockNumber(ctx)
-	Require(t, err)
-
-	success := true
-	for block := uint64(1); block <= blockHeight; block++ {
-		header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
-		Require(t, err)
-
-		correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, true, common.Hash{})
-		Require(t, err, "block", block)
-		if correct {
-			colors.PrintMint("yay!! we validated block ", block)
-		} else {
-			colors.PrintRed("failed to validate block ", block)
-		}
-		success = success && correct
-	}
-	if !success {
-		Fail(t)
-	}
 }
 
 func TestKeccakProgram(t *testing.T) {
