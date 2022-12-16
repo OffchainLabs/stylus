@@ -10,14 +10,15 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
 )
 
 const (
-	MaxWASMSize     = 64 * 1024
-	polyglotVersion = 1
+	MaxWASMSize = 64 * 1024
+	// PolyglotMachineVersion defines the version number for polyglot
+	// machines stored in ArbDB.
+	PolyglotVersion = 1
 )
 
 type Programs struct {
@@ -37,22 +38,6 @@ func Open(sto *storage.Storage) *Programs {
 	return &Programs{sto, machineInfo, &wasmGasPrice}
 }
 
-func Call(programs *Programs, inputGas uint64, evm *vm.EVM, address common.Address, calldata []byte) (uint32, []byte, error) {
-	// TODO: require some intrinsic amount of gas
-	// give all gas to the program
-	getGas := func() uint64 { return inputGas }
-	gasLeft, status, output, err := programs.CallProgram(evm.StateDB, address, calldata, getGas)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	if gasLeft > gasLeft {
-		log.Error("program gas didn't decrease", "gas", gasLeft, "gasLeft", gasLeft)
-		return 0, nil, errors.New("internal metering error")
-	}
-	return status, output, nil
-}
-
 func (p Programs) CompileProgram(statedb vm.StateDB, addr common.Address) error {
 	wasm, err := getWasm(statedb, addr)
 	if err != nil {
@@ -63,7 +48,7 @@ func (p Programs) CompileProgram(statedb vm.StateDB, addr common.Address) error 
 		return err
 	}
 	// Add the machine output to ArbDB.
-	statedb.AddPolyMachine(polyglotVersion, addr, machineOutput)
+	statedb.AddPolyMachine(PolyglotVersion, addr, machineOutput)
 	return p.machineVersions.SetUint64(addr.Hash(), 1)
 }
 
@@ -84,12 +69,12 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	if db, ok := statedb.(*state.StateDB); ok {
-		db.RecordProgram(program)
-	}
-	machine, err := statedb.GetPolyMachine(polyglotVersion, program)
+	machine, err := statedb.GetPolyMachine(PolyglotVersion, program)
 	if err != nil {
 		return 0, 0, nil, err
+	}
+	if db, ok := statedb.(*state.StateDB); ok {
+		db.RecordProgram(program)
 	}
 	gasLeft, status, output := polyCall(machine, calldata, gas(), gasPrice)
 	return gasLeft, status, output, nil
