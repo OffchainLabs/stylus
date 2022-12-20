@@ -142,6 +142,7 @@ func ProduceBlockAdvanced(
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
+	// bc *core.BlockChain,
 	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
 ) (*types.Block, types.Receipts, error) {
@@ -280,6 +281,7 @@ func ProduceBlockAdvanced(
 				&header.Coinbase,
 				&gasPool,
 				statedb,
+				nil, // TODO: ADD ARBDB
 				header,
 				tx,
 				&header.GasUsed,

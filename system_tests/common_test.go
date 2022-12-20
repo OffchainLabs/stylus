@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
+	"fmt"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -299,6 +300,7 @@ func createL2BlockChain(
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
+	fmt.Printf("Arb DB IN TESTTTT %v\n", arbDb)
 	blockchain, err := arbnode.WriteOrTestBlockChain(chainDb, arbDb, nil, initReader, chainConfig, arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
 

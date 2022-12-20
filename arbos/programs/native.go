@@ -54,7 +54,7 @@ func polyCompile(statedb vm.StateDB, arbDB ethdb.Database, program common.Addres
 	if status != 0 {
 		return errors.New(string(output))
 	}
-	statedb.AddPolyMachine(1, program, output)
+	addPolyMachine(arbDB, 1, program, output)
 	return nil
 }
 
@@ -64,7 +64,7 @@ func polyCall(statedb vm.StateDB, arbDB ethdb.Database, program common.Address, 
 		db.RecordProgram(program)
 	}
 
-	machine, err := statedb.GetPolyMachine(1, program)
+	machine, err := getPolyMachine(arbDB, 1, program)
 	if err != nil {
 		log.Crit("machine does not exist")
 	}
@@ -101,4 +101,16 @@ func polyFree(ptr *C.uint8_t, len, cap int) {
 	//     void polyglot_free(uint8_t * data, size_t out_len, size_t out_cap);
 	//
 	C.polyglot_free(ptr, C.size_t(len), C.size_t(cap))
+}
+
+func addPolyMachine(writer ethdb.KeyValueWriter, version uint64, program common.Address, output []byte) {
+	prefix := []byte("polyglot-machines")
+	key := append(prefix, program[:]...)
+	writer.Put(key, output)
+}
+
+func getPolyMachine(writer ethdb.KeyValueReader, version uint64, program common.Address) ([]byte, error) {
+	prefix := []byte("polyglot-machines")
+	key := append(prefix, program[:]...)
+	return writer.Get(key)
 }
