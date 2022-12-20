@@ -26,7 +26,7 @@ func polyCompile(wasm []byte) ([]byte, error) {
 
 	output := arbutil.PointerToSlice(outptr, int(outlen))
 	if status != 0 {
-		return errors.New(string(output))
+		return nil, errors.New(string(output))
 	}
 	return output, nil
 }
