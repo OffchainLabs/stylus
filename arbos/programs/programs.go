@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -43,12 +42,9 @@ func (p Programs) CompileProgram(statedb vm.StateDB, addr common.Address) error 
 	if err != nil {
 		return err
 	}
-	machineOutput, err := polyCompile(wasm)
-	if err != nil {
+	if err := polyCompile(statedb, addr, wasm); err != nil {
 		return err
 	}
-	// Add the machine output to ArbDB.
-	statedb.AddPolyMachine(PolyglotVersion, addr, machineOutput)
 	return p.machineVersions.SetUint64(addr.Hash(), 1)
 }
 
@@ -69,14 +65,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	machine, err := statedb.GetPolyMachine(PolyglotVersion, program)
-	if err != nil {
-		return 0, 0, nil, err
-	}
-	if db, ok := statedb.(*state.StateDB); ok {
-		db.RecordProgram(program)
-	}
-	gasLeft, status, output := polyCall(machine, calldata, gas(), gasPrice)
+	gasLeft, status, output := polyCall(statedb, program, calldata, gas(), gasPrice)
 	return gasLeft, status, output, nil
 }
 
