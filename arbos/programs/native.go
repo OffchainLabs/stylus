@@ -22,6 +22,7 @@ import (
 	"errors"
 	"unsafe"
 
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -55,6 +56,7 @@ func polyCompile(statedb vm.StateDB, arbDB ethdb.Database, program common.Addres
 		return errors.New(string(output))
 	}
 	addPolyMachine(arbDB, 1, program, output)
+	fmt.Printf("Added machine: %#x and %#x\n", program, output[:24])
 	return nil
 }
 
@@ -68,6 +70,7 @@ func polyCall(statedb vm.StateDB, arbDB ethdb.Database, program common.Address, 
 	if err != nil {
 		log.Crit("machine does not exist")
 	}
+	fmt.Printf("Loaded machine: %#x\n", machine[:24])
 
 	// call into rust with C-signature
 	//     size_t polyglot_call(
