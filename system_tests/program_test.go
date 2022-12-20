@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -25,7 +24,7 @@ import (
 	"strings"
 )
 
-func TestPersistWasmProgram(t *testing.T) {
+func TestKeccakProgram(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -107,71 +106,6 @@ func TestPersistWasmProgram(t *testing.T) {
 		Fail(t, "computed hash mismatch", hash, correct)
 	}
 	colors.PrintMint("keccak(x) = ", hash)
-	colors.PrintMint("Time to execute: ", passed.String())
-}
-
-func TestKeccakProgram(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	l2config := arbnode.ConfigDefaultL1Test()
-	l2config.BlockValidator.ArbitratorValidator = true
-	l2config.BlockValidator.JitValidator = true
-	l2config.BatchPoster.Enable = true
-	l2config.L1Reader.Enable = true
-
-	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
-	defer requireClose(t, l1stack)
-	defer node.StopAndWait()
-
-	if node.StatelessBlockValidator == nil {
-		Fail(t, "no stateless block validator")
-	}
-
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	arbWASM, err := precompilesgen.NewArbWASM(common.HexToAddress("0xa0"), l2client)
-	Require(t, err)
-
-	file := "../arbitrator/polyglot/programs/sha3/target/wasm32-unknown-unknown/release/sha3.wasm"
-	wasm, err := os.ReadFile(file)
-	Require(t, err)
-	wasm, err = arbcompress.CompressWell(wasm)
-	Require(t, err)
-
-	colors.PrintMint("WASM len ", len(wasm))
-
-	ensure := func(tx *types.Transaction, err error) *types.Receipt {
-		t.Helper()
-		Require(t, err)
-		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-		Require(t, err)
-		return receipt
-	}
-
-	programAddress := deployContract(t, ctx, auth, l2client, wasm)
-	colors.PrintBlue("program deployed to ", programAddress.Hex())
-
-	ensure(arbWASM.CompileProgram(&auth, programAddress))
-
-	preimage := []byte("°º¤ø,¸¸,ø¤º°`°º¤ø,¸,ø¤°º¤ø,¸¸,ø¤º°`°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
-	correct := crypto.Keccak256Hash(preimage)
-
-	now := time.Now()
-	result, err := arbWASM.CallProgram(&bind.CallOpts{}, programAddress, preimage)
-	Require(t, err)
-
-	if result.Status != 0 || len(result.Result) != 32 {
-		Fail(t, "unexpected return result: Status", result.Status, "Result:", result.Result)
-	}
-
-	hash := common.BytesToHash(result.Result)
-	if hash != correct {
-		Fail(t, "computed hash mismatch", hash, correct)
-	}
-	colors.PrintMint("keccak(x) = ", hash)
-
-	passed := time.Since(now)
 	colors.PrintMint("Time to execute: ", passed.String())
 
 	// do a mutating call for proving's sake

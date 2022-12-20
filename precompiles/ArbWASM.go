@@ -5,7 +5,6 @@ package precompiles
 
 import (
 	"errors"
-	"fmt"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -22,7 +21,6 @@ func (con *ArbWASM) CompileProgram(c ctx, evm mech, address addr) error {
 }
 
 func (con *ArbWASM) CallProgram(c ctx, evm mech, address addr, calldata []byte) (uint32, []byte, error) {
-	fmt.Println("Entered")
 	// TODO: require some intrinsic amount of gas
 	programs := c.State.Programs()
 
