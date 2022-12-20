@@ -27,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	glog "github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbos/programs"
 )
 
 var arbosAddress = types.ArbosAddress
@@ -97,50 +96,9 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 	}
 }
 
-// Method to be called within the ArbOS transaction processor hook to
-// intercept calls that attempt to interact with Polyglot WASM programs
-// instead of EVM contracts.
-func callPolyglotProgram(
-	programs *programs.Programs,
-	inputGas uint64,
-	evm *vm.EVM,
-	address common.Address,
-	calldata []byte,
-) (uint32, []byte, error) {
-	getGas := func() uint64 { return inputGas }
-	gasLeft, status, output, err := programs.CallProgram(evm.StateDB, address, calldata, getGas)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	if gasLeft > gasLeft {
-		log.Error("program gas didn't decrease", "gas", gasLeft, "gasLeft", gasLeft)
-		return 0, nil, errors.New("internal metering error")
-	}
-	return status, output, nil
-}
-
 // This hook is called before gas charging and will end the state transition if endTxNow is set to true
 // Hence, we must charge for any l2 resources if endTxNow is returned true
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
-	if p.msg.To() != nil && len(p.msg.Data()) > 0 {
-		addr := *p.msg.To()
-		code := p.evm.StateDB.GetCode(addr)
-		if vm.IsPolyglotProgram(code) {
-			_, output, err := callPolyglotProgram(
-				p.state.Programs(),
-				p.msg.Gas(),
-				p.evm,
-				addr,
-				p.msg.Data(),
-			)
-			if err != nil {
-				return false, 0, err, nil
-			}
-			return true, 0, nil, output
-		}
-	}
-
 	underlyingTx := p.msg.UnderlyingTransaction()
 	if underlyingTx == nil {
 		return false, 0, nil, nil

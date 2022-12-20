@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -21,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
+	"strings"
 )
 
 func TestPersistWasmProgram(t *testing.T) {
@@ -80,15 +82,27 @@ func TestPersistWasmProgram(t *testing.T) {
 
 	// Sends a contract call.
 	colors.PrintMint("Sending non-mutating call to contract as a normal Ethereum tx")
+
 	now := time.Now()
 	result := sendContractCall(t, ctx, programAddress, l2client, preimage)
 	passed := time.Since(now)
 
-	if len(result) != 32 {
+	def := `[{"inputs":[{"name":"","type":"address"}, {"name":"", "type":"bytes"}],"name":"callProgram","outputs":[{"name":"status","type":"uint32"}, {"name": "result", "type":"bytes"}],"type":"function"}]`
+	abi, err := abi.JSON(strings.NewReader(def))
+	Require(t, err)
+	callResults, err := abi.Unpack("callProgram", result)
+	Require(t, err)
+	status := callResults[0].(uint32)
+
+	colors.PrintMint("Status = ", status)
+
+	rawHash := callResults[1].([]byte)
+
+	if len(rawHash) != 32 {
 		Fail(t, "unexpected return result", result)
 	}
 
-	hash := common.BytesToHash(result)
+	hash := common.BytesToHash(rawHash)
 	if hash != correct {
 		Fail(t, "computed hash mismatch", hash, correct)
 	}

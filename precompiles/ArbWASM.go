@@ -5,6 +5,8 @@ package precompiles
 
 import (
 	"errors"
+	"fmt"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type ArbWASM struct {
@@ -20,5 +22,20 @@ func (con *ArbWASM) CompileProgram(c ctx, evm mech, address addr) error {
 }
 
 func (con *ArbWASM) CallProgram(c ctx, evm mech, address addr, calldata []byte) (uint32, []byte, error) {
-	return 0, nil, errors.New("deprecated")
+	fmt.Println("Entered")
+	// TODO: require some intrinsic amount of gas
+	programs := c.State.Programs()
+
+	// give all gas to the program
+	getGas := func() uint64 { return c.gasLeft }
+	gasLeft, status, output, err := programs.CallProgram(evm.StateDB, address, calldata, getGas)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if gasLeft > c.gasLeft {
+		log.Error("program gas didn't decrease", "gas", c.gasLeft, "gasLeft", gasLeft)
+		return 0, nil, errors.New("internal metering error")
+	}
+	return status, output, c.Burn(c.gasLeft - gasLeft)
 }

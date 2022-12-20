@@ -610,7 +610,6 @@ func (p Precompile) Call(
 	evm *vm.EVM,
 ) (output []byte, gasLeft uint64, err error) {
 	arbosVersion := arbosState.ArbOSVersion(evm.StateDB)
-
 	if arbosVersion < p.arbosVersion {
 		// the precompile isn't yet active, so treat this call as if it were to a contract that doesn't exist
 		return []byte{}, gasSupplied, nil

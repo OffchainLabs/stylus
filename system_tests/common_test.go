@@ -36,7 +36,6 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
-	"fmt"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -727,7 +726,6 @@ func sendContractCall(
 		Value: big.NewInt(0),
 		Data:  data,
 	}
-	fmt.Printf("Sending msg to %v: %+v\n", to, msg)
 	res, err := client.CallContract(ctx, msg, nil)
 	Require(t, err)
 	return res
