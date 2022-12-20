@@ -523,6 +523,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		delayedMessagesRead,
 		lastBlockHeader,
 		statedb,
+		s.bc.ArbDb,
 		s.bc,
 		s.bc.Config(),
 		hooks,
@@ -795,6 +796,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			lastBlockHeader,
 			statedb,
 			s.bc,
+			s.bc.ArbDb,
 			s.bc.Config(),
 			batchFetcher,
 		)

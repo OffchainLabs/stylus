@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -105,6 +106,7 @@ func ProduceBlock(
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
+	arbDb ethdb.Database,
 	chainConfig *params.ChainConfig,
 	batchFetcher FallibleBatchFetcher,
 ) (*types.Block, types.Receipts, error) {
@@ -127,7 +129,7 @@ func ProduceBlock(
 
 	hooks := noopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, arbDb, chainContext, chainConfig, hooks,
 	)
 }
 
@@ -141,8 +143,8 @@ func ProduceBlockAdvanced(
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
+	arbDb ethdb.Database,
 	chainContext core.ChainContext,
-	// bc *core.BlockChain,
 	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
 ) (*types.Block, types.Receipts, error) {
@@ -281,7 +283,7 @@ func ProduceBlockAdvanced(
 				&header.Coinbase,
 				&gasPool,
 				statedb,
-				nil, // TODO: ADD ARBDB
+				arbDb,
 				header,
 				tx,
 				&header.GasUsed,

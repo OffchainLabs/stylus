@@ -357,6 +357,7 @@ func RecordBlockCreation(
 			prevHeader,
 			recordingdb,
 			chaincontext,
+			blockchain.ArbDb,
 			chainConfig,
 			batchFetcher,
 		)
