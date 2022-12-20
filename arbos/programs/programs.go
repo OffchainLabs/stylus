@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
 )
@@ -37,12 +38,12 @@ func Open(sto *storage.Storage) *Programs {
 	return &Programs{sto, machineInfo, &wasmGasPrice}
 }
 
-func (p Programs) CompileProgram(statedb vm.StateDB, addr common.Address) error {
+func (p Programs) CompileProgram(statedb vm.StateDB, arbDB ethdb.Database, addr common.Address) error {
 	wasm, err := getWasm(statedb, addr)
 	if err != nil {
 		return err
 	}
-	if err := polyCompile(statedb, addr, wasm); err != nil {
+	if err := polyCompile(statedb, arbDB, addr, wasm); err != nil {
 		return err
 	}
 	return p.machineVersions.SetUint64(addr.Hash(), 1)
@@ -50,6 +51,7 @@ func (p Programs) CompileProgram(statedb vm.StateDB, addr common.Address) error 
 
 func (p Programs) CallProgram(
 	statedb vm.StateDB,
+	arbDB ethdb.Database,
 	program common.Address,
 	calldata []byte,
 	gas func() uint64,
@@ -65,7 +67,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	gasLeft, status, output := polyCall(statedb, program, calldata, gas(), gasPrice)
+	gasLeft, status, output := polyCall(statedb, arbDB, program, calldata, gas(), gasPrice)
 	return gasLeft, status, output, nil
 }
 

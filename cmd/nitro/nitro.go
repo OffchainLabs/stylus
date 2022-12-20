@@ -261,15 +261,15 @@ func main() {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
-	if err != nil {
-		confighelpers.HandleError(err, printSampleUsage)
-		return
-	}
-
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to open database: %v", err))
+	}
+
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, arbDb, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
+	if err != nil {
+		confighelpers.HandleError(err, printSampleUsage)
+		return
 	}
 
 	if nodeConfig.Init.ThenQuit {

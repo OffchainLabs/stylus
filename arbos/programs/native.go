@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -32,7 +33,7 @@ import (
 type u32 = uint32
 type u64 = uint64
 
-func polyCompile(statedb vm.StateDB, program common.Address, wasm []byte) error {
+func polyCompile(statedb vm.StateDB, arbDB ethdb.Database, program common.Address, wasm []byte) error {
 
 	// call into rust with C-signature
 	//     size_t polyglot_compile(uint8_t * wasm, size_t len, uint8_t ** out, size_t * out_len, size_t * out_cap)
@@ -57,7 +58,7 @@ func polyCompile(statedb vm.StateDB, program common.Address, wasm []byte) error 
 	return nil
 }
 
-func polyCall(statedb vm.StateDB, program common.Address, calldata []byte, gas, gas_price u64) (u64, u32, []byte) {
+func polyCall(statedb vm.StateDB, arbDB ethdb.Database, program common.Address, calldata []byte, gas, gas_price u64) (u64, u32, []byte) {
 
 	if db, ok := statedb.(*state.StateDB); ok {
 		db.RecordProgram(program)

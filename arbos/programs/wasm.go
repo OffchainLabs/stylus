@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -23,7 +24,7 @@ func polyglotCall(wasm, calldata []byte, gas_price u64, gas *u64) (status u64, o
 func polyglotCopy(dest, src *byte, length u64)
 func polyglotFree(output *byte, outlen, outcap u64)
 
-func polyCompile(statedb vm.StateDB, program common.Address, wasm []byte) error {
+func polyCompile(statedb vm.StateDB, arbDB ethdb.Database, program common.Address, wasm []byte) error {
 	status, outptr, outlen, outcap := polyglotCheck(wasm)
 	defer polyglotFree(outptr, outlen, outcap)
 
@@ -34,7 +35,7 @@ func polyCompile(statedb vm.StateDB, program common.Address, wasm []byte) error 
 	return nil
 }
 
-func polyCall(statedb vm.StateDB, program common.Address, calldata []byte, gas u64, gas_price u64) (u64, u32, []byte) {
+func polyCall(statedb vm.StateDB, arbDB ethdb.Database, program common.Address, calldata []byte, gas u64, gas_price u64) (u64, u32, []byte) {
 	wasm, err := getWasm(statedb, program)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)

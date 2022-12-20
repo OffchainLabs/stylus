@@ -17,7 +17,7 @@ type ArbWASM struct {
 
 func (con *ArbWASM) CompileProgram(c ctx, evm mech, address addr) error {
 	// TODO: pay for gas by some compilation pricing formula
-	return c.State.Programs().CompileProgram(evm.StateDB, address)
+	return c.State.Programs().CompileProgram(evm.StateDB, c.ArbDB, address)
 }
 
 func (con *ArbWASM) CallProgram(c ctx, evm mech, address addr, calldata []byte) (uint32, []byte, error) {
@@ -26,7 +26,7 @@ func (con *ArbWASM) CallProgram(c ctx, evm mech, address addr, calldata []byte) 
 
 	// give all gas to the program
 	getGas := func() uint64 { return c.gasLeft }
-	gasLeft, status, output, err := programs.CallProgram(evm.StateDB, address, calldata, getGas)
+	gasLeft, status, output, err := programs.CallProgram(evm.StateDB, c.ArbDB, address, calldata, getGas)
 	if err != nil {
 		return 0, nil, err
 	}

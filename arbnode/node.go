@@ -1607,7 +1607,7 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 	return nil
 }
 
-func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainConfig *params.ChainConfig, nodeConfig *Config) (*core.BlockChain, error) {
+func GetBlockChain(chainDb, arbDb ethdb.Database, cacheConfig *core.CacheConfig, chainConfig *params.ChainConfig, nodeConfig *Config) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
 	}
@@ -1616,10 +1616,10 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 		EnablePreimageRecording: false,
 	}
 
-	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &nodeConfig.TxLookupLimit)
+	return core.NewArbitrumBlockChain(chainDb, arbDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &nodeConfig.TxLookupLimit)
 }
 
-func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, nodeConfig *Config, accountsPerSync uint) (*core.BlockChain, error) {
+func WriteOrTestBlockChain(chainDb ethdb.Database, arbDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, nodeConfig *Config, accountsPerSync uint) (*core.BlockChain, error) {
 	err := WriteOrTestGenblock(chainDb, initData, chainConfig, accountsPerSync)
 	if err != nil {
 		return nil, err
@@ -1628,7 +1628,7 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, chainConfig, nodeConfig)
+	return GetBlockChain(chainDb, arbDb, cacheConfig, chainConfig, nodeConfig)
 }
 
 // Don't preserve reorg'd out blocks

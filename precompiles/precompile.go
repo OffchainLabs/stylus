@@ -662,6 +662,11 @@ func (p Precompile) Call(
 			return nil, 0, err
 		}
 		callerCtx.State = state
+		arbDB, err := evm.ArbDB()
+		if err != nil {
+			return nil, 0, err
+		}
+		callerCtx.ArbDB = arbDB
 	}
 
 	switch txProcessor := evm.ProcessingHook.(type) {
