@@ -4,8 +4,9 @@
 use crate::env::{MaybeEscape, SystemStateData, WasmEnv, WasmEnvMut};
 use eyre::Result;
 use prover::programs::{
+    config::StylusConfig,
     meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
-    native::NativeInstance, config::StylusConfig,
+    native::NativeInstance,
 };
 use wasmer::{imports, Function, FunctionEnv, Global, Instance, Module};
 

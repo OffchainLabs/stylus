@@ -38,9 +38,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -63,28 +61,6 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, params 
 	}
 	db.AddUserModule(params.version, program, result)
 	return nil
-}
-
-func callUserWasm(db vm.StateDB, program common.Address, data []byte, gas *uint64, params *goParams) (uint32, []byte) {
-
-	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(program)
-	}
-
-	module, err := db.GetUserModule(1, program)
-	if err != nil {
-		log.Crit("machine does not exist")
-	}
-
-	output := rustVec()
-	status := C.stylus_call(
-		goSlice(module),
-		goSlice(data),
-		params.encode(),
-		output,
-		(*u64)(gas),
-	)
-	return uint32(status), output.read()
 }
 
 func rustVec() C.RustVec {

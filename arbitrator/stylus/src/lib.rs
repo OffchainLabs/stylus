@@ -3,8 +3,8 @@
 
 use eyre::ErrReport;
 use prover::programs::config::StylusConfig;
-use wasmer::Bytes;
 use std::mem;
+use wasmer::Bytes;
 
 mod env;
 pub mod stylus;
@@ -79,7 +79,11 @@ impl RustVec {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn stylus_compile(wasm: GoSlice, params: GoParams, mut output: RustVec) -> StylusStatus {
+pub unsafe extern "C" fn stylus_compile(
+    wasm: GoSlice,
+    params: GoParams,
+    mut output: RustVec,
+) -> StylusStatus {
     let wasm = wasm.slice();
     let config = params.config();
 
