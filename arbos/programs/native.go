@@ -7,7 +7,7 @@
 package programs
 
 //#cgo CFLAGS: -g -Wall
-//#cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
+//#cgo LDFLAGS: ${SRCDIR}/../../../target/lib/libstylus.a -ldl -lm
 //#include <stdint.h>
 //
 // typedef struct GoParams {
