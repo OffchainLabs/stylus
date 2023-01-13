@@ -888,6 +888,7 @@ func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arb
 		lastBlockHeader,
 		statedb,
 		s.bc,
+		s.bc.ArbDb,
 		s.bc.Config(),
 		hooks,
 	)
@@ -1166,6 +1167,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			lastBlockHeader,
 			statedb,
 			s.bc,
+			s.bc.ArbDb,
 			s.bc.Config(),
 			batchFetcher,
 		)

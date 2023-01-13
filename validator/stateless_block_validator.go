@@ -391,6 +391,7 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 			msg.DelayedMessagesRead,
 			prevHeader,
 			recordingdb,
+			v.blockchain.ArbDb,
 			chaincontext,
 			chainConfig,
 			batchFetcher,

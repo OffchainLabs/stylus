@@ -352,18 +352,18 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
-	defer closeDb(chainDb, "chainDb")
-	if err != nil {
-		flag.Usage()
-		log.Error("error initializing database", "err", err)
-		return 1
-	}
-
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
 	defer closeDb(arbDb, "arbDb")
 	if err != nil {
 		log.Error("failed to open database", "err", err)
+		return 1
+	}
+
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, arbDb, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
+	defer closeDb(chainDb, "chainDb")
+	if err != nil {
+		flag.Usage()
+		log.Error("error initializing database", "err", err)
 		return 1
 	}
 
