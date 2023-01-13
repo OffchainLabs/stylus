@@ -887,8 +887,8 @@ func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arb
 		delayedMessagesRead,
 		lastBlockHeader,
 		statedb,
-		s.bc,
 		s.bc.ArbDb,
+		s.bc,
 		s.bc.Config(),
 		hooks,
 	)
@@ -1166,8 +1166,8 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			msg.DelayedMessagesRead,
 			lastBlockHeader,
 			statedb,
-			s.bc,
 			s.bc.ArbDb,
+			s.bc,
 			s.bc.Config(),
 			batchFetcher,
 		)

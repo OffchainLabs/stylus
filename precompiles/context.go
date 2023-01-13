@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -30,6 +31,7 @@ type Context struct {
 	gasSupplied uint64
 	gasLeft     uint64
 	txProcessor *arbos.TxProcessor
+	arbDb       ethdb.Database
 	State       *arbosState.ArbosState
 	tracingInfo *util.TracingInfo
 	readOnly    bool

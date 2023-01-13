@@ -1676,7 +1676,7 @@ func GetBlockChain(chainDb, arbDb ethdb.Database, cacheConfig *core.CacheConfig,
 		EnablePreimageRecording: false,
 	}
 
-	return core.NewArbitrumBlockchain(chainDb, arbDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &nodeConfig.TxLookupLimit)
+	return core.NewArbitrumBlockChain(chainDb, arbDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &nodeConfig.TxLookupLimit)
 }
 
 func WriteOrTestBlockChain(chainDb, arbDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, nodeConfig *Config, accountsPerSync uint) (*core.BlockChain, error) {

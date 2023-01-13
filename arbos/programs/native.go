@@ -42,6 +42,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/ethereum/go-ethereum/ethdb"
 )
 
 type u8 = C.uint8_t
@@ -55,7 +56,9 @@ const (
 	OutOfGas
 )
 
-func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, params *goParams) error {
+var userModulesDBKey = "stylus-user-modules"
+
+func compileUserWasm(db vm.StateDB, arbDb ethdb.Database, program common.Address, wasm []byte, params *goParams) error {
 	output := rustVec()
 	status := C.stylus_compile(
 		goSlice(wasm),
@@ -67,19 +70,19 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, params 
 	if status != Success {
 		return errors.New(string(result))
 	}
-	db.AddUserModule(params.version, program, result)
+	addUserModule(arbDb, params.version, program, result)
 	return nil
 }
 
 func callUserWasm(
-	db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *goParams,
+	db vm.StateDB, arbDb ethdb.Database, program common.Address, calldata []byte, gas *uint64, params *goParams,
 ) (uint32, []byte, error) {
 
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program)
 	}
 
-	module, err := db.GetUserModule(1, program)
+	module, err := getUserModule(arbDb, 1, program)
 	if err != nil {
 		log.Crit("machine does not exist")
 	}
@@ -133,4 +136,16 @@ func (params *goParams) encode() C.GoParams {
 		wasm_gas_price: u64(params.wasm_gas_price),
 		hostio_cost:    u64(params.hostio_cost),
 	}
+}
+
+func addUserModule(writer ethdb.KeyValueWriter, version uint32, program common.Address, output []byte) {
+	prefix := []byte(userModulesDBKey)
+	key := append(prefix, program[:]...)
+	writer.Put(key, output)
+}
+
+func getUserModule(writer ethdb.KeyValueReader, version uint32, program common.Address) ([]byte, error) {
+	prefix := []byte(userModulesDBKey)
+	key := append(prefix, program[:]...)
+	return writer.Get(key)
 }

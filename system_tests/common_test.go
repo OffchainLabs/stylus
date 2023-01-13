@@ -306,7 +306,7 @@ func createL2BlockChain(
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
-	blockchain, err := arbnode.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbnode.ConfigDefaultL2Test(), 0)
+	blockchain, err := arbnode.WriteOrTestBlockChain(chainDb, arbDb, nil, initReader, chainConfig, arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -508,7 +508,7 @@ func Create2ndNodeWithConfig(
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 
-	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
+	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, l2arbDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
 
 	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
@@ -700,6 +700,42 @@ func deployContract(
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	return crypto.CreateAddress(auth.From, nonce)
+}
+
+func sendContractTx(
+	t *testing.T, ctx context.Context, to common.Address, auth bind.TransactOpts, client *ethclient.Client, code []byte,
+) {
+	basefee := GetBaseFee(t, client, ctx)
+	nonce, err := client.NonceAt(ctx, auth.From, nil)
+	Require(t, err)
+	gas, err := client.EstimateGas(ctx, ethereum.CallMsg{
+		From:      auth.From,
+		To:        &to,
+		GasPrice:  basefee,
+		GasTipCap: auth.GasTipCap,
+		Value:     big.NewInt(0),
+		Data:      code,
+	})
+	Require(t, err)
+	tx := types.NewTransaction(nonce, to, big.NewInt(0), gas, basefee, code)
+	tx, err = auth.Signer(auth.From, tx)
+	Require(t, err)
+	Require(t, client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+}
+
+func sendContractCall(
+	t *testing.T, ctx context.Context, to common.Address, client *ethclient.Client, data []byte,
+) []byte {
+	msg := ethereum.CallMsg{
+		To:    &to,
+		Value: big.NewInt(0),
+		Data:  data,
+	}
+	res, err := client.CallContract(ctx, msg, nil)
+	Require(t, err)
+	return res
 }
 
 func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {

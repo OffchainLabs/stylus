@@ -669,6 +669,7 @@ func (p *Precompile) Call(
 			return nil, 0, err
 		}
 		callerCtx.State = state
+		callerCtx.arbDb = evm.ArbDb
 	}
 
 	switch txProcessor := evm.ProcessingHook.(type) {

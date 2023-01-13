@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -98,7 +99,7 @@ func (p Programs) SetWasmHostioCost(cost uint64) error {
 	return p.wasmHostioCost.Set(cost)
 }
 
-func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) (uint32, error) {
+func (p Programs) CompileProgram(statedb vm.StateDB, arbDb ethdb.Database, program common.Address) (uint32, error) {
 	version, err := p.StylusVersion()
 	if err != nil {
 		return 0, err
@@ -119,7 +120,7 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) (ui
 	if err != nil {
 		return 0, err
 	}
-	if err := compileUserWasm(statedb, program, wasm, params); err != nil {
+	if err := compileUserWasm(statedb, arbDb, program, wasm, params); err != nil {
 		return 0, err
 	}
 	return version, p.machineVersions.SetUint32(program.Hash(), version)
@@ -127,6 +128,7 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) (ui
 
 func (p Programs) CallProgram(
 	statedb vm.StateDB,
+	arbDb ethdb.Database,
 	program common.Address,
 	calldata []byte,
 	gas *uint64,
@@ -142,13 +144,20 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return 0, nil, err
 	}
-	return callUserWasm(statedb, program, calldata, gas, params)
+	return callUserWasm(statedb, arbDb, program, calldata, gas, params)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
-	wasm := statedb.GetCode(program)
-	if wasm == nil {
+	code := statedb.GetCode(program)
+	if code == nil {
 		return nil, fmt.Errorf("missing wasm at address %v", program)
+	}
+	if !vm.IsStylusProgram(code) {
+		return nil, fmt.Errorf("code at address %v is not a Polyglot WASM program", program)
+	}
+	wasm, err := vm.StripStylusPrefix(code)
+	if err != nil {
+		return nil, err
 	}
 	return arbcompress.Decompress(wasm, MaxWASMSize)
 }

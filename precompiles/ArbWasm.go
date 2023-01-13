@@ -10,7 +10,7 @@ type ArbWasm struct {
 // Compile a wasm program with the latest instrumentation
 func (con ArbWasm) CompileProgram(c ctx, evm mech, program addr) (uint32, error) {
 	// TODO: pay for gas by some compilation pricing formula
-	return c.State.Programs().CompileProgram(evm.StateDB, program)
+	return c.State.Programs().CompileProgram(evm.StateDB, evm.ArbDb, program)
 }
 
 // Calls a wasm program
@@ -20,7 +20,7 @@ func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, calldata []byte) (
 	programs := c.State.Programs()
 
 	// give all gas to the program
-	return programs.CallProgram(evm.StateDB, program, calldata, &c.gasLeft)
+	return programs.CallProgram(evm.StateDB, evm.ArbDb, program, calldata, &c.gasLeft)
 }
 
 // Gets the latest stylus version

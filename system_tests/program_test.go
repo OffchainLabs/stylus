@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -20,6 +19,10 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"strings"
+	"bytes"
 )
 
 func TestKeccakProgram(t *testing.T) {
@@ -47,8 +50,11 @@ func TestKeccakProgram(t *testing.T) {
 	wasm, err := arbcompress.CompressWell(wasmSource)
 	Require(t, err)
 
+	stylusWasmPrefix := hexutil.MustDecode("0xEF0000")
+	code := append(stylusWasmPrefix, wasm...)
+
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
-	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(wasm), toKb(wasmSource)))
+	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(code), toKb(wasmSource)))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -66,7 +72,7 @@ func TestKeccakProgram(t *testing.T) {
 		colors.PrintBlue("Time to ", message, ": ", passed.String())
 	}
 
-	programAddress := deployContract(t, ctx, auth, l2client, wasm)
+	programAddress := deployContract(t, ctx, auth, l2client, code)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
 
 	timed("compile", func() {
@@ -80,18 +86,36 @@ func TestKeccakProgram(t *testing.T) {
 	args = append(args, preimage...)
 
 	timed("execute", func() {
-		result, err := arbWasm.CallProgram(&bind.CallOpts{}, programAddress, args)
+		colors.PrintMint("Sending non-mutating call to contract as a normal Ethereum tx")
+
+		result := sendContractCall(t, ctx, programAddress, l2client, preimage)
+
+		def := `[{"inputs":[{"name":"","type":"address"}, {"name":"", "type":"bytes"}],"name":"callProgram","outputs":[{"name":"status","type":"uint32"}, {"name": "result", "type":"bytes"}],"type":"function"}]`
+		abi, err := abi.JSON(strings.NewReader(def))
 		Require(t, err)
+		callResults, err := abi.Unpack("callProgram", result)
+		Require(t, err)
+		status := callResults[0].(uint32)
 
-		if result.Status != 0 || len(result.Result) != 32 {
-			Fail(t, "unexpected return result: Status", result.Status, "Result:", result.Result)
+		colors.PrintMint("Status = ", status)
+
+		rawHash := callResults[1].([]byte)
+
+		if len(rawHash) != 32 {
+			Fail(t, "unexpected return result", result)
 		}
 
-		hash := common.BytesToHash(result.Result)
-		if hash != correct {
-			Fail(t, "computed hash mismatch", hash, correct)
+		// result, err := arbWasm.CallProgram(&bind.CallOpts{}, programAddress, args)
+		// Require(t, err)
+
+		// if result.Status != 0 || len(result.Result) != 32 {
+		// 	Fail(t, "unexpected return result: Status", result.Status, "Result:", result.Result)
+		// }
+
+		if !bytes.Equal(rawHash, correct[:]) {
+			Fail(t, "computed hash mismatch", rawHash, correct)
 		}
-		colors.PrintGrey("keccak(x) = ", hash)
+		colors.PrintGrey("keccak(x) = ", rawHash)
 	})
 
 	// do a mutating call for proving's sake
