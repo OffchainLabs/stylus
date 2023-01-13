@@ -14,7 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-// RedisStorage requires that Item is RLP encodable/decodable
+// Requires that Item is RLP encodable/decodable
 type RedisStorage[Item any] struct {
 	client redis.UniversalClient
 	signer *signature.SimpleHmac

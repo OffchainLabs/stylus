@@ -1,8 +1,8 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build challengetest
-// +build challengetest
+//go:build fullchallengetest
+// +build fullchallengetest
 
 //
 // Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
@@ -14,10 +14,10 @@ import (
 	"testing"
 )
 
-func TestChallengeManagerFullAsserterIncorrect(t *testing.T) {
+func TestFullChallengeAsserterIncorrect(t *testing.T) {
 	RunChallengeTest(t, false)
 }
 
-func TestChallengeManagerFullAsserterCorrect(t *testing.T) {
+func TestFullChallengeAsserterCorrect(t *testing.T) {
 	RunChallengeTest(t, true)
 }

@@ -2,19 +2,17 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 // race detection makes things slow and miss timeouts
-//go:build challengetest
-// +build challengetest
+//go:build fullchallengetest
+// +build fullchallengetest
 
 package arbtest
 
 import "testing"
 
-func TestChallengeStakersFaultyHonestActive(t *testing.T) {
-	t.Skip("TODO: staker challenge tests are broken due to seq inbox changes")
+func TestStakersFaultyHonestActive(t *testing.T) {
 	stakerTestImpl(t, true, false)
 }
 
-func TestChallengeStakersFaultyHonestInactive(t *testing.T) {
-	t.Skip("TODO: staker challenge tests are broken due to seq inbox changes")
+func TestStakersFaultyHonestInactive(t *testing.T) {
 	stakerTestImpl(t, true, true)
 }

@@ -42,6 +42,9 @@ var (
 	successfulBlocksCounter   = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
 )
 
+// 95% of the SequencerInbox limit, leaving ~5KB for headers and such
+const maxTxDataSize = 112065
+
 type SequencerConfig struct {
 	Enable                      bool                     `koanf:"enable"`
 	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed" reload:"hot"`
@@ -52,7 +55,6 @@ type SequencerConfig struct {
 	QueueSize                   int                      `koanf:"queue-size"`
 	QueueTimeout                time.Duration            `koanf:"queue-timeout" reload:"hot"`
 	NonceCacheSize              int                      `koanf:"nonce-cache-size" reload:"hot"`
-	MaxTxDataSize               int                      `koanf:"max-tx-data-size" reload:"hot"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -81,8 +83,6 @@ var DefaultSequencerConfig = SequencerConfig{
 	QueueTimeout:                time.Second * 12,
 	NonceCacheSize:              1024,
 	Dangerous:                   DefaultDangerousSequencerConfig,
-	// 95% of the default batch poster limit, leaving 5KB for headers and such
-	MaxTxDataSize: 95000,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -96,7 +96,6 @@ var TestSequencerConfig = SequencerConfig{
 	QueueTimeout:                time.Second * 5,
 	NonceCacheSize:              4,
 	Dangerous:                   TestDangerousSequencerConfig,
-	MaxTxDataSize:               95000,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -109,7 +108,6 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
-	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -225,12 +223,8 @@ type Sequencer struct {
 	l1BlockNumber       uint64
 	l1Timestamp         uint64
 
-	// activeMutex manages pauseChan (pauses execution) and forwarder
-	// at most one of these is non-nil at any given time
-	// both are nil for the active sequencer
-	activeMutex sync.Mutex
-	pauseChan   chan struct{}
-	forwarder   *TxForwarder
+	forwarderMutex sync.Mutex
+	forwarder      *TxForwarder
 }
 
 func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -246,7 +240,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		}
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
-	s := &Sequencer{
+	return &Sequencer{
 		txStreamer:      txStreamer,
 		txQueue:         make(chan txQueueItem, config.QueueSize),
 		l1Reader:        l1Reader,
@@ -255,10 +249,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		nonceCache:      newNonceCache(config.NonceCacheSize),
 		l1BlockNumber:   0,
 		l1Timestamp:     0,
-		pauseChan:       nil,
-	}
-	txStreamer.SetReorgSequencingPolicy(s.makeSequencingHooks)
-	return s, nil
+	}, nil
 }
 
 var ErrRetrySequencer = errors.New("please retry transaction")
@@ -275,7 +266,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	sequencerBacklogGauge.Inc(1)
 	defer sequencerBacklogGauge.Dec(1)
 
-	_, forwarder := s.GetPauseAndForwarder()
+	forwarder := s.GetForwarder()
 	if forwarder != nil {
 		err := forwarder.PublishTransaction(parentCtx, tx)
 		if !errors.Is(err, ErrNoSequencer) {
@@ -344,13 +335,13 @@ func (s *Sequencer) postTxFilter(header *types.Header, _ *arbosState.ArbosState,
 }
 
 func (s *Sequencer) CheckHealth(ctx context.Context) error {
-	pauseChan, forwarder := s.GetPauseAndForwarder()
+	s.forwarderMutex.Lock()
+	forwarder := s.forwarder
+	s.forwarderMutex.Unlock()
 	if forwarder != nil {
 		return forwarder.CheckHealth(ctx)
 	}
-	if pauseChan != nil {
-		return nil
-	}
+
 	if s.txStreamer.coordinator != nil && !s.txStreamer.coordinator.CurrentlyChosen() {
 		return ErrNoSequencer
 	}
@@ -358,8 +349,8 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 }
 
 func (s *Sequencer) ForwardTarget() string {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	if s.forwarder == nil {
 		return ""
 	}
@@ -367,8 +358,8 @@ func (s *Sequencer) ForwardTarget() string {
 }
 
 func (s *Sequencer) ForwardTo(url string) error {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	if s.forwarder != nil {
 		if s.forwarder.target == url {
 			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
@@ -382,70 +373,43 @@ func (s *Sequencer) ForwardTo(url string) error {
 		log.Error("failed to set forward agent", "err", err)
 		s.forwarder = nil
 	}
-	if s.pauseChan != nil {
-		close(s.pauseChan)
-		s.pauseChan = nil
-	}
 	return err
 }
 
-func (s *Sequencer) Activate() {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+func (s *Sequencer) DontForward() {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	if s.forwarder != nil {
 		s.forwarder.Disable()
-		s.forwarder = nil
 	}
-	if s.pauseChan != nil {
-		close(s.pauseChan)
-		s.pauseChan = nil
-	}
-}
-
-func (s *Sequencer) Pause() {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
-	if s.forwarder != nil {
-		s.forwarder.Disable()
-		s.forwarder = nil
-	}
-	if s.pauseChan == nil {
-		s.pauseChan = make(chan struct{})
-	}
+	s.forwarder = nil
 }
 
 var ErrNoSequencer = errors.New("sequencer temporarily not available")
 
-func (s *Sequencer) GetPauseAndForwarder() (chan struct{}, *TxForwarder) {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
-	return s.pauseChan, s.forwarder
+func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
+	select {
+	case s.txQueue <- queueItem:
+	default:
+		queueItem.returnResult(err)
+	}
 }
 
-// only called from createBlock, may be paused
-func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem) bool {
-	var forwarder *TxForwarder
-	for {
-		var pause chan struct{}
-		pause, forwarder = s.GetPauseAndForwarder()
-		if pause == nil {
-			if forwarder == nil {
-				return false
-			}
-			// if forwarding: jump to next loop
-			break
-		}
-		// if paused: wait till unpaused
-		select {
-		case <-ctx.Done():
-			return true
-		case <-pause:
-		}
+func (s *Sequencer) GetForwarder() *TxForwarder {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
+	return s.forwarder
+}
+
+func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
+	forwarder := s.GetForwarder()
+	if forwarder == nil {
+		return false
 	}
 	for _, item := range queueItems {
 		res := forwarder.PublishTransaction(item.ctx, item.tx)
 		if errors.Is(res, ErrNoSequencer) {
-			s.txRetryQueue.Push(item)
+			s.requeueOrFail(item, ErrNoSequencer)
 		} else {
 			item.returnResult(res)
 		}
@@ -454,15 +418,6 @@ func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem
 }
 
 var sequencerInternalError = errors.New("sequencer internal error")
-
-func (s *Sequencer) makeSequencingHooks() *arbos.SequencingHooks {
-	return &arbos.SequencingHooks{
-		PreTxFilter:            s.preTxFilter,
-		PostTxFilter:           s.postTxFilter,
-		DiscardInvalidTxsEarly: true,
-		TxErrors:               []error{},
-	}
-}
 
 func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	var txes types.Transactions
@@ -484,7 +439,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 	}()
 
-	config := s.config()
 	for {
 		var queueItem txQueueItem
 		if s.txRetryQueue.Len() > 0 {
@@ -516,12 +470,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			queueItem.returnResult(err)
 			continue
 		}
-		if len(txBytes) > config.MaxTxDataSize {
+		if len(txBytes) > maxTxDataSize {
 			// This tx is too large
 			queueItem.returnResult(core.ErrOversizedData)
 			continue
 		}
-		if totalBatchSize+len(txBytes) > config.MaxTxDataSize {
+		if totalBatchSize+len(txBytes) > maxTxDataSize {
 			// This tx would be too large to add to this batch
 			s.txRetryQueue.Push(queueItem)
 			// End the batch here to put this tx in the next one
@@ -532,7 +486,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		queueItems = append(queueItems, queueItem)
 	}
 
-	if s.handleInactive(ctx, queueItems) {
+	if s.forwardIfSet(queueItems) {
 		return false
 	}
 
@@ -542,7 +496,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	l1Timestamp := s.l1Timestamp
 	s.L1BlockAndTimeMutex.Unlock()
 
-	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > config.MaxAcceptableTimestampDelta.Seconds()) {
+	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config().MaxAcceptableTimestampDelta.Seconds()) {
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
@@ -561,9 +515,14 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		L1BaseFee:   nil,
 	}
 
-	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
+	s.nonceCache.Resize(s.config().NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
-	hooks := s.makeSequencingHooks()
+	hooks := &arbos.SequencingHooks{
+		PreTxFilter:            s.preTxFilter,
+		PostTxFilter:           s.postTxFilter,
+		DiscardInvalidTxsEarly: true,
+		TxErrors:               []error{},
+	}
 	start := time.Now()
 	block, err := s.txStreamer.SequenceTransactions(header, txes, hooks)
 	blockCreationTimer.Update(time.Since(start))
@@ -573,12 +532,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	if errors.Is(err, ErrRetrySequencer) {
 		// we changed roles
 		// forward if we have where to
-		if s.handleInactive(ctx, queueItems) {
+		if s.forwardIfSet(queueItems) {
 			return false
 		}
 		// try to add back to queue otherwise
 		for _, item := range queueItems {
-			s.txRetryQueue.Push(item)
+			s.requeueOrFail(item, ErrNoSequencer)
 		}
 		return false
 	}
@@ -586,7 +545,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if errors.Is(err, context.Canceled) {
 			// thread closed. We'll later try to forward these messages.
 			for _, item := range queueItems {
-				s.txRetryQueue.Push(item)
+				s.requeueOrFail(item, err)
 			}
 			return true // don't return failure to avoid retrying immediately
 		}
@@ -696,7 +655,7 @@ func (s *Sequencer) StopAndWait() {
 	}
 	// this usually means that coordinator's safe-shutdown-delay is too low
 	log.Warn("sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len())
-	_, forwarder := s.GetPauseAndForwarder()
+	forwarder := s.GetForwarder()
 	if forwarder != nil {
 	emptyqueues:
 		for {
@@ -717,6 +676,7 @@ func (s *Sequencer) StopAndWait() {
 			if err != nil {
 				log.Warn("failed to forward transaction while shutting down", "source", source, "err", err)
 			}
+
 		}
 	}
 }

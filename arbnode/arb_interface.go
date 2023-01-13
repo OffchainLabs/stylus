@@ -16,7 +16,6 @@ type TransactionPublisher interface {
 	Initialize(context.Context) error
 	Start(context.Context) error
 	StopAndWait()
-	Started() bool
 }
 
 type ArbInterface struct {

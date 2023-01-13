@@ -5,11 +5,10 @@ package main
 
 import (
 	"context"
-	"strings"
-	"testing"
-
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"strings"
+	"testing"
 )
 
 func TestRelayConfig(t *testing.T) {

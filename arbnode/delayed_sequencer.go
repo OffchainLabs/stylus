@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -16,6 +15,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -27,8 +27,7 @@ type DelayedSequencer struct {
 	inbox                    *InboxTracker
 	txStreamer               *TransactionStreamer
 	coordinator              *SeqCoordinator
-	waitingForFinalizedBlock uint64
-	mutex                    sync.Mutex
+	waitingForFinalizedBlock *big.Int
 	config                   DelayedSequencerConfigFetcher
 }
 
@@ -63,18 +62,14 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
-	d := &DelayedSequencer{
+	return &DelayedSequencer{
 		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),
 		inbox:       reader.Tracker(),
 		coordinator: coordinator,
 		txStreamer:  txStreamer,
 		config:      config,
-	}
-	if coordinator != nil {
-		coordinator.SetDelayedSequencer(d)
-	}
-	return d, nil
+	}, nil
 }
 
 func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
@@ -89,49 +84,43 @@ func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
 	return lastMsg.DelayedMessagesRead, nil
 }
 
-func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *types.Header) error {
+func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.Header) error {
 	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
 		return nil
 	}
-
-	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
-}
-
-func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
 
 	config := d.config()
 	if !config.Enable {
 		return nil
 	}
 
-	var finalized uint64
-	if config.UseMergeFinality && lastBlockHeader.Difficulty.Sign() == 0 {
-		var err error
-		if config.RequireFullFinality {
-			finalized, err = d.l1Reader.LatestFinalizedBlockNr(ctx)
-		} else {
-			finalized, err = d.l1Reader.LatestSafeBlockNr(ctx)
-		}
-		if err != nil {
-			return err
-		}
-	} else {
-		currentNum := lastBlockHeader.Number.Int64()
-		if currentNum < config.FinalizeDistance {
-			return nil
-		}
-		finalized = uint64(currentNum - config.FinalizeDistance)
+	finalized := arbmath.BigSub(lastBlockHeader.Number, big.NewInt(config.FinalizeDistance))
+	if finalized.Sign() < 0 {
+		finalized.SetInt64(0)
 	}
 
-	if d.waitingForFinalizedBlock > finalized {
+	// Once the merge is live, we can directly query for the latest finalized block number
+	if lastBlockHeader.Difficulty.Sign() == 0 && config.UseMergeFinality {
+		var header *types.Header
+		var err error
+		if config.RequireFullFinality {
+			header, err = d.l1Reader.LatestFinalizedHeader()
+		} else {
+			header, err = d.l1Reader.LatestSafeHeader()
+		}
+		if err != nil {
+			return fmt.Errorf("Failed to get latest header: %w", err)
+		}
+		finalized = header.Number
+	}
+
+	if d.waitingForFinalizedBlock != nil && arbmath.BigLessThan(finalized, d.waitingForFinalizedBlock) {
 		return nil
 	}
 
 	// Unless we find an unfinalized message (which sets waitingForBlock),
 	// we won't find a new finalized message until FinalizeDistance blocks in the future.
-	d.waitingForFinalizedBlock = lastBlockHeader.Number.Uint64() + 1
+	d.waitingForFinalizedBlock = arbmath.BigAddByUint(lastBlockHeader.Number, 1)
 
 	dbDelayedCount, err := d.inbox.GetDelayedCount()
 	if err != nil {
@@ -151,9 +140,10 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		if err != nil {
 			return err
 		}
-		if msg.Header.BlockNumber > finalized {
+		blockNumber := arbmath.UintToBig(msg.Header.BlockNumber)
+		if blockNumber.Cmp(finalized) > 0 {
 			// Message isn't finalized yet; stop here
-			d.waitingForFinalizedBlock = msg.Header.BlockNumber
+			d.waitingForFinalizedBlock = blockNumber
 			break
 		}
 		if lastDelayedAcc != (common.Hash{}) {
@@ -173,7 +163,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
-		delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, new(big.Int).SetUint64(finalized))
+		delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, finalized)
 		if err != nil {
 			return err
 		}
@@ -192,15 +182,6 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	return nil
 }
 
-// Dangerous: bypasses lockout check!
-func (d *DelayedSequencer) ForceSequenceDelayed(ctx context.Context) error {
-	lastBlockHeader, err := d.l1Reader.LastHeader(ctx)
-	if err != nil {
-		return err
-	}
-	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
-}
-
 func (d *DelayedSequencer) run(ctx context.Context) {
 	headerChan, cancel := d.l1Reader.Subscribe(false)
 	defer cancel()
@@ -212,7 +193,7 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 				log.Info("delayed sequencer: header channel close")
 				return
 			}
-			if err := d.trySequence(ctx, nextHeader); err != nil {
+			if err := d.update(ctx, nextHeader); err != nil {
 				log.Error("Delayed sequencer error", "err", err)
 			}
 		case <-ctx.Done():

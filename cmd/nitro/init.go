@@ -26,7 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -80,25 +79,6 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 	if strings.HasPrefix(initConfig.Url, "file:") {
 		return initConfig.Url[5:], nil
 	}
-	if ipfshelper.CanBeIpfsPath(initConfig.Url) {
-		ipfsNode, err := ipfshelper.CreateIpfsHelper(ctx, initConfig.DownloadPath, false, ipfshelper.DefaultIpfsProfiles)
-		if err != nil {
-			return "", err
-		}
-		log.Info("Downloading initial database via IPFS", "url", initConfig.Url)
-		initFile, downloadErr := ipfsNode.DownloadFile(ctx, initConfig.Url, initConfig.DownloadPath)
-		closeErr := ipfsNode.Close()
-		if downloadErr != nil {
-			if closeErr != nil {
-				log.Error("Failed to close IPFS node after download error", "err", closeErr)
-			}
-			return "", fmt.Errorf("Failed to download file from IPFS: %w", downloadErr)
-		}
-		if closeErr != nil {
-			return "", fmt.Errorf("Failed to close IPFS node: %w", err)
-		}
-		return initFile, nil
-	}
 	grabclient := grab.NewClient()
 	log.Info("Downloading initial database", "url", initConfig.Url)
 	fmt.Println()
@@ -135,7 +115,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 				}
 			case <-resp.Done:
 				if err := resp.Err(); err != nil {
-					fmt.Printf("\n  attempt %d failed: %v\n", attempt, err)
+					fmt.Printf("\033[2K\r  attempt %d failed: %v", attempt, err)
 					break updateLoop
 				}
 				fmt.Printf("\n")
@@ -173,22 +153,22 @@ func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) e
 	return nil
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeChainDb(ctx context.Context, arbDb ethdb.Database, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := arbnode.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
 				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 				if err != nil {
-					return chainDb, nil, err
+					return nil, nil, err
 				}
-				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
+				l2BlockChain, err := arbnode.GetBlockChain(chainDb, arbDb, cacheConfig, chainConfig, &config.Node)
 				if err != nil {
-					return chainDb, nil, err
+					return nil, nil, err
 				}
 				err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
 				if err != nil {
-					return chainDb, nil, err
+					return nil, nil, err
 				}
 				return chainDb, l2BlockChain, nil
 			}
@@ -221,18 +201,18 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 	if err != nil {
-		return chainDb, nil, err
+		return nil, nil, err
 	}
 
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
 		if err != nil {
-			return chainDb, nil, fmt.Errorf("error reading import file: %w", err)
+			return nil, nil, fmt.Errorf("error reading import file: %w", err)
 		}
 	}
 	if config.Init.Empty {
 		if initDataReader != nil {
-			return chainDb, nil, errors.New("multiple init methods supplied")
+			return nil, nil, errors.New("multiple init methods supplied")
 		}
 		initData := statetransfer.ArbosInitializationInfo{
 			NextBlockNumber: 0,
@@ -241,7 +221,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 	if config.Init.DevInit {
 		if initDataReader != nil {
-			return chainDb, nil, errors.New("multiple init methods supplied")
+			return nil, nil, errors.New("multiple init methods supplied")
 		}
 		initData := statetransfer.ArbosInitializationInfo{
 			NextBlockNumber: config.Init.DevInitBlockNum,
@@ -263,11 +243,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if initDataReader == nil {
 		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
 		if chainConfig == nil {
-			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
+			return nil, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbDb, cacheConfig, chainConfig, &config.Node)
 		if err != nil {
-			return chainDb, nil, err
+			panic(err)
 		}
 		genesisBlockNr := chainConfig.ArbitrumChainParams.GenesisBlockNum
 		genesisBlock := l2BlockChain.GetBlockByNumber(genesisBlockNr)
@@ -281,25 +261,25 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	} else {
 		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
 		if err != nil {
-			return chainDb, nil, err
+			panic(err)
 		}
 		chainConfig, err = arbos.GetChainConfig(chainId, genesisBlockNr)
 		if err != nil {
-			return chainDb, nil, err
+			panic(err)
 		}
 		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
 		ancients, err := chainDb.Ancients()
 		if err != nil {
-			return chainDb, nil, err
+			panic(err)
 		}
 		if ancients < genesisBlockNr {
-			return chainDb, nil, fmt.Errorf("%v pre-init blocks required, but only %v found", genesisBlockNr, ancients)
+			panic(fmt.Sprint(genesisBlockNr, " pre-init blocks required, but only ", ancients, " found"))
 		}
 		if ancients > genesisBlockNr {
 			storedGenHash := rawdb.ReadCanonicalHash(chainDb, genesisBlockNr)
 			storedGenBlock := rawdb.ReadBlock(chainDb, storedGenHash, genesisBlockNr)
 			if storedGenBlock.Header().Root == (common.Hash{}) {
-				return chainDb, nil, fmt.Errorf("attempting to init genesis block %x, but this block is in database with no state root", genesisBlockNr)
+				panic(fmt.Errorf("Attempting to init genesis block %x, but this block is in database with no state root", genesisBlockNr))
 			}
 			log.Warn("Re-creating genesis though it seems to exist in database", "blockNr", genesisBlockNr)
 		}
@@ -307,20 +287,20 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if config.Init.ThenQuit {
 			cacheConfig.SnapshotWait = true
 		}
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, &config.Node, config.Init.AccountsPerSync)
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbDb, cacheConfig, initDataReader, chainConfig, &config.Node, config.Init.AccountsPerSync)
 		if err != nil {
-			return chainDb, nil, err
+			panic(err)
 		}
 	}
 	txIndexWg.Wait()
 	err = chainDb.Sync()
 	if err != nil {
-		return chainDb, nil, err
+		panic(err)
 	}
 
 	err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
 	if err != nil {
-		return chainDb, nil, err
+		return nil, nil, err
 	}
 
 	return chainDb, l2BlockChain, nil
@@ -344,7 +324,7 @@ func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
 			continue
 		}
 		entry := rawdb.ReadTxLookupEntry(chainDb, transactions[len(transactions)-1].Hash())
-		return entry != nil
+		return (entry != nil)
 	}
 }
 

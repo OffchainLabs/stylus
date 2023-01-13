@@ -25,9 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -39,7 +37,6 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
-	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -418,7 +415,6 @@ type Config struct {
 	Caching                CachingConfig                  `koanf:"caching"`
 	Archive                bool                           `koanf:"archive"`
 	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
-	TransactionStreamer    TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -444,10 +440,6 @@ func (c *Config) Get() *Config {
 func (c *Config) Start(context.Context) {}
 
 func (c *Config) StopAndWait() {}
-
-func (c *Config) Started() bool {
-	return true
-}
 
 func (c *Config) ForwardingTarget() string {
 	if c.ForwardingTargetImpl == "null" {
@@ -480,7 +472,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
-	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 
 	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
@@ -504,9 +495,8 @@ var ConfigDefault = Config{
 	SyncMonitor:            DefaultSyncMonitorConfig,
 	Dangerous:              DefaultDangerousConfig,
 	Archive:                false,
-	TxLookupLimit:          126_230_400, // 1 year at 4 blocks per second
+	TxLookupLimit:          40_000_000,
 	Caching:                DefaultCachingConfig,
-	TransactionStreamer:    DefaultTransactionStreamerConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -590,7 +580,7 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 func (w *WasmConfig) FindMachineDir() (string, bool) {
-	var places []string
+	places := []string{}
 
 	if w.RootPath != "" {
 		places = append(places, w.RootPath)
@@ -656,11 +646,8 @@ var DefaultCachingConfig = CachingConfig{
 }
 
 type Node struct {
-	ChainDB                 ethdb.Database
-	ArbDB                   ethdb.Database
 	Stack                   *node.Node
 	Backend                 *arbitrum.Backend
-	FilterSystem            *filters.FilterSystem
 	ArbInterface            *ArbInterface
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
@@ -674,7 +661,7 @@ type Node struct {
 	StatelessBlockValidator *validator.StatelessBlockValidator
 	Staker                  *validator.Staker
 	BroadcastServer         *broadcaster.Broadcaster
-	BroadcastClients        *broadcastclients.BroadcastClients
+	BroadcastClients        []*broadcastclient.BroadcastClient
 	SeqCoordinator          *SeqCoordinator
 	DASLifecycleManager     *das.LifecycleManager
 	ClassicOutboxRetriever  *ClassicOutboxRetriever
@@ -687,7 +674,6 @@ type ConfigFetcher interface {
 	Get() *Config
 	Start(context.Context)
 	StopAndWait()
-	Started() bool
 }
 
 func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
@@ -706,10 +692,9 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	for version != currentDbSchemaVersion {
 		batch := arbDb.NewBatch()
 		switch version {
-		case 0:
-			// No database updates are necessary for database format version 0->1.
-			// This version adds a new format for delayed messages in the inbox tracker,
-			// but it can still read the old format for old messages.
+		case ^uint64(0):
+			// TODO: write db format upgrade code
+			// This code path is here to avoid a bunch of linter errors
 		default:
 			return fmt.Errorf("unsupported database format version %v", version)
 		}
@@ -790,16 +775,15 @@ func createNodeImpl(
 			}
 			maybeDataSigner = dataSigner
 		}
-		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &configFetcher.Get().Feed.Output }, l2ChainId, fatalErrChan, maybeDataSigner)
+		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Get().Feed.Output }, l2ChainId, fatalErrChan, maybeDataSigner)
 	}
 
 	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
-		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
+		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &config.Get().L1Reader })
 	}
 
-	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -858,42 +842,38 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	filterConfig := filters.Config{
-		LogCacheSize: config.RPC.FilterLogCacheSize,
-		Timeout:      config.RPC.FilterTimeout,
-	}
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, syncMonitor, filterConfig)
+	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbDb, arbInterface, syncMonitor)
 	if err != nil {
 		return nil, err
 	}
 
-	var broadcastClients *broadcastclients.BroadcastClients
+	var broadcastClients []*broadcastclient.BroadcastClient
 	if config.Feed.Input.Enable() {
+
 		currentMessageCount, err := txStreamer.GetMessageCount()
 		if err != nil {
 			return nil, err
 		}
-
-		broadcastClients, err = broadcastclients.NewBroadcastClients(
-			config.Feed.Input,
-			l2ChainId,
-			currentMessageCount,
-			txStreamer,
-			nil,
-			fatalErrChan,
-			bpVerifier,
-		)
-		if err != nil {
-			return nil, err
+		for _, address := range config.Feed.Input.URLs {
+			client, err := broadcastclient.NewBroadcastClient(
+				config.Feed.Input,
+				address,
+				l2ChainId,
+				currentMessageCount,
+				txStreamer,
+				fatalErrChan,
+				bpVerifier,
+			)
+			if err != nil {
+				return nil, err
+			}
+			broadcastClients = append(broadcastClients, client)
 		}
 	}
 	if !config.L1Reader.Enable {
 		return &Node{
-			chainDb,
-			arbDb,
 			stack,
 			backend,
-			filterSystem,
 			arbInterface,
 			nil,
 			txStreamer,
@@ -961,7 +941,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &config.Get().InboxReader })
 	if err != nil {
 		return nil, err
 	}
@@ -982,40 +962,38 @@ func createNodeImpl(
 	var blockValidator *validator.BlockValidator
 	var statelessBlockValidator *validator.StatelessBlockValidator
 
-	if foundMachines {
+	if !foundMachines && blockValidatorConf.Enable {
+		return nil, fmt.Errorf("Failed to find machines %v", machinesPath)
+	} else if !foundMachines {
+		log.Warn("Failed to find machines", "path", machinesPath)
+	} else {
 		statelessBlockValidator, err = validator.NewStatelessBlockValidator(
 			nitroMachineLoader,
 			inboxReader,
 			inboxTracker,
 			txStreamer,
 			l2BlockChain,
-			chainDb,
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
-			&configFetcher.Get().BlockValidator,
-		)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		if blockValidatorConf.Enable || config.Validator.Enable {
-			return nil, fmt.Errorf("failed to find machines %v", machinesPath)
-		}
-		log.Warn("Failed to find machines", "path", machinesPath)
-	}
-
-	if blockValidatorConf.Enable {
-		blockValidator, err = validator.NewBlockValidator(
-			statelessBlockValidator,
-			inboxTracker,
-			txStreamer,
-			nitroMachineLoader,
-			reorgingToBlock,
-			func() *validator.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
+			&config.Get().BlockValidator,
 			fatalErrChan,
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		if blockValidatorConf.Enable {
+			blockValidator, err = validator.NewBlockValidator(
+				statelessBlockValidator,
+				inboxTracker,
+				txStreamer,
+				nitroMachineLoader,
+				reorgingToBlock,
+				func() *validator.BlockValidatorConfig { return &config.Get().BlockValidator },
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -1045,7 +1023,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, daReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -1084,11 +1062,8 @@ func createNodeImpl(
 	}
 
 	return &Node{
-		chainDb,
-		arbDb,
 		stack,
 		backend,
-		filterSystem,
 		arbInterface,
 		l1Reader,
 		txStreamer,
@@ -1112,7 +1087,7 @@ func createNodeImpl(
 	}, nil
 }
 
-func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
+func (n *Node) OnConfigReload(old *Config, new *Config) error {
 	// TODO
 	return nil
 }
@@ -1166,8 +1141,7 @@ func SetUpDataAvailability(
 	if !config.Enable {
 		return nil, nil, nil
 	}
-	var syncFromStorageServices []*das.IterableStorageService
-	var syncToStorageServices []das.StorageService
+
 	var seqInbox *bridgegen.SequencerInbox
 	var err error
 	var seqInboxCaller *bridgegen.SequencerInboxCaller
@@ -1213,7 +1187,7 @@ func SetUpDataAvailability(
 
 		          → : X--delegates to-->Y
 	*/
-	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
+	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1291,20 +1265,12 @@ func SetUpDataAvailability(
 		topLevelDas = das.NewReadLimitedDataAvailabilityService(topLevelStorageService)
 	}
 
-	// Enable caches, Redis and (local) BigCache. Local is the outermost, so it will be tried first.
+	// Enable caches, Redis and (local) BigCache. Local is the outermost so it will be tried first.
 	if config.RedisCacheConfig.Enable {
 		cache, err := das.NewRedisStorageService(config.RedisCacheConfig, das.NewEmptyStorageService())
 		dasLifecycleManager.Register(cache)
 		if err != nil {
 			return nil, nil, err
-		}
-		if config.RedisCacheConfig.SyncFromStorageServices {
-			iterableStorageService := das.NewIterableStorageService(das.ConvertStorageServiceToIterationCompatibleStorageService(cache))
-			syncFromStorageServices = append(syncFromStorageServices, iterableStorageService)
-			cache = iterableStorageService
-		}
-		if config.RedisCacheConfig.SyncToStorageServices {
-			syncToStorageServices = append(syncToStorageServices, cache)
 		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
 	}
@@ -1315,11 +1281,6 @@ func SetUpDataAvailability(
 			return nil, nil, err
 		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
-	}
-
-	if config.RegularSyncStorageConfig.Enable && len(syncFromStorageServices) != 0 && len(syncToStorageServices) != 0 {
-		regularlySyncStorage := das.NewRegularlySyncStorage(syncFromStorageServices, syncToStorageServices, config.RegularSyncStorageConfig)
-		regularlySyncStorage.Start(ctx)
 	}
 
 	if topLevelDas != nil && seqInbox != nil {
@@ -1400,11 +1361,6 @@ func CreateNode(
 		},
 		Public: false,
 	})
-	apis = append(apis, rpc.API{
-		Namespace: "debug",
-		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDb)),
-		Public:    false,
-	})
 	stack.RegisterAPIs(apis)
 
 	return currentNode, nil
@@ -1415,38 +1371,38 @@ func (n *Node) Start(ctx context.Context) error {
 	n.ArbInterface.Initialize(n)
 	err := n.Stack.Start()
 	if err != nil {
-		return fmt.Errorf("error starting geth stack: %w", err)
+		return err
 	}
 	err = n.Backend.Start()
 	if err != nil {
-		return fmt.Errorf("error starting geth backend: %w", err)
+		return err
 	}
 	err = n.TxPublisher.Initialize(ctx)
 	if err != nil {
-		return fmt.Errorf("error initializing transaction publisher: %w", err)
+		return err
 	}
 	if n.InboxTracker != nil {
 		err = n.InboxTracker.Initialize()
 		if err != nil {
-			return fmt.Errorf("error initializing inbox tracker: %w", err)
+			return err
 		}
 	}
 	if n.BroadcastServer != nil {
 		err = n.BroadcastServer.Initialize()
 		if err != nil {
-			return fmt.Errorf("error initializing feed broadcast server: %w", err)
+			return err
 		}
 	}
 	n.TxStreamer.Start(ctx)
 	if n.InboxReader != nil {
 		err = n.InboxReader.Start(ctx)
 		if err != nil {
-			return fmt.Errorf("error starting inbox reader: %w", err)
+			return err
 		}
 	}
 	err = n.TxPublisher.Start(ctx)
 	if err != nil {
-		return fmt.Errorf("error starting transaction puiblisher: %w", err)
+		return err
 	}
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
@@ -1460,17 +1416,17 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.Staker != nil {
 		err = n.Staker.Initialize(ctx)
 		if err != nil {
-			return fmt.Errorf("error initializing staker: %w", err)
+			return err
 		}
 	}
 	if n.BlockValidator != nil {
 		err = n.BlockValidator.Initialize()
 		if err != nil {
-			return fmt.Errorf("error initializing block validator: %w", err)
+			return err
 		}
 		err = n.BlockValidator.Start(ctx)
 		if err != nil {
-			return fmt.Errorf("error starting block validator: %w", err)
+			return err
 		}
 	}
 	if n.Staker != nil {
@@ -1482,20 +1438,11 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.BroadcastServer != nil {
 		err = n.BroadcastServer.Start(ctx)
 		if err != nil {
-			return fmt.Errorf("error starting feed broadcast server: %w", err)
+			return err
 		}
 	}
-	if n.BroadcastClients != nil {
-		go func() {
-			if n.InboxReader != nil {
-				select {
-				case <-n.InboxReader.CaughtUp():
-				case <-ctx.Done():
-					return
-				}
-			}
-			n.BroadcastClients.Start(ctx)
-		}()
+	for _, client := range n.BroadcastClients {
+		client.Start(ctx)
 	}
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
@@ -1504,43 +1451,36 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
-	if n.configFetcher != nil && n.configFetcher.Started() {
+	if n.configFetcher != nil {
 		n.configFetcher.StopAndWait()
 	}
-	if n.BroadcastClients != nil {
-		n.BroadcastClients.StopAndWait()
+	for _, client := range n.BroadcastClients {
+		client.StopAndWait()
 	}
-	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
+	if n.BroadcastServer != nil {
 		n.BroadcastServer.StopAndWait()
 	}
-	if n.L1Reader != nil && n.L1Reader.Started() {
+	if n.L1Reader != nil {
 		n.L1Reader.StopAndWait()
 	}
-	if n.BlockValidator != nil && n.BlockValidator.Started() {
+	if n.BlockValidator != nil {
 		n.BlockValidator.StopAndWait()
 	}
-	if n.StatelessBlockValidator != nil {
-		n.StatelessBlockValidator.Stop()
-	}
-	if n.BatchPoster != nil && n.BatchPoster.Started() {
+	if n.BatchPoster != nil {
 		n.BatchPoster.StopAndWait()
 	}
-	if n.DelayedSequencer != nil && n.DelayedSequencer.Started() {
+	if n.DelayedSequencer != nil {
 		n.DelayedSequencer.StopAndWait()
 	}
-	if n.InboxReader != nil && n.InboxReader.Started() {
+	if n.InboxReader != nil {
 		n.InboxReader.StopAndWait()
 	}
-	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
+	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.StopAndWait()
 	}
-	if n.TxPublisher.Started() {
-		n.TxPublisher.StopAndWait()
-	}
-	if n.TxStreamer.Started() {
-		n.TxStreamer.StopAndWait()
-	}
-	n.ArbInterface.BlockChain().Stop() // does nothing if not running
+	n.TxPublisher.StopAndWait()
+	n.TxStreamer.StopAndWait()
+	n.ArbInterface.BlockChain().Stop()
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
 	}
@@ -1667,7 +1607,7 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 	return nil
 }
 
-func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainConfig *params.ChainConfig, nodeConfig *Config) (*core.BlockChain, error) {
+func GetBlockChain(chainDb, arbDb ethdb.Database, cacheConfig *core.CacheConfig, chainConfig *params.ChainConfig, nodeConfig *Config) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
 	}
@@ -1676,10 +1616,10 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 		EnablePreimageRecording: false,
 	}
 
-	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &nodeConfig.TxLookupLimit)
+	return core.NewArbitrumBlockChain(chainDb, arbDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &nodeConfig.TxLookupLimit)
 }
 
-func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, nodeConfig *Config, accountsPerSync uint) (*core.BlockChain, error) {
+func WriteOrTestBlockChain(chainDb ethdb.Database, arbDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, nodeConfig *Config, accountsPerSync uint) (*core.BlockChain, error) {
 	err := WriteOrTestGenblock(chainDb, initData, chainConfig, accountsPerSync)
 	if err != nil {
 		return nil, err
@@ -1688,7 +1628,7 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, chainConfig, nodeConfig)
+	return GetBlockChain(chainDb, arbDb, cacheConfig, chainConfig, nodeConfig)
 }
 
 // Don't preserve reorg'd out blocks

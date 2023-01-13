@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/offchainlabs/nitro/arbstate"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -16,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/pkg/errors"
 )
@@ -62,7 +65,12 @@ type ChallengeManager struct {
 	blockChallengeBackend *BlockChallengeBackend
 
 	// fields below are only used to create execution challenge from block challenge
-	validator         *StatelessBlockValidator
+	inboxReader       InboxReaderInterface
+	inboxTracker      InboxTrackerInterface
+	txStreamer        TransactionStreamerInterface
+	blockchain        *core.BlockChain
+	das               arbstate.DataAvailabilityReader
+	machineLoader     *NitroMachineLoader
 	targetNumMachines int
 	wasmModuleRoot    common.Hash
 
@@ -73,8 +81,7 @@ type ChallengeManager struct {
 	executionChallengeBackend *ExecutionChallengeBackend
 }
 
-// NewChallengeManager constructs a new challenge manager.
-// Note: latestMachineLoader may be nil if the block validator is disabled
+// latestMachineLoader may be nil if the block validator is disabled
 func NewChallengeManager(
 	ctx context.Context,
 	l1client bind.ContractBackend,
@@ -83,8 +90,11 @@ func NewChallengeManager(
 	challengeManagerAddr common.Address,
 	challengeIndex uint64,
 	l2blockChain *core.BlockChain,
+	das arbstate.DataAvailabilityReader,
+	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
-	validator *StatelessBlockValidator,
+	txStreamer TransactionStreamerInterface,
+	machineLoader *NitroMachineLoader,
 	startL1Block uint64,
 	targetNumMachines int,
 	confirmationBlocks int64,
@@ -119,7 +129,10 @@ func NewChallengeManager(
 		return nil, err
 	}
 
-	genesisBlockNum := l2blockChain.Config().ArbitrumChainParams.GenesisBlockNum
+	genesisBlockNum, err := txStreamer.GetGenesisBlockNumber()
+	if err != nil {
+		return nil, err
+	}
 	backend, err := NewBlockChallengeBackend(
 		parsedLog,
 		l2blockChain,
@@ -141,7 +154,12 @@ func NewChallengeManager(
 			confirmationBlocks:   confirmationBlocks,
 		},
 		blockChallengeBackend: backend,
-		validator:             validator,
+		inboxReader:           inboxReader,
+		inboxTracker:          inboxTracker,
+		txStreamer:            txStreamer,
+		blockchain:            l2blockChain,
+		das:                   das,
+		machineLoader:         machineLoader,
 		targetNumMachines:     targetNumMachines,
 		wasmModuleRoot:        challengeInfo.WasmModuleRoot,
 	}, nil
@@ -379,57 +397,102 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if m.initialMachine != nil && m.initialMachineBlockNr == blockNum {
 		return nil
 	}
-	initialFrozenMachine, err := m.validator.MachineLoader.GetMachine(ctx, m.wasmModuleRoot, false)
+	initialFrozenMachine, err := m.machineLoader.GetMachine(ctx, m.wasmModuleRoot, false)
 	if err != nil {
 		return err
 	}
 	machine := initialFrozenMachine.Clone()
+	var blockHeader *types.Header
+	if blockNum != -1 {
+		blockHeader = m.blockchain.GetHeaderByNumber(uint64(blockNum))
+		if blockHeader == nil {
+			return fmt.Errorf("block header %v before challenge point unknown", blockNum)
+		}
+	}
+	startGlobalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(blockHeader)
+	if err != nil {
+		return err
+	}
+	err = machine.SetGlobalState(startGlobalState)
+	if err != nil {
+		return err
+	}
+	var batchInfo []BatchInfo
 	if tooFar {
-		var blockHeader *types.Header
-		if blockNum != -1 {
-			blockHeader = m.blockChallengeBackend.bc.GetHeaderByNumber(uint64(blockNum))
-			if blockHeader == nil {
-				return fmt.Errorf("block header %v before challenge point unknown", blockNum)
-			}
-		}
-		startGlobalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(blockHeader)
-		if err != nil {
-			return err
-		}
-		err = machine.SetGlobalState(startGlobalState)
-		if err != nil {
-			return err
-		}
-
 		// Just record the part of block creation before the message is read
-		_, preimages, batchInfo, err := m.validator.RecordBlockCreation(ctx, blockHeader, nil, false)
+		_, preimages, programs, readBatchInfo, err := RecordBlockCreation(
+			ctx, m.blockchain, m.inboxReader, blockHeader, nil, true,
+		)
 		if err != nil {
 			return err
 		}
-		resolver, err := m.validator.NewMachinePreimageResolver(ctx, preimages, uint64(blockNum))
+		batchInfo = readBatchInfo
+		resolver, err := NewMachinePreimageResolver(ctx, preimages, nil, m.blockchain, m.das)
 		if err != nil {
 			return err
 		}
 		if err := machine.SetPreimageResolver(resolver); err != nil {
 			return err
 		}
-		for _, batch := range batchInfo {
-			err = machine.AddSequencerInboxMessage(batch.Number, batch.Data)
-			if err != nil {
+		for _, program := range programs {
+			if err := machine.AddProgram(program); err != nil {
 				return err
 			}
 		}
 	} else {
 		// Get the next message and block header, and record the full block creation
-		nextHeader := m.blockChallengeBackend.bc.GetHeaderByNumber(uint64(blockNum + 1))
-		if nextHeader == nil {
-			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
-		}
-		entry, err := m.validator.CreateReadyValidationEntry(ctx, nextHeader)
+		genesisBlockNum, err := m.txStreamer.GetGenesisBlockNumber()
 		if err != nil {
 			return err
 		}
-		err = m.validator.LoadEntryToMachine(ctx, entry, machine)
+		message, err := m.txStreamer.GetMessage(arbutil.SignedBlockNumberToMessageCount(blockNum, genesisBlockNum))
+		if err != nil {
+			return err
+		}
+		nextHeader := m.blockchain.GetHeaderByNumber(uint64(blockNum + 1))
+		if nextHeader == nil {
+			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
+		}
+		preimages, programs, readBatchInfo, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(
+			ctx, m.blockchain, m.inboxReader, nextHeader, blockHeader, *message, false,
+		)
+		if err != nil {
+			return err
+		}
+		batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, startGlobalState.Batch)
+		if err != nil {
+			return err
+		}
+		readBatchInfo = append(readBatchInfo, BatchInfo{
+			Number: startGlobalState.Batch,
+			Data:   batchBytes,
+		})
+		batchInfo = readBatchInfo
+		resolver, err := NewMachinePreimageResolver(ctx, preimages, batchInfo, m.blockchain, m.das)
+		if err != nil {
+			return err
+		}
+		if err := machine.SetPreimageResolver(resolver); err != nil {
+			return err
+		}
+		if hasDelayedMsg {
+			delayedBytes, err := m.inboxTracker.GetDelayedMessageBytes(delayedMsgNr)
+			if err != nil {
+				return err
+			}
+			err = machine.AddDelayedInboxMessage(delayedMsgNr, delayedBytes)
+			if err != nil {
+				return err
+			}
+		}
+		for _, program := range programs {
+			if err := machine.AddProgram(program); err != nil {
+				return err
+			}
+		}
+	}
+	for _, batch := range batchInfo {
+		err = machine.AddSequencerInboxMessage(batch.Number, batch.Data)
 		if err != nil {
 			return err
 		}
@@ -534,39 +597,25 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		)
 	}
 	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(uint64(nextMovePos))
-	expectedState, expectedStatus, err := m.blockChallengeBackend.GetInfoAtStep(uint64(nextMovePos + 1))
-	if err != nil {
-		return nil, err
-	}
 	err = m.createInitialMachine(ctx, blockNum, tooFar)
 	if err != nil {
 		return nil, err
 	}
 	// TODO: we might also use HostIoMachineTo Speed things up
-	initialRunMachine := m.initialMachine.Clone()
+	stepCountMachine := m.initialMachine.Clone()
 	var stepCount uint64
-	for initialRunMachine.IsRunning() {
+	for stepCountMachine.IsRunning() {
 		stepsPerLoop := uint64(1_000_000_000)
 		if stepCount > 0 {
 			log.Debug("step count machine", "block", blockNum, "steps", stepCount)
 		}
-		err = initialRunMachine.Step(ctx, stepsPerLoop)
+		err = stepCountMachine.Step(ctx, stepsPerLoop)
 		if err != nil {
 			return nil, err
 		}
 		stepCount += stepsPerLoop
 	}
-	stepCount = initialRunMachine.GetStepCount()
-	computedStatus := initialRunMachine.Status()
-	if expectedStatus != computedStatus {
-		return nil, fmt.Errorf("after block %v expected status %v but got %v", blockNum, expectedStatus, computedStatus)
-	}
-	if computedStatus == StatusFinished {
-		computedState := initialRunMachine.GetGlobalState()
-		if computedState != expectedState {
-			return nil, fmt.Errorf("after block %v expected global state %v but got %v", blockNum, expectedState, computedState)
-		}
-	}
+	stepCount = stepCountMachine.GetStepCount()
 	log.Info("issuing one step proof", "challenge", m.challengeIndex, "stepCount", stepCount, "blockNum", blockNum)
 	return m.blockChallengeBackend.IssueExecChallenge(
 		m.challengeCore,

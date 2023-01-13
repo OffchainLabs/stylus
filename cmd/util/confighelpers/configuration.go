@@ -122,19 +122,16 @@ func GetVersion() (string, string) {
 	return genericconf.GetVersion(version, datetime, modified)
 }
 
-func PrintErrorAndExit(err error, usage func(string)) {
+func HandleError(err error, usage func(string)) {
 	vcsRevision, vcsTime := GetVersion()
-	fmt.Printf("Version: %v, time: %v\n", vcsRevision, vcsTime)
+	fmt.Printf("version: %v, time: %v\n", vcsRevision, vcsTime)
 	if err != nil && errors.Is(err, ErrVersion) {
 		// Already printed version, just exit
-		os.Exit(0)
+		return
 	}
 	usage(os.Args[0])
 	if err != nil && !errors.Is(err, flag.ErrHelp) {
-		fmt.Printf("\nFatal configuration error: %s\n", err.Error())
-		os.Exit(1)
-	} else {
-		os.Exit(0)
+		fmt.Printf("%s\n", err.Error())
 	}
 }
 

@@ -7,11 +7,8 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
-	"io"
 	"math"
 	"math/big"
-	"net/http"
-	_ "net/http/pprof" // #nosec G108
 	"os"
 	"os/signal"
 	"reflect"
@@ -24,8 +21,6 @@ import (
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
-	"github.com/syndtr/goleveldb/leveldb"
-	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -55,96 +50,17 @@ import (
 )
 
 func printSampleUsage(name string) {
-	fmt.Printf("Sample usage: %s --help \n", name)
+	fmt.Printf("\n")
+	fmt.Printf("Sample usage:                  %s --help \n", name)
 }
 
-type fileHandlerFactory struct {
-	writer  *lumberjack.Logger
-	records chan *log.Record
-	cancel  context.CancelFunc
-}
-
-// newHandler is not threadsafe
-func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *genericconf.FileLoggingConfig, pathResolver func(string) string) log.Handler {
-	l.close()
-	l.writer = &lumberjack.Logger{
-		Filename:   pathResolver(config.File),
-		MaxSize:    config.MaxSize,
-		MaxBackups: config.MaxBackups,
-		MaxAge:     config.MaxAge,
-		Compress:   config.Compress,
-	}
-	// capture copy of the pointer
-	writer := l.writer
-	// lumberjack.Logger already locks on Write, no need for SyncHandler proxy which is used in StreamHandler
-	unsafeStreamHandler := log.LazyHandler(log.FuncHandler(func(r *log.Record) error {
-		_, err := writer.Write(logFormat.Format(r))
-		return err
-	}))
-	l.records = make(chan *log.Record, config.BufSize)
-	// capture copy
-	records := l.records
-	var consumerCtx context.Context
-	consumerCtx, l.cancel = context.WithCancel(context.Background())
-	go func() {
-		for {
-			select {
-			case r := <-records:
-				_ = unsafeStreamHandler.Log(r)
-			case <-consumerCtx.Done():
-				return
-			}
-		}
-	}()
-	return log.FuncHandler(func(r *log.Record) error {
-		select {
-		case records <- r:
-			return nil
-		default:
-			return fmt.Errorf("Buffer overflow, dropping record")
-		}
-	})
-}
-
-// close is not threadsafe
-func (l *fileHandlerFactory) close() error {
-	if l.cancel != nil {
-		l.cancel()
-		l.cancel = nil
-	}
-	if l.writer != nil {
-		if err := l.writer.Close(); err != nil {
-			return err
-		}
-		l.writer = nil
-	}
-	return nil
-}
-
-var globalFileHandlerFactory = fileHandlerFactory{}
-
-// initLog is not threadsafe
-func initLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.FileLoggingConfig, pathResolver func(string) string) error {
+func initLog(logType string, logLevel log.Lvl) error {
 	logFormat, err := genericconf.ParseLogType(logType)
 	if err != nil {
 		flag.Usage()
 		return fmt.Errorf("error parsing log type: %w", err)
 	}
-	var glogger *log.GlogHandler
-	// always close previous instance of file logger
-	if err := globalFileHandlerFactory.close(); err != nil {
-		return fmt.Errorf("failed to close file writer: %w", err)
-	}
-	if fileLoggingConfig.Enable {
-		glogger = log.NewGlogHandler(
-			log.MultiHandler(
-				log.StreamHandler(os.Stderr, logFormat),
-				// on overflow records are dropped silently as MultiHandler ignores errors
-				globalFileHandlerFactory.newHandler(logFormat, fileLoggingConfig, pathResolver),
-			))
-	} else {
-		glogger = log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
-	}
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(logLevel)
 	log.Root().SetHandler(glogger)
 	return nil
@@ -200,55 +116,27 @@ func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.W
 	return devAddr, nil
 }
 
-func closeDb(db io.Closer, name string) {
-	if db != nil {
-		err := db.Close()
-		// unfortunately the freezer db means we can't just use errors.Is
-		if err != nil && !strings.Contains(err.Error(), leveldb.ErrClosed.Error()) {
-			log.Warn("failed to close database on shutdown", "db", name, "err", err)
-		}
-	}
-}
-
 func main() {
-	os.Exit(mainImpl())
-}
-
-// Returns the exit code
-func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
 	args := os.Args[1:]
 	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, args)
 	if err != nil {
-		confighelpers.PrintErrorAndExit(err, printSampleUsage)
-	}
-	stackConf := node.DefaultConfig
-	stackConf.DataDir = nodeConfig.Persistent.Chain
-	nodeConfig.HTTP.Apply(&stackConf)
-	nodeConfig.WS.Apply(&stackConf)
-	nodeConfig.IPC.Apply(&stackConf)
-	nodeConfig.GraphQL.Apply(&stackConf)
-	if nodeConfig.WS.ExposeAll {
-		stackConf.WSModules = append(stackConf.WSModules, "personal")
-	}
-	stackConf.P2P.ListenAddr = ""
-	stackConf.P2P.NoDial = true
-	stackConf.P2P.NoDiscovery = true
-	vcsRevision, vcsTime := confighelpers.GetVersion()
-	stackConf.Version = vcsRevision
+		confighelpers.HandleError(err, printSampleUsage)
 
-	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
-		os.Exit(1)
+		return
 	}
 	if nodeConfig.Node.Archive {
 		log.Warn("--node.archive has been deprecated. Please use --node.caching.archive instead.")
 		nodeConfig.Node.Caching.Archive = true
 	}
+	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel))
+	if err != nil {
+		panic(err)
+	}
 
+	vcsRevision, vcsTime := confighelpers.GetVersion()
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
@@ -262,15 +150,14 @@ func mainImpl() int {
 	if nodeConfig.Node.Sequencer.Enable {
 		if nodeConfig.Node.ForwardingTarget() != "" {
 			flag.Usage()
-			log.Crit("forwarding-target cannot be set when sequencer is enabled")
+			panic("forwarding-target set when sequencer enabled")
 		}
 		if nodeConfig.Node.L1Reader.Enable && nodeConfig.Node.InboxReader.HardReorg {
-			flag.Usage()
-			log.Crit("hard reorgs cannot safely be enabled with sequencer mode enabled")
+			panic("hard reorgs cannot safely be enabled with sequencer mode enabled")
 		}
 	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
 		flag.Usage()
-		log.Crit("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
+		panic("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
 	}
 
 	var l1TransactionOpts *bind.TransactOpts
@@ -281,8 +168,8 @@ func mainImpl() int {
 	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorCanAct {
 		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 		if err != nil {
-			flag.Usage()
-			log.Crit("error opening L1 wallet", "err", err)
+			fmt.Printf("%v\n", err.Error())
+			return
 		}
 	}
 
@@ -292,7 +179,8 @@ func mainImpl() int {
 
 		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
 		if err != nil {
-			log.Crit("error getting rollup addresses", "err", err)
+			fmt.Printf("error getting rollup addresses: %v\n", err.Error())
+			return
 		}
 	} else if l1Client != nil {
 		// Don't need l1Client anymore
@@ -303,32 +191,40 @@ func mainImpl() int {
 	if nodeConfig.Node.Validator.Enable {
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
-			log.Crit("validator have the L1 reader enabled")
+			panic("validator must read from L1")
 		}
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
 	}
 
-	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig, stackConf.ResolvePath)
+	if (nodeConfig.Node.BlockValidator.Enable || validatorCanAct) && !nodeConfig.Node.Caching.Archive {
+		panic("validator requires --node.caching.archive")
+	}
+
+	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
 		if !nodeConfig.Node.Validator.UseSmartContractWallet {
 			flag.Usage()
-			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
+			log.Error("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
+			return
 		}
 		l1Reader := headerreader.New(l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
 
 		// Just create validator smart wallet if needed then exit
 		deployInfo, err := nodeConfig.L1.Rollup.ParseAddresses()
 		if err != nil {
-			log.Crit("error getting deployment info for creating validator wallet contract", "error", err)
+			log.Error("error getting deployment info for creating validator wallet contract", "error", err)
+			return
 		}
 		addr, err := validator.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
 		if err != nil {
-			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
+			log.Error("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
+			return
 		}
-		fmt.Printf("Created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart\n", addr.String())
-		return 0
+		fmt.Printf("created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart\n", addr.String())
+
+		return
 	}
 
 	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
@@ -336,45 +232,53 @@ func mainImpl() int {
 		nodeConfig.Node.TxLookupLimit = 0
 	}
 
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = nodeConfig.Persistent.Chain
+	nodeConfig.HTTP.Apply(&stackConf)
+	nodeConfig.WS.Apply(&stackConf)
+	nodeConfig.IPC.Apply(&stackConf)
+	nodeConfig.GraphQL.Apply(&stackConf)
+	if nodeConfig.WS.ExposeAll {
+		stackConf.WSModules = append(stackConf.WSModules, "personal")
+	}
+	stackConf.P2P.ListenAddr = ""
+	stackConf.P2P.NoDial = true
+	stackConf.P2P.NoDiscovery = true
+	stackConf.Version = vcsRevision
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
-		log.Crit("failed to initialize geth stack", "err", err)
+		panic(err)
 	}
 	{
 		devAddr, err := addUnlockWallet(stack.AccountManager(), l2DevWallet)
 		if err != nil {
 			flag.Usage()
-			log.Crit("error opening L2 dev wallet", "err", err)
+			panic(err)
 		}
 		if devAddr != (common.Address{}) {
 			nodeConfig.Init.DevInitAddr = devAddr.String()
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
-	defer closeDb(chainDb, "chainDb")
+	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
 	if err != nil {
-		flag.Usage()
-		log.Error("error initializing database", "err", err)
-		return 1
+		panic(fmt.Sprintf("Failed to open database: %v", err))
 	}
 
-	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
-	defer closeDb(arbDb, "arbDb")
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, arbDb, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
 	if err != nil {
-		log.Error("failed to open database", "err", err)
-		return 1
+		confighelpers.HandleError(err, printSampleUsage)
+		return
 	}
 
 	if nodeConfig.Init.ThenQuit {
-		return 0
+		return
 	}
 
 	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee && !nodeConfig.Node.DataAvailability.Enable {
 		flag.Usage()
-		log.Error("a data availability service must be configured for this chain (see the --node.data-availability family of options)")
-		return 1
+		panic("a data availability service must be configured for this chain (see the --node.data-availability family of options)")
 	}
 
 	if nodeConfig.Metrics {
@@ -382,16 +286,8 @@ func mainImpl() int {
 
 		if nodeConfig.MetricsServer.Addr != "" {
 			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
-			if nodeConfig.MetricsServer.Pprof {
-				startPprof(address)
-			} else {
-				exp.Setup(address)
-			}
+			exp.Setup(address)
 		}
-	} else if nodeConfig.MetricsServer.Pprof {
-		flag.Usage()
-		log.Error("--metrics must be enabled in order to use pprof with the metrics server")
-		return 1
 	}
 
 	fatalErrChan := make(chan error, 10)
@@ -409,11 +305,10 @@ func mainImpl() int {
 		fatalErrChan,
 	)
 	if err != nil {
-		log.Error("failed to create node", "err", err)
-		return 1
+		panic(err)
 	}
-	liveNodeConfig.setOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
-		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
+	liveNodeConfig.setOnReloadHook(func(old *NodeConfig, new *NodeConfig) error {
+		return currentNode.OnConfigReload(&old.Node, &new.Node)
 	})
 
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
@@ -433,25 +328,22 @@ func mainImpl() int {
 	}
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
-		if err := graphql.New(stack, currentNode.Backend.APIBackend(), currentNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
-			log.Error("failed to register the GraphQL service", "err", err)
-			return 1
+		if err := graphql.New(stack, currentNode.Backend.APIBackend(), gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+			panic(fmt.Sprintf("Failed to register the GraphQL service: %v", err))
 		}
 	}
 
 	if err := currentNode.Start(ctx); err != nil {
-		fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+		panic(fmt.Sprintf("Error starting node: %v\n", err))
 	}
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
-	exitCode := 0
 	select {
 	case err := <-fatalErrChan:
 		log.Error("shutting down due to fatal error", "err", err)
 		defer log.Error("shut down due to fatal error", "err", err)
-		exitCode = 1
 	case <-sigint:
 		log.Info("shutting down because of sigint")
 	}
@@ -460,8 +352,6 @@ func mainImpl() int {
 	close(sigint)
 
 	currentNode.StopAndWait()
-
-	return exitCode
 }
 
 type NodeConfig struct {
@@ -471,7 +361,6 @@ type NodeConfig struct {
 	L2            conf.L2Config                   `koanf:"l2"`
 	LogLevel      int                             `koanf:"log-level" reload:"hot"`
 	LogType       string                          `koanf:"log-type" reload:"hot"`
-	FileLogging   genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
@@ -504,7 +393,6 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.L2ConfigAddOptions("l2", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
-	genericconf.FileLoggingConfigAddOptions("file-logging", f)
 	conf.PersistentConfigAddOptions("persistent", f)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
@@ -595,7 +483,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			if i < maxConnectionAttempts {
 				log.Warn("error connecting to L1", "err", err)
 			} else {
-				return nil, nil, nil, nil, nil, fmt.Errorf("too many errors trying to connect to L1: %w", err)
+				panic(err)
 			}
 
 			timer := time.NewTimer(time.Second * 1)
@@ -800,7 +688,7 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
 
-func noopOnReloadHook(_ *NodeConfig, _ *NodeConfig) error {
+func noopOnReloadHook(old *NodeConfig, new *NodeConfig) error {
 	return nil
 }
 
@@ -810,7 +698,6 @@ type LiveNodeConfig struct {
 	mutex        sync.RWMutex
 	args         []string
 	config       *NodeConfig
-	pathResolver func(string) string
 	onReloadHook OnReloadHook
 }
 
@@ -827,7 +714,7 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 	if err := c.config.CanReload(config); err != nil {
 		return err
 	}
-	if err := initLog(config.LogType, log.Lvl(config.LogLevel), &config.FileLogging, c.pathResolver); err != nil {
+	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
 		return err
 	}
 	if err := c.onReloadHook(c.config, config); err != nil {
@@ -885,11 +772,10 @@ func (c *LiveNodeConfig) setOnReloadHook(hook OnReloadHook) {
 	c.onReloadHook = hook
 }
 
-func NewLiveNodeConfig(args []string, config *NodeConfig, pathResolver func(string) string) *LiveNodeConfig {
+func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
 	return &LiveNodeConfig{
 		args:         args,
 		config:       config,
-		pathResolver: pathResolver,
 		onReloadHook: noopOnReloadHook,
 	}
 }
@@ -902,14 +788,10 @@ func (f *NodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveNodeConfig.get().Node
 }
 
-func startPprof(address string) {
-	exp.Exp(metrics.DefaultRegistry)
-	log.Info("Starting metrics server with pprof", "addr", fmt.Sprintf("http://%s/debug/metrics", address))
-	log.Info("Pprof endpoint", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
-	go func() {
-		// #nosec G114
-		if err := http.ListenAndServe(address, http.DefaultServeMux); err != nil {
-			log.Error("Failure in running pprof server", "err", err)
-		}
-	}()
+func (f *NodeConfigFetcher) Start(ctx context.Context) {
+	f.LiveNodeConfig.Start(ctx)
+}
+
+func (f *NodeConfigFetcher) StopAndWait() {
+	f.LiveNodeConfig.StopAndWait()
 }

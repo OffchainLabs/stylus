@@ -19,6 +19,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/pkg/errors"
 )
 
@@ -33,7 +34,7 @@ type MachineInterface interface {
 	ProveNextStep() []byte
 }
 
-// ArbitratorMachine holds an arbitrator machine pointer, and manages its lifetime
+// Holds an arbitrator machine pointer, and manages its lifetime
 type ArbitratorMachine struct {
 	ptr       *C.struct_Machine
 	contextId *int64 // has a finalizer attached to remove the preimage resolver from the global map
@@ -121,11 +122,6 @@ func (m *ArbitratorMachine) IsRunning() bool {
 func (m *ArbitratorMachine) IsErrored() bool {
 	defer runtime.KeepAlive(m)
 	return C.arbitrator_get_status(m.ptr) == C.ARBITRATOR_MACHINE_STATUS_ERRORED
-}
-
-func (m *ArbitratorMachine) Status() uint8 {
-	defer runtime.KeepAlive(m)
-	return uint8(C.arbitrator_get_status(m.ptr))
 }
 
 func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
@@ -330,5 +326,15 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	m.contextId = &id
 	runtime.SetFinalizer(m.contextId, freeContextId)
 	C.arbitrator_set_context(m.ptr, C.uint64_t(id))
+	return nil
+}
+
+func (m *ArbitratorMachine) AddProgram(program []byte) error {
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+	programPtr := (*C.uint8_t)(arbutil.SliceToPointer(program))
+	programLen := C.uint32_t(len(program))
+	C.arbitrator_add_program(m.ptr, programPtr, programLen)
 	return nil
 }

@@ -1,17 +1,17 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbtest
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -19,9 +19,8 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"strings"
 )
 
@@ -40,14 +39,18 @@ func TestKeccakProgram(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer node.StopAndWait()
 
+	if node.StatelessBlockValidator == nil {
+		Fail(t, "no stateless block validator")
+	}
+
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	arbWasm, err := precompilesgen.NewArbWasm(common.HexToAddress("0x71"), l2client)
+	arbWASM, err := precompilesgen.NewArbWASM(common.HexToAddress("0xa0"), l2client)
 	Require(t, err)
 
-	file := "../arbitrator/stylus/tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm"
-	wasmSource, err := os.ReadFile(file)
+	file := "../arbitrator/polyglot/programs/sha3/target/wasm32-unknown-unknown/release/sha3.wasm"
+	wasm, err := os.ReadFile(file)
 	Require(t, err)
-	wasm, err := arbcompress.CompressWell(wasmSource)
+	wasm, err = arbcompress.CompressWell(wasm)
 	Require(t, err)
 
 	// Add Polyglot EOF format prefix bytes to differentiate WASM programs
@@ -57,9 +60,6 @@ func TestKeccakProgram(t *testing.T) {
 
 	colors.PrintMint("WASM len ", len(code))
 
-	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
-	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(wasm), toKb(wasmSource)))
-
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)
@@ -68,30 +68,23 @@ func TestKeccakProgram(t *testing.T) {
 		return receipt
 	}
 
-	timed := func(message string, lambda func()) {
-		t.Helper()
-		now := time.Now()
-		lambda()
-		passed := time.Since(now)
-		colors.PrintBlue("Time to ", message, ": ", passed.String())
-	}
-
-	colors.PrintMint("Deploying contract")
+	colors.PrintMint("Deploying program")
 	programAddress := deployContract(t, ctx, auth, l2client, code)
-	colors.PrintBlue("Program deployed to ", programAddress.Hex())
+	colors.PrintBlue("program deployed to ", programAddress.Hex())
 
-	timed("compile", func() {
-		ensure(arbWasm.CompileProgram(&auth, programAddress))
-	})
+	colors.PrintMint("Compiling program...")
+	ensure(arbWASM.CompileProgram(&auth, programAddress))
+	colors.PrintBlue("Compiled!")
 
-	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
+	preimage := []byte("°º¤ø,¸¸,ø¤º°`°º¤ø,¸,ø¤°º¤ø,¸¸,ø¤º°`°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
 	correct := crypto.Keccak256Hash(preimage)
 
-	// Sends a non-mutating call.
-	colors.PrintMint("Sending non-mutating call to contract as normal ETH call")
-	// now := time.Now()
+	// Sends a contract call.
+	colors.PrintMint("Sending non-mutating call to contract as a normal Ethereum tx")
+
+	now := time.Now()
 	result := sendContractCall(t, ctx, programAddress, l2client, preimage)
-	// passed := time.Since(now)
+	passed := time.Since(now)
 
 	def := `[{"inputs":[{"name":"","type":"address"}, {"name":"", "type":"bytes"}],"name":"callProgram","outputs":[{"name":"status","type":"uint32"}, {"name": "result", "type":"bytes"}],"type":"function"}]`
 	abi, err := abi.JSON(strings.NewReader(def))
@@ -109,35 +102,18 @@ func TestKeccakProgram(t *testing.T) {
 	}
 
 	hash := common.BytesToHash(rawHash)
-	 	if hash != correct {
-	 		Fail(t, "computed hash mismatch", hash, correct)
-	 	}
-	 	colors.PrintGrey("keccak(x) = ", hash)
-
-	// args := []byte{0x01} // keccak the preimage once
-	// args = append(args, preimage...)
-
-	// timed("execute", func() {
-	// 	result, err := arbWasm.CallProgram(&bind.CallOpts{}, programAddress, args)
-	// 	Require(t, err)
-
-	// 	if result.Status != 0 || len(result.Result) != 32 {
-	// 		Fail(t, "unexpected return result: Status", result.Status, "Result:", result.Result)
-	// 	}
-
-	// 	hash := common.BytesToHash(result.Result)
-	// 	if hash != correct {
-	// 		Fail(t, "computed hash mismatch", hash, correct)
-	// 	}
-	// 	colors.PrintGrey("keccak(x) = ", hash)
-	// })
+	if hash != correct {
+		Fail(t, "computed hash mismatch", hash, correct)
+	}
+	colors.PrintMint("keccak(x) = ", hash)
+	colors.PrintMint("Time to execute: ", passed.String())
 
 	// do a mutating call for proving's sake
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
-	ensure(mock.CallKeccak(&auth, programAddress, args))
+	ensure(mock.CallKeccak(&auth, programAddress, preimage))
 
-	doUntil(t, 20*time.Millisecond, 50, func() bool {
+	doUntil(t, 10*time.Millisecond, 10, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
@@ -146,4 +122,25 @@ func TestKeccakProgram(t *testing.T) {
 		Require(t, err)
 		return meta.MessageCount == messageCount
 	})
+
+	blockHeight, err := l2client.BlockNumber(ctx)
+	Require(t, err)
+
+	success := true
+	for block := uint64(1); block <= blockHeight; block++ {
+		header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
+		Require(t, err)
+
+		correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, true, common.Hash{})
+		Require(t, err, "block", block)
+		if correct {
+			colors.PrintMint("yay!! we validated block ", block)
+		} else {
+			colors.PrintRed("failed to validate block ", block)
+		}
+		success = success && correct
+	}
+	if !success {
+		Fail(t)
+	}
 }

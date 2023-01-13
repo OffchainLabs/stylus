@@ -42,7 +42,9 @@ func startup() error {
 
 	relayConfig, err := relay.ParseRelay(ctx, os.Args[1:])
 	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
-		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+		confighelpers.HandleError(err, printSampleUsage)
+
+		return nil
 	}
 
 	logFormat, err := genericconf.ParseLogType(relayConfig.LogType)

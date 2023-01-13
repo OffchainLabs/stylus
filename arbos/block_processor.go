@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -106,19 +106,15 @@ func ProduceBlock(
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
+	arbDb ethdb.Database,
 	chainConfig *params.ChainConfig,
 	batchFetcher FallibleBatchFetcher,
 ) (*types.Block, types.Receipts, error) {
 	var batchFetchErr error
-	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
+	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64) []byte {
 		data, err := batchFetcher(batchNum)
 		if err != nil {
 			batchFetchErr = err
-			return nil
-		}
-		dataHash := crypto.Keccak256Hash(data)
-		if dataHash != batchHash {
-			batchFetchErr = fmt.Errorf("expecting batch %v hash %v but got data with hash %v", batchNum, batchHash, dataHash)
 			return nil
 		}
 		return data
@@ -133,7 +129,7 @@ func ProduceBlock(
 
 	hooks := noopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, arbDb, chainContext, chainConfig, hooks,
 	)
 }
 
@@ -147,6 +143,7 @@ func ProduceBlockAdvanced(
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
+	arbDb ethdb.Database,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
@@ -183,7 +180,7 @@ func ProduceBlockAdvanced(
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
-	basefee := header.BaseFee
+	gasPrice := header.BaseFee
 	time := header.Time
 	expectedBalanceDelta := new(big.Int)
 	redeems := types.Transactions{}
@@ -243,15 +240,15 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			if basefee.Sign() > 0 {
+			if gasPrice.Sign() > 0 {
 				dataGas = math.MaxUint64
 				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster)
-				posterCostInL2Gas := arbmath.BigDiv(posterCost, basefee)
+				posterCostInL2Gas := arbmath.BigDiv(posterCost, gasPrice)
 
 				if posterCostInL2Gas.IsUint64() {
 					dataGas = posterCostInL2Gas.Uint64()
 				} else {
-					log.Error("Could not get poster cost in L2 terms", "posterCost", posterCost, "basefee", basefee)
+					log.Error("Could not get poster cost in L2 terms", "posterCost", posterCost, "gasPrice", gasPrice)
 				}
 			}
 
@@ -286,6 +283,7 @@ func ProduceBlockAdvanced(
 				&header.Coinbase,
 				&gasPool,
 				statedb,
+				arbDb,
 				header,
 				tx,
 				&header.GasUsed,
@@ -411,20 +409,20 @@ func ProduceBlockAdvanced(
 		}
 	}
 
-	FinalizeBlock(header, complete, statedb, chainConfig)
+	FinalizeBlock(header, complete, statedb)
 	header.Root = statedb.IntermediateRoot(true)
 
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
 	if len(block.Transactions()) != len(receipts) {
-		return nil, nil, fmt.Errorf("block has %d txes but %d receipts", len(block.Transactions()), len(receipts))
+		return nil, nil, fmt.Errorf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts))
 	}
 
 	balanceDelta := statedb.GetUnexpectedBalanceDelta()
 	if !arbmath.BigEquals(balanceDelta, expectedBalanceDelta) {
 		// Fail if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
-			return nil, nil, fmt.Errorf("unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
+			return nil, nil, fmt.Errorf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
 		} else {
 			// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
 			log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
@@ -434,37 +432,20 @@ func ProduceBlockAdvanced(
 	return block, receipts, nil
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB, chainConfig *params.ChainConfig) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
 	if header != nil {
-		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
-			panic("cannot finalize blocks before genesis")
-		}
+		state, _ := arbosState.OpenSystemArbosState(statedb, nil, true)
 
-		var sendRoot common.Hash
-		var sendCount uint64
-		var nextL1BlockNumber uint64
-		var arbosVersion uint64
-
-		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
-			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
-		} else {
-			state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
-			if err != nil {
-				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
-				panic(newErr)
-			}
-			// Add outbox info to the header for client-side proving
-			acc := state.SendMerkleAccumulator()
-			sendRoot, _ = acc.Root()
-			sendCount, _ = acc.Size()
-			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
-			arbosVersion = state.ArbOSVersion()
-		}
+		// Add outbox info to the header for client-side proving
+		acc := state.SendMerkleAccumulator()
+		root, _ := acc.Root()
+		size, _ := acc.Size()
+		nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
 		arbitrumHeader := types.HeaderInfo{
-			SendRoot:           sendRoot,
-			SendCount:          sendCount,
+			SendRoot:           root,
+			SendCount:          size,
 			L1BlockNumber:      nextL1BlockNumber,
-			ArbOSFormatVersion: arbosVersion,
+			ArbOSFormatVersion: state.FormatVersion(),
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 	}

@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -127,10 +126,13 @@ func startup() error {
 
 	serverConfig, err := parseDAServer(os.Args[1:])
 	if err != nil {
-		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+		confighelpers.HandleError(err, printSampleUsage)
+		return nil
 	}
 	if !(serverConfig.EnableRPC || serverConfig.EnableREST) {
-		confighelpers.PrintErrorAndExit(errors.New("please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
+		confighelpers.HandleError(nil, printSampleUsage)
+		fmt.Printf("Please specify at least one of --enable-rest or --enable-rpc\n")
+		return nil
 	}
 
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
