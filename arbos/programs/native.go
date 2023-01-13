@@ -36,13 +36,14 @@ package programs
 import "C"
 import (
 	"errors"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/ethereum/go-ethereum/ethdb"
 )
 
 type u8 = C.uint8_t
@@ -78,6 +79,7 @@ func callUserWasm(
 	db vm.StateDB, arbDb ethdb.Database, program common.Address, calldata []byte, gas *uint64, params *goParams,
 ) (uint32, []byte, error) {
 
+	fmt.Println("WITHIN PRECOMPILE")
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program)
 	}

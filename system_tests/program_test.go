@@ -113,7 +113,7 @@ func TestKeccakProgram(t *testing.T) {
 		// }
 
 		if !bytes.Equal(rawHash, correct[:]) {
-			Fail(t, "computed hash mismatch", rawHash, correct)
+			Fail(t, "computed hash mismatch", fmt.Sprintf("%#x", rawHash), correct)
 		}
 		colors.PrintGrey("keccak(x) = ", rawHash)
 	})
