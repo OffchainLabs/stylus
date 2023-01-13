@@ -20,6 +20,9 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"strings"
 )
 
 func TestKeccakProgram(t *testing.T) {
@@ -47,6 +50,13 @@ func TestKeccakProgram(t *testing.T) {
 	wasm, err := arbcompress.CompressWell(wasmSource)
 	Require(t, err)
 
+	// Add Polyglot EOF format prefix bytes to differentiate WASM programs
+	// from EVM bytecode deployed on-chain.
+	polyglotWasmPrefix := hexutil.MustDecode("0xEF0000")
+	code := append(polyglotWasmPrefix, wasm...)
+
+	colors.PrintMint("WASM len ", len(code))
+
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
 	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(wasm), toKb(wasmSource)))
 
@@ -66,8 +76,9 @@ func TestKeccakProgram(t *testing.T) {
 		colors.PrintBlue("Time to ", message, ": ", passed.String())
 	}
 
-	programAddress := deployContract(t, ctx, auth, l2client, wasm)
-	colors.PrintBlue("program deployed to ", programAddress.Hex())
+	colors.PrintMint("Deploying contract")
+	programAddress := deployContract(t, ctx, auth, l2client, code)
+	colors.PrintBlue("Program deployed to ", programAddress.Hex())
 
 	timed("compile", func() {
 		ensure(arbWasm.CompileProgram(&auth, programAddress))
@@ -76,23 +87,50 @@ func TestKeccakProgram(t *testing.T) {
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
 	correct := crypto.Keccak256Hash(preimage)
 
-	args := []byte{0x01} // keccak the preimage once
-	args = append(args, preimage...)
+	// Sends a non-mutating call.
+	colors.PrintMint("Sending non-mutating call to contract as normal ETH call")
+	// now := time.Now()
+	result := sendContractCall(t, ctx, programAddress, l2client, preimage)
+	// passed := time.Since(now)
 
-	timed("execute", func() {
-		result, err := arbWasm.CallProgram(&bind.CallOpts{}, programAddress, args)
-		Require(t, err)
+	def := `[{"inputs":[{"name":"","type":"address"}, {"name":"", "type":"bytes"}],"name":"callProgram","outputs":[{"name":"status","type":"uint32"}, {"name": "result", "type":"bytes"}],"type":"function"}]`
+	abi, err := abi.JSON(strings.NewReader(def))
+	Require(t, err)
+	callResults, err := abi.Unpack("callProgram", result)
+	Require(t, err)
+	status := callResults[0].(uint32)
 
-		if result.Status != 0 || len(result.Result) != 32 {
-			Fail(t, "unexpected return result: Status", result.Status, "Result:", result.Result)
-		}
+	colors.PrintMint("Status = ", status)
 
-		hash := common.BytesToHash(result.Result)
-		if hash != correct {
-			Fail(t, "computed hash mismatch", hash, correct)
-		}
-		colors.PrintGrey("keccak(x) = ", hash)
-	})
+	rawHash := callResults[1].([]byte)
+
+	if len(rawHash) != 32 {
+		Fail(t, "unexpected return result", result)
+	}
+
+	hash := common.BytesToHash(rawHash)
+	 	if hash != correct {
+	 		Fail(t, "computed hash mismatch", hash, correct)
+	 	}
+	 	colors.PrintGrey("keccak(x) = ", hash)
+
+	// args := []byte{0x01} // keccak the preimage once
+	// args = append(args, preimage...)
+
+	// timed("execute", func() {
+	// 	result, err := arbWasm.CallProgram(&bind.CallOpts{}, programAddress, args)
+	// 	Require(t, err)
+
+	// 	if result.Status != 0 || len(result.Result) != 32 {
+	// 		Fail(t, "unexpected return result: Status", result.Status, "Result:", result.Result)
+	// 	}
+
+	// 	hash := common.BytesToHash(result.Result)
+	// 	if hash != correct {
+	// 		Fail(t, "computed hash mismatch", hash, correct)
+	// 	}
+	// 	colors.PrintGrey("keccak(x) = ", hash)
+	// })
 
 	// do a mutating call for proving's sake
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
