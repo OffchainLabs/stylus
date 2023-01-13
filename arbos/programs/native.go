@@ -36,7 +36,6 @@ package programs
 import "C"
 import (
 	"errors"
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -44,6 +43,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"fmt"
 )
 
 type u8 = C.uint8_t
@@ -79,14 +79,13 @@ func callUserWasm(
 	db vm.StateDB, arbDb ethdb.Database, program common.Address, calldata []byte, gas *uint64, params *goParams,
 ) (uint32, []byte, error) {
 
-	fmt.Println("WITHIN PRECOMPILE")
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program)
 	}
 
-	module, err := getUserModule(arbDb, 1, program)
+	module, err := getUserModule(arbDb, params.version, program)
 	if err != nil {
-		log.Crit("machine does not exist")
+		log.Crit("Machine does not exist")
 	}
 
 	output := rustVec()
@@ -142,12 +141,14 @@ func (params *goParams) encode() C.GoParams {
 
 func addUserModule(writer ethdb.KeyValueWriter, version uint32, program common.Address, output []byte) {
 	prefix := []byte(userModulesDBKey)
+	// TODO: Include version.
 	key := append(prefix, program[:]...)
 	writer.Put(key, output)
 }
 
 func getUserModule(writer ethdb.KeyValueReader, version uint32, program common.Address) ([]byte, error) {
 	prefix := []byte(userModulesDBKey)
+	// TODO: Include version.
 	key := append(prefix, program[:]...)
 	return writer.Get(key)
 }

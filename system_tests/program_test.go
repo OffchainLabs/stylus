@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"bytes"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -19,10 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/colors"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"strings"
-	"bytes"
 )
 
 func TestKeccakProgram(t *testing.T) {
@@ -88,7 +88,7 @@ func TestKeccakProgram(t *testing.T) {
 	timed("execute", func() {
 		colors.PrintMint("Sending non-mutating call to contract as a normal Ethereum tx")
 
-		result := sendContractCall(t, ctx, programAddress, l2client, preimage)
+		result := sendContractCall(t, ctx, programAddress, l2client, args)
 
 		def := `[{"inputs":[{"name":"","type":"address"}, {"name":"", "type":"bytes"}],"name":"callProgram","outputs":[{"name":"status","type":"uint32"}, {"name": "result", "type":"bytes"}],"type":"function"}]`
 		abi, err := abi.JSON(strings.NewReader(def))
@@ -104,18 +104,10 @@ func TestKeccakProgram(t *testing.T) {
 		if len(rawHash) != 32 {
 			Fail(t, "unexpected return result", result)
 		}
-
-		// result, err := arbWasm.CallProgram(&bind.CallOpts{}, programAddress, args)
-		// Require(t, err)
-
-		// if result.Status != 0 || len(result.Result) != 32 {
-		// 	Fail(t, "unexpected return result: Status", result.Status, "Result:", result.Result)
-		// }
-
 		if !bytes.Equal(rawHash, correct[:]) {
 			Fail(t, "computed hash mismatch", fmt.Sprintf("%#x", rawHash), correct)
 		}
-		colors.PrintGrey("keccak(x) = ", rawHash)
+		colors.PrintGrey("keccak(x) = ", fmt.Sprintf("%#x", rawHash))
 	})
 
 	// do a mutating call for proving's sake
