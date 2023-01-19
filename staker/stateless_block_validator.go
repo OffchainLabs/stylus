@@ -1,31 +1,34 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package staker
 
 import (
 	"context"
 	"fmt"
 	"sync"
 
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/pkg/errors"
 )
 
 type StatelessBlockValidator struct {
-	MachineLoader     *NitroMachineLoader
+	validationSpawner *validator.ValidationSpawner
+
 	inboxReader       InboxReaderInterface
 	inboxTracker      InboxTrackerInterface
 	streamer          TransactionStreamerInterface
@@ -159,20 +162,21 @@ type validationEntry struct {
 	msg             *arbstate.MessageWithMetadata
 	// Valid since Recorded:
 	Preimages  map[common.Hash][]byte
-	BatchInfo  []BatchInfo
+	UserWasms  state.UserWasms
+	BatchInfo  []validator.BatchInfo
 	DelayedMsg []byte
 	// Valid since Ready:
 	StartPosition GlobalStatePosition
 	EndPosition   GlobalStatePosition
 }
 
-func (v *validationEntry) start() (GoGlobalState, error) {
+func (v *validationEntry) start() (validator.GoGlobalState, error) {
 	start := v.StartPosition
 	prevExtraInfo, err := types.DeserializeHeaderExtraInformation(v.PrevBlockHeader)
 	if err != nil {
-		return GoGlobalState{}, err
+		return validator.GoGlobalState{}, err
 	}
-	return GoGlobalState{
+	return validator.GoGlobalState{
 		Batch:      start.BatchNumber,
 		PosInBatch: start.PosInBatch,
 		BlockHash:  v.PrevBlockHash,
@@ -180,17 +184,37 @@ func (v *validationEntry) start() (GoGlobalState, error) {
 	}, nil
 }
 
-func (v *validationEntry) expectedEnd() (GoGlobalState, error) {
+func (v *validationEntry) expectedEnd() (validator.GoGlobalState, error) {
 	extraInfo, err := types.DeserializeHeaderExtraInformation(v.BlockHeader)
 	if err != nil {
-		return GoGlobalState{}, err
+		return validator.GoGlobalState{}, err
 	}
 	end := v.EndPosition
-	return GoGlobalState{
+	return validator.GoGlobalState{
 		Batch:      end.BatchNumber,
 		PosInBatch: end.PosInBatch,
 		BlockHash:  v.BlockHash,
 		SendRoot:   extraInfo.SendRoot,
+	}, nil
+}
+
+func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
+	if e.Stage != Ready {
+		return nil, errors.New("cannot create input from non-ready entry")
+	}
+	startState, err := e.start()
+	if err != nil {
+		return nil, err
+	}
+	return &validator.ValidationInput{
+		Id:            e.BlockNumber,
+		HasDelayedMsg: e.HasDelayedMsg,
+		DelayedMsgNr:  e.DelayedMsgNr,
+		Preimages:     e.Preimages,
+		BatchInfo:     e.BatchInfo,
+		DelayedMsg:    e.DelayedMsg,
+		UserWasms:     e.UserWasms,
+		StartState:    startState,
 	}, nil
 }
 
@@ -227,7 +251,8 @@ func newRecordedValidationEntry(
 	prevHeader *types.Header,
 	header *types.Header,
 	preimages map[common.Hash][]byte,
-	batchInfos []BatchInfo,
+	userWasms state.UserWasms,
+	batchInfos []validator.BatchInfo,
 	delayedMsg []byte,
 ) (*validationEntry, error) {
 	entry, err := newValidationEntry(prevHeader, header, nil)
@@ -235,6 +260,7 @@ func newRecordedValidationEntry(
 		return nil, err
 	}
 	entry.Preimages = preimages
+	entry.UserWasms = userWasms
 	entry.BatchInfo = batchInfos
 	entry.DelayedMsg = delayedMsg
 	entry.Stage = Recorded
@@ -242,7 +268,7 @@ func newRecordedValidationEntry(
 }
 
 func NewStatelessBlockValidator(
-	machineLoader *NitroMachineLoader,
+	validationSpawner *validator.ValidationSpawner,
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
@@ -257,7 +283,7 @@ func NewStatelessBlockValidator(
 		return nil, err
 	}
 	validator := &StatelessBlockValidator{
-		MachineLoader:     machineLoader,
+		validationSpawner: validationSpawner,
 		inboxReader:       inboxReader,
 		inboxTracker:      inbox,
 		streamer:          streamer,
@@ -269,7 +295,7 @@ func NewStatelessBlockValidator(
 	}
 	if config.PendingUpgradeModuleRoot != "" {
 		if config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := machineLoader.GetConfig().ReadLatestWasmModuleRoot()
+			latest, err := validationSpawner.LatestWasmModuleRoot()
 			if err != nil {
 				return nil, err
 			}
@@ -278,18 +304,6 @@ func NewStatelessBlockValidator(
 			validator.pendingWasmModuleRoot = common.HexToHash(config.PendingUpgradeModuleRoot)
 			if (validator.pendingWasmModuleRoot == common.Hash{}) {
 				return nil, errors.New("pending-upgrade-module-root config value illegal")
-			}
-		}
-
-		// the machine will be lazily created if need be later otherwise
-		if config.ArbitratorValidator {
-			if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true, false); err != nil {
-				return nil, err
-			}
-		}
-		if config.JitValidator {
-			if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true, true); err != nil {
-				return nil, err
 			}
 		}
 	}
@@ -305,11 +319,6 @@ func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
 		validatingModuleRoots = append(validatingModuleRoots, v.pendingWasmModuleRoot)
 	}
 	return validatingModuleRoots
-}
-
-type BatchInfo struct {
-	Number uint64
-	Data   []byte
 }
 
 func stateLogFunc(targetHeader, header *types.Header, hasState bool) {
@@ -335,11 +344,12 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	prevHeader *types.Header,
 	msg *arbstate.MessageWithMetadata,
 	keepReference bool,
-) (common.Hash, map[common.Hash][]byte, []BatchInfo, error) {
+) (common.Hash, map[common.Hash][]byte, state.UserWasms, []validator.BatchInfo, error) {
+	hash0 := common.Hash{}
 
 	recordingdb, chaincontext, recordingKV, err := v.recordingDatabase.PrepareRecording(ctx, prevHeader, stateLogFunc)
 	if err != nil {
-		return common.Hash{}, nil, nil, err
+		return hash0, nil, nil, nil, err
 	}
 	defer func() { v.recordingDatabase.Dereference(prevHeader) }()
 
@@ -350,34 +360,34 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	if prevHeader != nil {
 		initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, nil, true)
 		if err != nil {
-			return common.Hash{}, nil, nil, fmt.Errorf("error opening initial ArbOS state: %w", err)
+			return hash0, nil, nil, nil, fmt.Errorf("error opening initial ArbOS state: %w", err)
 		}
 		chainId, err := initialArbosState.ChainId()
 		if err != nil {
-			return common.Hash{}, nil, nil, fmt.Errorf("error getting chain ID from initial ArbOS state: %w", err)
+			return hash0, nil, nil, nil, fmt.Errorf("error getting chain ID from initial ArbOS state: %w", err)
 		}
 		if chainId.Cmp(chainConfig.ChainID) != 0 {
-			return common.Hash{}, nil, nil, fmt.Errorf("unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
+			return hash0, nil, nil, nil, fmt.Errorf("unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
 		}
 		genesisNum, err := initialArbosState.GenesisBlockNum()
 		if err != nil {
-			return common.Hash{}, nil, nil, fmt.Errorf("error getting genesis block number from initial ArbOS state: %w", err)
+			return hash0, nil, nil, nil, fmt.Errorf("error getting genesis block number from initial ArbOS state: %w", err)
 		}
 		expectedNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
 		if genesisNum != expectedNum {
-			return common.Hash{}, nil, nil, fmt.Errorf("unexpected genesis block number %v in ArbOS state, expected %v", genesisNum, expectedNum)
+			return hash0, nil, nil, nil, fmt.Errorf("unexpected genesis block number %v in ArbOS state, expected %v", genesisNum, expectedNum)
 		}
 	}
 
 	var blockHash common.Hash
-	var readBatchInfo []BatchInfo
+	var readBatchInfo []validator.BatchInfo
 	if msg != nil {
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
 			data, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
 			if err != nil {
 				return nil, err
 			}
-			readBatchInfo = append(readBatchInfo, BatchInfo{
+			readBatchInfo = append(readBatchInfo, validator.BatchInfo{
 				Number: batchNum,
 				Data:   data,
 			})
@@ -396,19 +406,30 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 			batchFetcher,
 		)
 		if err != nil {
-			return common.Hash{}, nil, nil, err
+			return hash0, nil, nil, nil, err
 		}
 		blockHash = block.Hash()
 	}
 
 	preimages, err := v.recordingDatabase.PreimagesFromRecording(chaincontext, recordingKV)
 	if err != nil {
-		return common.Hash{}, nil, nil, err
+		return hash0, nil, nil, nil, err
 	}
+
+	userWasms := recordingdb.UserWasms()
+	for _, wasm := range userWasms {
+		inflated, err := arbcompress.Decompress(wasm.CompressedWasm, programs.MaxWasmSize)
+		if err != nil {
+			return hash0, nil, nil, nil, fmt.Errorf("error decompressing program: %w", err)
+		}
+		wasm.CompressedWasm = nil // release the memory
+		wasm.Wasm = inflated
+	}
+
 	if keepReference {
 		prevHeader = nil
 	}
-	return blockHash, preimages, readBatchInfo, err
+	return blockHash, preimages, userWasms, readBatchInfo, err
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, keepReference bool) error {
@@ -419,7 +440,9 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.Stage = Recorded
 		return nil
 	}
-	blockhash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, e.PrevBlockHeader, e.msg, keepReference)
+	blockhash, preimages, userWasms, readBatchInfo, err := v.RecordBlockCreation(
+		ctx, e.PrevBlockHeader, e.msg, keepReference,
+	)
 	if err != nil {
 		return err
 	}
@@ -438,6 +461,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.DelayedMsg = delayedMsg
 	}
 	e.Preimages = preimages
+	e.UserWasms = userWasms
 	e.BatchInfo = readBatchInfo
 	e.msg = nil // no longer needed
 	e.Stage = Recorded
@@ -454,7 +478,7 @@ func (v *StatelessBlockValidator) ValidationEntryAddSeqMessage(ctx context.Conte
 	}
 	e.StartPosition = startPos
 	e.EndPosition = endPos
-	seqMsgBatchInfo := BatchInfo{
+	seqMsgBatchInfo := validator.BatchInfo{
 		Number: startPos.BatchNumber,
 		Data:   seqMsg,
 	}
@@ -485,147 +509,6 @@ func (v *StatelessBlockValidator) ValidationEntryAddSeqMessage(ctx context.Conte
 	return nil
 }
 
-func (v *StatelessBlockValidator) NewMachinePreimageResolver(
-	ctx context.Context,
-	preimages map[common.Hash][]byte,
-	blockNum uint64,
-) (GoPreimageResolver, error) {
-	recordNewPreimages := true
-	if preimages == nil {
-		preimages = make(map[common.Hash][]byte)
-		recordNewPreimages = false
-	}
-
-	db := v.blockchain.StateCache().TrieDB()
-	resolver := func(hash common.Hash) ([]byte, error) {
-		// Check if it's a known preimage
-		if preimage, ok := preimages[hash]; ok {
-			return preimage, nil
-		}
-		// Check if it's a code hash
-		codeKey := append([]byte{}, rawdb.CodePrefix...)
-		codeKey = append(codeKey, hash.Bytes()...)
-		datasource := "code"
-		preimage, err := db.DiskDB().Get(codeKey)
-		if err != nil {
-			// Check if it's a block hash
-			header := v.blockchain.GetHeaderByHash(hash)
-			if header != nil {
-				datasource = "blockhash"
-				preimage, err = rlp.EncodeToBytes(header)
-			}
-		}
-		if err != nil {
-			// Check if it's part of the state trie
-			datasource = "triedb"
-			preimage, err = db.Node(hash)
-		}
-		if err == nil && recordNewPreimages {
-			preimages[hash] = preimage
-		}
-		if err == nil {
-			log.Error("preimage not found in prerecording", "hash", hash, "blockNum", blockNum, "source", datasource)
-		} else {
-			log.Error("preimage not found anywhere", "hash", hash, "blockNum", blockNum)
-		}
-		return preimage, err
-	}
-	return resolver, nil
-}
-
-func (v *StatelessBlockValidator) LoadEntryToMachine(ctx context.Context, entry *validationEntry, mach *ArbitratorMachine) error {
-	if entry.Stage != Ready {
-		return fmt.Errorf("cannot load entry to machine: not ready")
-	}
-	gsStart, err := entry.start()
-	if err != nil {
-		return err
-	}
-	resolver, err := v.NewMachinePreimageResolver(ctx, entry.Preimages, entry.BlockNumber)
-	if err != nil {
-		return err
-	}
-	if err := mach.SetPreimageResolver(resolver); err != nil {
-		return err
-	}
-	err = mach.SetGlobalState(gsStart)
-	if err != nil {
-		log.Error("error while setting global state for proving", "err", err, "gsStart", gsStart)
-		return fmt.Errorf("error while setting global state for proving: %w", err)
-	}
-	for _, batch := range entry.BatchInfo {
-		err = mach.AddSequencerInboxMessage(batch.Number, batch.Data)
-		if err != nil {
-			log.Error(
-				"error while trying to add sequencer msg for proving",
-				"err", err, "seq", gsStart.Batch, "blockNr", entry.BlockNumber,
-			)
-			return fmt.Errorf("error while trying to add sequencer msg for proving: %w", err)
-		}
-	}
-	if entry.HasDelayedMsg {
-		err = mach.AddDelayedInboxMessage(entry.DelayedMsgNr, entry.DelayedMsg)
-		if err != nil {
-			log.Error(
-				"error while trying to add delayed msg for proving",
-				"err", err, "seq", entry.DelayedMsgNr, "blockNr", entry.BlockNumber,
-			)
-			return fmt.Errorf("error while trying to add delayed msg for proving: %w", err)
-		}
-	}
-	return nil
-}
-
-func (v *StatelessBlockValidator) executeBlock(
-	ctx context.Context, entry *validationEntry, moduleRoot common.Hash,
-) (GoGlobalState, error) {
-	basemachine, err := v.MachineLoader.GetMachine(ctx, moduleRoot, true)
-	if err != nil {
-		return GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
-	}
-
-	mach := basemachine.Clone()
-	err = v.LoadEntryToMachine(ctx, entry, mach)
-	if err != nil {
-		return GoGlobalState{}, err
-	}
-	var steps uint64
-	for mach.IsRunning() {
-		var count uint64 = 500000000
-		err = mach.Step(ctx, count)
-		if steps > 0 {
-			log.Debug("validation", "moduleRoot", moduleRoot, "block", entry.BlockNumber, "steps", steps)
-		}
-		if err != nil {
-			return GoGlobalState{}, fmt.Errorf("machine execution failed with error: %w", err)
-		}
-		steps += count
-	}
-	if mach.IsErrored() {
-		log.Error("machine entered errored state during attempted validation", "block", entry.BlockNumber)
-		return GoGlobalState{}, errors.New("machine entered errored state during attempted validation")
-	}
-	return mach.GetGlobalState(), nil
-}
-
-func (v *StatelessBlockValidator) jitBlock(
-	ctx context.Context, entry *validationEntry, moduleRoot common.Hash,
-) (GoGlobalState, error) {
-	empty := GoGlobalState{}
-
-	machine, err := v.MachineLoader.GetJitMachine(ctx, moduleRoot, true)
-	if err != nil {
-		return empty, fmt.Errorf("unabled to get WASM machine: %w", err)
-	}
-
-	resolver, err := v.NewMachinePreimageResolver(ctx, entry.Preimages, entry.BlockNumber)
-	if err != nil {
-		return empty, err
-	}
-	state, err := machine.prove(ctx, entry, resolver)
-	return state, err
-}
-
 func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context, header *types.Header) (*validationEntry, error) {
 	if header == nil {
 		return nil, errors.New("header not found")
@@ -644,7 +527,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	resHash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, prevHeader, msg, false)
+	resHash, preimages, userWasms, readBatchInfo, err := v.RecordBlockCreation(ctx, prevHeader, msg, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block data to validate: %w", err)
 	}
@@ -673,7 +556,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 			return nil, fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
 		}
 	}
-	entry, err := newRecordedValidationEntry(prevHeader, header, preimages, readBatchInfo, delayed)
+	entry, err := newRecordedValidationEntry(prevHeader, header, preimages, userWasms, readBatchInfo, delayed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create validation entry %w", err)
 	}
@@ -701,11 +584,15 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	if err != nil {
 		return false, err
 	}
-	var gsEnd GoGlobalState
+	var gsEnd validator.GoGlobalState
+	input, err := entry.ToInput()
+	if err != nil {
+		return false, err
+	}
 	if full {
-		gsEnd, err = v.executeBlock(ctx, entry, moduleRoot)
+		gsEnd, err = v.validationSpawner.ExecuteArbitrator(ctx, input, moduleRoot)
 	} else {
-		gsEnd, err = v.jitBlock(ctx, entry, moduleRoot)
+		gsEnd, err = v.validationSpawner.ExecuteJit(ctx, input, moduleRoot)
 	}
 	if err != nil {
 		return false, err
@@ -718,5 +605,5 @@ func (v *StatelessBlockValidator) RecordDBReferenceCount() int64 {
 }
 
 func (v *StatelessBlockValidator) Stop() {
-	v.MachineLoader.Stop()
+	v.validationSpawner.Stop()
 }

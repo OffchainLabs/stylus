@@ -3,13 +3,13 @@
 
 use crate::{
     programs::{
-        config::StylusConfig, depth::DepthChecker, heap::HeapBound, meter::Meter,
+        config::StylusConfig, counter::Counter, depth::DepthChecker, heap::HeapBound, meter::Meter,
         start::StartMover, FuncMiddleware, Middleware, StylusGlobals,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 use arbutil::Color;
-use eyre::{bail, ensure, Result, WrapErr};
+use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
     branch::alt,
@@ -312,7 +312,9 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
     };
     let mut validator = Validator::new();
     validator.wasm_features(features);
-    validator.validate_all(input)?;
+    validator
+        .validate_all(input)
+        .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
 
     let sections: Vec<_> = Parser::new(0)
         .parse_all(input)
@@ -511,9 +513,10 @@ impl<'a> Debug for WasmBinary<'a> {
 }
 
 impl<'a> WasmBinary<'a> {
+    /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
     pub fn instrument(&mut self, config: &StylusConfig) -> Result<StylusGlobals> {
         let meter = Meter::new(config.costs, config.start_gas);
-        let depth = DepthChecker::new(config.max_depth);
+        let depth = DepthChecker::new(config.depth);
         let bound = HeapBound::new(config.heap_bound)?;
         let start = StartMover::default();
 
@@ -521,6 +524,11 @@ impl<'a> WasmBinary<'a> {
         depth.update_module(self)?;
         bound.update_module(self)?;
         start.update_module(self)?;
+
+        let count = config.debug.as_ref().map(|_| Counter::new());
+        if let Some(count) = &count {
+            count.update_module(self)?;
+        }
 
         for (index, code) in self.codes.iter_mut().enumerate() {
             let index = LocalFunctionIndex::from_u32(index as u32);
@@ -550,6 +558,11 @@ impl<'a> WasmBinary<'a> {
             apply!(depth);
             apply!(bound);
             apply!(start);
+
+            if let Some(count) = &count {
+                apply!(*count);
+            }
+
             code.expr = build;
         }
 

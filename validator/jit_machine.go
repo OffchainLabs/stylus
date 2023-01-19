@@ -90,7 +90,7 @@ func (machine *JitMachine) close() {
 }
 
 func (machine *JitMachine) prove(
-	ctxIn context.Context, entry *validationEntry, resolver GoPreimageResolver,
+	ctxIn context.Context, entry *ValidationInput, resolver GoPreimageResolver,
 ) (GoGlobalState, error) {
 	ctx, cancel := context.WithCancel(ctxIn)
 	defer cancel() // ensure our cleanup functions run when we're done
@@ -139,18 +139,15 @@ func (machine *JitMachine) prove(
 		return state, err
 	}
 
-	// Tell the new process about the global state
-	gsStart, err := entry.start()
-	if err != nil {
-		return state, err
-	}
-
 	writeExact := func(data []byte) error {
 		_, err := conn.Write(data)
 		return err
 	}
 	writeUint8 := func(data uint8) error {
 		return writeExact([]byte{data})
+	}
+	writeUint32 := func(data uint32) error {
+		return writeExact(arbmath.Uint32ToBytes(data))
 	}
 	writeUint64 := func(data uint64) error {
 		return writeExact(arbmath.UintToBytes(data))
@@ -163,16 +160,16 @@ func (machine *JitMachine) prove(
 	}
 
 	// send global state
-	if err := writeUint64(gsStart.Batch); err != nil {
+	if err := writeUint64(entry.StartState.Batch); err != nil {
 		return state, err
 	}
-	if err := writeUint64(gsStart.PosInBatch); err != nil {
+	if err := writeUint64(entry.StartState.PosInBatch); err != nil {
 		return state, err
 	}
-	if err := writeExact(gsStart.BlockHash[:]); err != nil {
+	if err := writeExact(entry.StartState.BlockHash[:]); err != nil {
 		return state, err
 	}
-	if err := writeExact(gsStart.SendRoot[:]); err != nil {
+	if err := writeExact(entry.StartState.SendRoot[:]); err != nil {
 		return state, err
 	}
 
@@ -220,7 +217,7 @@ func (machine *JitMachine) prove(
 
 	// send known preimages
 	knownPreimages := entry.Preimages
-	if err := writeUint64(uint64(len(knownPreimages))); err != nil {
+	if err := writeUint32(uint32(len(knownPreimages))); err != nil {
 		return state, err
 	}
 	for hash, preimage := range knownPreimages {
@@ -228,6 +225,26 @@ func (machine *JitMachine) prove(
 			return state, err
 		}
 		if err := writeBytes(preimage); err != nil {
+			return state, err
+		}
+	}
+
+	// send user wasms
+	userWasms := entry.UserWasms
+	if err := writeUint32(uint32(len(userWasms))); err != nil {
+		return state, err
+	}
+	for call, wasm := range userWasms {
+		if err := writeExact(call.Address[:]); err != nil {
+			return state, err
+		}
+		if err := writeBytes(wasm.Wasm); err != nil {
+			return state, err
+		}
+		if err := writeExact(wasm.NoncanonicalHash[:]); err != nil {
+			return state, err
+		}
+		if err := writeUint32(call.Version); err != nil {
 			return state, err
 		}
 	}

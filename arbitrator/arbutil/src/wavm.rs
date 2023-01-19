@@ -1,7 +1,5 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
-
-#![cfg(feature = "wavm")]
 
 extern "C" {
     fn wavm_caller_load8(ptr: usize) -> u8;
@@ -77,4 +75,9 @@ pub unsafe fn read_slice_usize(mut ptr: usize, mut len: usize) -> Vec<u8> {
         ptr += 1;
     }
     data
+}
+
+pub unsafe fn read_bytes32(ptr: u64) -> [u8; 32] {
+    let data = read_slice(ptr, 32);
+    data.try_into().unwrap()
 }

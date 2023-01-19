@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
@@ -18,15 +18,22 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/pkg/errors"
 )
+
+type u8 = C.uint8_t
+type u32 = C.uint32_t
+type u64 = C.uint64_t
 
 type MachineInterface interface {
 	CloneMachineInterface() MachineInterface
 	GetStepCount() uint64
 	IsRunning() bool
 	ValidForStep(uint64) bool
+	Status() uint8
 	Step(context.Context, uint64) error
 	Hash() common.Hash
 	GetGlobalState() GoGlobalState
@@ -140,8 +147,8 @@ func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
 	}
 }
 
-func manageConditionByte(ctx context.Context) (*C.uint8_t, func()) {
-	var zero C.uint8_t
+func manageConditionByte(ctx context.Context) (*u8, func()) {
+	var zero u8
 	conditionByte := &zero
 
 	doneEarlyChan := make(chan struct{})
@@ -172,11 +179,10 @@ func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 	conditionByte, cancel := manageConditionByte(ctx)
 	defer cancel()
 
-	err := C.arbitrator_step(m.ptr, C.uint64_t(count), conditionByte)
+	err := C.arbitrator_step(m.ptr, u64(count), conditionByte)
+	defer C.free(unsafe.Pointer(err))
 	if err != nil {
-		errString := C.GoString(err)
-		C.free(unsafe.Pointer(err))
-		return errors.New(errString)
+		return errors.New(C.GoString(err))
 	}
 
 	return ctx.Err()
@@ -191,7 +197,11 @@ func (m *ArbitratorMachine) StepUntilHostIo(ctx context.Context) error {
 	conditionByte, cancel := manageConditionByte(ctx)
 	defer cancel()
 
-	C.arbitrator_step_until_host_io(m.ptr, conditionByte)
+	err := C.arbitrator_step_until_host_io(m.ptr, conditionByte)
+	defer C.free(unsafe.Pointer(err))
+	if err != nil {
+		return errors.New(C.GoString(err))
+	}
 
 	return ctx.Err()
 }
@@ -213,6 +223,7 @@ func (m *ArbitratorMachine) GetModuleRoot() (hash common.Hash) {
 	}
 	return
 }
+
 func (m *ArbitratorMachine) ProveNextStep() []byte {
 	defer runtime.KeepAlive(m)
 
@@ -262,7 +273,7 @@ func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data []byte) 
 		return errors.New("machine frozen")
 	}
 	cbyte := CreateCByteArray(data)
-	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(0), C.uint64_t(index), cbyte)
+	status := C.arbitrator_add_inbox_message(m.ptr, u64(0), u64(index), cbyte)
 	DestroyCByteArray(cbyte)
 	if status != 0 {
 		return errors.New("failed to add sequencer inbox message")
@@ -279,7 +290,7 @@ func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data []byte) er
 	}
 
 	cbyte := CreateCByteArray(data)
-	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(1), C.uint64_t(index), cbyte)
+	status := C.arbitrator_add_inbox_message(m.ptr, u64(1), u64(index), cbyte)
 	DestroyCByteArray(cbyte)
 	if status != 0 {
 		return errors.New("failed to add sequencer inbox message")
@@ -316,7 +327,7 @@ func preimageResolver(context C.size_t, ptr unsafe.Pointer) C.ResolvedPreimage {
 		}
 	}
 	return C.ResolvedPreimage{
-		ptr: (*C.uint8_t)(C.CBytes(preimage)),
+		ptr: (*u8)(C.CBytes(preimage)),
 		len: (C.ptrdiff_t)(len(preimage)),
 	}
 }
@@ -329,6 +340,28 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	preimageResolvers.Store(id, resolver)
 	m.contextId = &id
 	runtime.SetFinalizer(m.contextId, freeContextId)
-	C.arbitrator_set_context(m.ptr, C.uint64_t(id))
+	C.arbitrator_set_context(m.ptr, u64(id))
+	return nil
+}
+
+func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWasm) error {
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+	hashBytes := [32]u8{}
+	for index, byte := range wasm.NoncanonicalHash.Bytes() {
+		hashBytes[index] = u8(byte)
+	}
+	err := C.arbitrator_add_user_wasm(
+		m.ptr,
+		(*u8)(arbutil.SliceToPointer(wasm.Wasm)),
+		u32(len(wasm.Wasm)),
+		&C.struct_Bytes32{hashBytes},
+		u32(call.Version),
+	)
+	defer C.free(unsafe.Pointer(err))
+	if err != nil {
+		return errors.New(C.GoString(err))
+	}
 	return nil
 }
