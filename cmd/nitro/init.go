@@ -182,9 +182,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, arbDb ethdb.Da
 				if err != nil {
 					return chainDb, nil, err
 				}
-				if err := chainDb.SetArbDB(arbDb); err != nil {
-					return chainDb, nil, err
-				}
+				chainDb.SetArbDB(arbDb)
 				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
 				if err != nil {
 					return chainDb, nil, err
@@ -227,9 +225,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, arbDb ethdb.Da
 		return chainDb, nil, err
 	}
 
-	if err := chainDb.SetArbDB(arbDb); err != nil {
-		return chainDb, nil, err
-	}
+	chainDb.SetArbDB(arbDb)
 
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
