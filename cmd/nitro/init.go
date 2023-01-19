@@ -173,13 +173,16 @@ func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) e
 	return nil
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeChainDb(ctx context.Context, stack *node.Node, arbDb ethdb.Database, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := arbnode.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
 				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 				if err != nil {
+					return chainDb, nil, err
+				}
+				if err := chainDb.SetArbDB(arbDb); err != nil {
 					return chainDb, nil, err
 				}
 				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
@@ -221,6 +224,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 	if err != nil {
+		return chainDb, nil, err
+	}
+
+	if err := chainDb.SetArbDB(arbDb); err != nil {
 		return chainDb, nil, err
 	}
 
