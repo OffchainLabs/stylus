@@ -173,7 +173,7 @@ func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) e
 	return nil
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, arbDb ethdb.Database, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeChainDb(ctx context.Context, stack *node.Node, arbDb ethdb.KeyValueWriter, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := arbnode.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
@@ -182,8 +182,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, arbDb ethdb.Da
 				if err != nil {
 					return chainDb, nil, err
 				}
-				chainDb.SetArbDB(arbDb)
-				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
+				l2BlockChain, err := arbnode.GetBlockChain(chainDb, arbDb, cacheConfig, chainConfig, &config.Node)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -224,8 +223,6 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, arbDb ethdb.Da
 	if err != nil {
 		return chainDb, nil, err
 	}
-
-	chainDb.SetArbDB(arbDb)
 
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
@@ -268,7 +265,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, arbDb ethdb.Da
 		if chainConfig == nil {
 			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbDb, cacheConfig, chainConfig, &config.Node)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -310,7 +307,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, arbDb ethdb.Da
 		if config.Init.ThenQuit {
 			cacheConfig.SnapshotWait = true
 		}
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, &config.Node, config.Init.AccountsPerSync)
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbDb, cacheConfig, initDataReader, chainConfig, &config.Node, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}
