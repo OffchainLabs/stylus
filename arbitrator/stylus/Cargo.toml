@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 arbutil = { path = "../arbutil/" }
 prover = { path = "../prover/" }
-wasmer = { path = "../wasm-upstream/wasmer/lib/api/" }
+wasmer = { path = "../wasm-upstream/wasmer/lib/api" }
 wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass" }
 wasmer-compiler-cranelift = { path = "../wasm-upstream/wasmer/lib/compiler-cranelift" }
 wasmer-compiler-llvm = { path = "../wasm-upstream/wasmer/lib/compiler-llvm" }
@@ -23,4 +23,4 @@ hex = "0.4.3"
 benchmark = []
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "lib"]

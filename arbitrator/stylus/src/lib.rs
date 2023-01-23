@@ -8,7 +8,7 @@ use run::RunProgram;
 use std::mem;
 use wasmer::Module;
 
-mod env;
+pub mod env;
 pub mod host;
 pub mod run;
 pub mod stylus;

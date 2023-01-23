@@ -1,0 +1,34 @@
+[package]
+name = "stylus-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbutil = { path = "../../arbutil" }
+prover = { path = "../../prover"}
+wasmer = { path = "../../wasm-upstream/wasmer/lib/api" }
+wasmer-compiler-singlepass = { path = "../../wasm-upstream/wasmer/lib/compiler-singlepass" }
+wasmer-compiler-cranelift = { path = "../../wasm-upstream/wasmer/lib/compiler-cranelift" }
+wasmer-compiler-llvm = { path = "../../wasm-upstream/wasmer/lib/compiler-llvm" }
+wasm-smith = { path = "../../wasm-upstream/wasm-tools/crates/wasm-smith" }
+wasmparser = "0.83.0"
+parking_lot = "0.12.1"
+stylus = { path = ".." }
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "machine"
+path = "fuzz_targets/fuzz_machine.rs"
+test = false
+doc = false
