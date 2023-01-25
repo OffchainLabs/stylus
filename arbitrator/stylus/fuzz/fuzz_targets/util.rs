@@ -1,6 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![allow(unused_macros)]
 macro_rules! warn_ {
     ($text:expr $(,$args:expr)*) => {{
         eprintln!($text $(,$args.red())*);

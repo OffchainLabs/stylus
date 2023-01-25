@@ -3,6 +3,7 @@
 
 use wasmer::wasmparser::Operator;
 
+mod fuzz;
 mod native;
 mod wavm;
 
