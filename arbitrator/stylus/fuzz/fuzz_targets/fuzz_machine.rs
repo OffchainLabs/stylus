@@ -2,56 +2,86 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 #![no_main]
-#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::field_reassign_with_default, unused_imports)]
 
-use libfuzzer_sys::fuzz_target;
 
 mod util;
 mod wasm;
 
-use util::{warn};
-use prover::programs::{config::{StylusConfig, StylusDebugConfig}, counter::CountingMachine};
-use stylus::stylus::instance_from_module;
-use stylus::env::WasmEnv;
+use libfuzzer_sys::{Corpus, fuzz_target};
+use prover::{binary::parse, programs::{start::StartlessMachine, config::{StylusConfig, StylusDebugConfig}, counter::CountingMachine}};
+use std::path::Path;
+use stylus::{env::WasmEnv, stylus::{instance_from_module, NativeInstance}};
+use util::{wat, warn, fail};
 use wasmer::Module;
+use wasmparser::Operator;
 
-fuzz_target!(|data: &[u8]| {
-    let mut config = StylusConfig::default();
-    config.debug = Some(StylusDebugConfig::default());
-
+fuzz_target!(|data: &[u8]| -> Corpus {
     let wasm_data  = wasm::random(data, 0);
-    let module = match Module::new(&config.store(), wasm_data) {
+    if !wasm::validate(&wasm_data) {
+        return Corpus::Keep;
+    }
+
+    let enable_counter = false;
+    let gas_limit = 200;
+
+    let mut config = StylusConfig::default();
+    if enable_counter {
+        config.add_debug_params();
+    }
+    config.costs = |_: &Operator| -> u64 {1};
+    config.start_gas = gas_limit;
+    config.pricing.wasm_gas_price = 1;
+
+    let module = match Module::new(&config.store(), wasm_data.clone()) {
         Ok(module) => module,
-        Err(err) => warn!("Failed to create module: {err}")
+        Err(_) => {
+            return Corpus::Keep;
+        }
     };
 
     let env = WasmEnv::new(config.clone(), vec![]);
     let mut instance = match instance_from_module(module, config.store(), env) {
         Ok(instance) => instance,
-        Err(err) => warn!("Failed to create instance: {err}")
+        Err(err) => {
+            let err = err.to_string();
+            if err.contains("Missing export memory") ||
+               err.contains("out of bounds memory access") ||
+               err.contains("Incompatible Export Type") ||
+               err.contains("WebAssembly transaction error") ||
+               err.contains("out of bounds table access") {
+                return Corpus::Keep;
+            }
+            println!("{}", wat!(&wasm_data));
+            panic!("Failed to create instance: {err}");
+        }
     };
 
-    let main = match instance
-        .exports
-        .get_typed_function::<i32, i32>(&instance.store, "arbitrum_main") {
-        Ok(main) => main,
-        Err(err) => warn!("Failed to get arbitrum_main: {err}")
+    let starter = match instance.get_start() {
+        Ok(starter) => starter,
+        Err(err) => {
+            println!("{}", wat!(&wasm_data));
+            panic!("Failed to get start: {err}");
+        }
     };
-    let status = match main.call(&mut instance.store, 0) {
-        Ok(status) => status,
-        Err(err) => warn!("Failed to call arbitrum_main: {err}")
-    };
-    if status != 0 {
-        warn!("Calling arbitrum_main returned non-zero: {status}")
+    if let Err(e) = starter.call(&mut instance.store) {
+        println!("{}", wat!(&wasm_data));
+        panic!("Failed to get start: {e}");
+    }
+    println!("Finished main");
+
+    if enable_counter {
+        let counts = match instance.operator_counts() {
+            Ok(counts) => counts,
+            Err(err) => {
+                println!("{}", wat!(&wasm_data));
+                panic!("Failed to get operator counts: {err}");
+            }
+        };
+        for (op, count) in counts.into_iter() {
+            println!("{op}\t{count}\n");
+        }
     }
 
-    // TODO: check instrumentation
-
-    let counts = match instance.operator_counts() {
-        Ok(counts) => counts,
-        Err(err) => warn!("Failed to get operator counts: {err}")
-    };
-    for (op, count) in counts.into_iter() {
-        println!("{op}\t{count}\n")
-    }
+    Corpus::Keep
 });

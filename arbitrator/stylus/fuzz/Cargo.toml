@@ -11,6 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 arbutil = { path = "../../arbutil" }
 prover = { path = "../../prover"}
+wabt = "0.10.0"
 wasmer = { path = "../../wasm-upstream/wasmer/lib/api" }
 wasmer-compiler-singlepass = { path = "../../wasm-upstream/wasmer/lib/compiler-singlepass" }
 wasmer-compiler-cranelift = { path = "../../wasm-upstream/wasmer/lib/compiler-cranelift" }
@@ -19,13 +20,11 @@ wasm-smith = { path = "../../wasm-upstream/wasm-tools/crates/wasm-smith" }
 wasmparser = "0.83.0"
 parking_lot = "0.12.1"
 stylus = { path = ".." }
+eyre = "0.6.5"
 
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
-
-[profile.release]
-debug = 1
 
 [[bin]]
 name = "machine"
