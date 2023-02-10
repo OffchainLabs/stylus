@@ -1113,7 +1113,10 @@ impl OperatorInfo for Operator<'_> {
 
         matches!(
             self,
-            End | Else | Return | dot!(Loop, Br, BrTable, BrIf, If, Call, CallIndirect)
+            End | Else
+                | Return
+                | Unreachable
+                | dot!(Loop, Br, BrTable, BrIf, If, Call, CallIndirect)
         )
     }
 
