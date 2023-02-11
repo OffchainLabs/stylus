@@ -1,6 +1,8 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
+
 use eyre::ErrReport;
 use native::NativeInstance;
 use prover::programs::prelude::*;
@@ -145,5 +147,5 @@ pub unsafe extern "C" fn stylus_call(
 #[no_mangle]
 pub unsafe extern "C" fn stylus_free(vec: RustVec) {
     let vec = Vec::from_raw_parts(*vec.ptr, *vec.len, *vec.cap);
-    mem::drop(vec)
+    drop(vec)
 }

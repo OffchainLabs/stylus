@@ -51,6 +51,7 @@ replay_deps=arbos wavmio arbstate arbcompress solgen/go/node-interfacegen blsSig
 replay_wasm=$(output_latest)/replay.wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
+arbitrator_stylus_generated_header=$(output_root)/include/arbitrator-stylus.h
 arbitrator_wasm_libs_nogo=$(patsubst %, $(output_root)/machines/latest/%.wasm, wasi_stub host_io soft-float user_host forward)
 arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(patsubst %,$(output_root)/machines/latest/%.wasm, go_stub brotli)
 arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
@@ -123,7 +124,7 @@ all: build build-replay-env test-gen-proofs
 build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq-coordinator-invalidate)
 	@printf $(done)
 
-build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
+build-node-deps: $(go_source) build-prover-header build-stylus-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
 
 test-go-deps: \
 	build-replay-env \
@@ -132,6 +133,8 @@ test-go-deps: \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
 
 build-prover-header: $(arbitrator_generated_header)
+
+build-stylus-header: $(arbitrator_stylus_generated_header)
 
 build-prover-lib: $(arbitrator_stylus_lib)
 
@@ -250,7 +253,12 @@ $(arbitrator_cases)/go/main: $(arbitrator_cases)/go/main.go $(arbitrator_cases)/
 $(arbitrator_generated_header): $(DEP_PREDICATE) arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
 	@echo creating ${PWD}/$(arbitrator_generated_header)
 	mkdir -p `dirname $(arbitrator_generated_header)`
-	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output ../$(arbitrator_generated_header)
+	cd arbitrator && cbindgen --config prover/cbindgen.toml --crate prover --output ../$(arbitrator_generated_header)
+
+$(arbitrator_stylus_generated_header): $(DEP_PREDICATE) arbitrator/stylus/src/lib.rs arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
+	@echo creating ${PWD}/$(arbitrator_stylus_generated_header)
+	mkdir -p `dirname $(arbitrator_stylus_generated_header)`
+	cd arbitrator && cbindgen --config stylus/cbindgen.toml --crate stylus --output ../$(arbitrator_stylus_generated_header)
 
 $(output_latest)/wasi_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,wasi-stub)
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
@@ -424,4 +432,4 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 always:              # use this to force other rules to always build
 .DELETE_ON_ERROR:    # causes a failure to delete its target
-.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-jit build-replay-env build-solidity build-wasm-libs contracts format fmt lint stylus-benchmarks test-go test-gen-proofs push clean docker
+.PHONY: push all build build-node-deps test-go-deps build-prover-header build-stylus-header build-prover-lib build-prover-bin build-jit build-replay-env build-solidity build-wasm-libs contracts format fmt lint stylus-benchmarks test-go test-gen-proofs push clean docker

@@ -7,31 +7,9 @@
 package programs
 
 /*
-#cgo CFLAGS: -g -Wall
+#cgo CFLAGS: -g -Wall -I../../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
-#include <stdint.h>
-
-typedef struct GoParams {
-  uint32_t version;
-  uint32_t max_depth;
-  uint64_t wasm_gas_price;
-  uint64_t hostio_cost;
-} GoParams;
-
-typedef struct GoSlice {
-  const uint8_t * ptr;
-  const size_t len;
-} GoSlice;
-
-typedef struct RustVec {
-  uint8_t * const * ptr;
-  size_t * len;
-  size_t * cap;
-} RustVec;
-
-extern uint8_t stylus_compile(GoSlice wasm, uint32_t version, RustVec output);
-extern uint8_t stylus_call(GoSlice module, GoSlice calldata, GoParams params, RustVec output, uint64_t * evm_gas);
-extern void    stylus_free(RustVec vec);
+#include "arbitrator-stylus.h"
 */
 import "C"
 import (

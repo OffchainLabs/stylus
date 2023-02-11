@@ -27,12 +27,18 @@ use {
 };
 
 pub mod config;
+/// cbindgen:ignore
 pub mod counter;
+/// cbindgen:ignore
 pub mod depth;
+/// cbindgen:ignore
 pub mod heap;
+/// cbindgen:ignore
 pub mod meter;
+/// cbindgen:ignore
 pub mod prelude;
 pub mod run;
+/// cbindgen:ignore
 pub mod start;
 
 pub const STYLUS_ENTRY_POINT: &str = "arbitrum_main";
