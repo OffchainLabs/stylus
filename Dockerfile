@@ -91,7 +91,7 @@ COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
 COPY arbitrator/stylus arbitrator/stylus
 COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header build-stylus-header
 
 FROM scratch as prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
