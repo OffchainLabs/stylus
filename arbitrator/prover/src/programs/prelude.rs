@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 pub use super::{
-    config::{DepthParams, StylusConfig},
+    config::{DepthParams, StylusConfig, EvmContext},
     depth::DepthCheckedMachine,
     meter::{MachineMeter, MeteredMachine},
     run::{UserOutcome, UserOutcomeKind},

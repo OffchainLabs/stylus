@@ -6,8 +6,9 @@ use arbutil::{heapify, wavm};
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
-    programs::{config::StylusConfig, run::UserOutcomeKind},
+    programs::{config::StylusConfig, config::EvmContext, run::UserOutcomeKind},
     Machine,
+    utils::{Bytes20, Bytes32},
 };
 use std::{mem, path::Path, sync::Arc};
 
@@ -84,7 +85,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 }
 
 /// Links and executes a user wasm.
-/// Safety: λ(mach *Machine, data []byte, params *StylusConfig, gas *u64, root *[32]byte) (status byte, out *Vec<u8>)
+/// Safety: λ(mach *Machine, data []byte, params *StylusConfig, evmContext *EvmContext, gas *u64, root *[32]byte) (status byte, out *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
     sp: usize,
@@ -93,6 +94,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let machine: Machine = *Box::from_raw(sp.read_ptr_mut());
     let calldata = sp.read_go_slice_owned();
     let config: StylusConfig = *Box::from_raw(sp.read_ptr_mut());
+    let _: EvmContext = *Box::from_raw(sp.read_ptr_mut());
 
     // buy wasm gas. If free, provide a virtually limitless amount
     let pricing = config.pricing;
@@ -191,4 +193,68 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
     config.pricing.wasm_gas_price = sp.read_u64();
     config.pricing.hostio_cost = sp.read_u64();
     sp.write_ptr(heapify(config));
+}
+
+/// Returns a uint32_t from a bool
+/// Safety: λ(b bool) u32
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_boolToRustIntImpl(
+    sp: usize,
+) {
+    let mut sp = GoStack::new(sp);
+    let val: u8 = sp.read_u8();
+    sp.write_u32(val as u32);
+}
+
+/// Creates a `Bytes20` from an address
+/// Safety: λ(addr common.Address) *Bytes20
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_addressToRustBytes20Impl(
+    sp: usize,
+) {
+    let mut sp = GoStack::new(sp);
+
+    let bytes = sp.read_go_ptr();
+    let bytes = wavm::read_bytes20(bytes as u64);
+    sp.write_ptr(heapify(bytes));
+}
+
+/// Creates a `Bytes32` from a Hash
+/// Safety: λ(hash common.Hash) *Bytes32
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_hashToRustBytes32Impl(
+    sp: usize,
+) {
+    let mut sp = GoStack::new(sp);
+
+    let hash = sp.read_go_ptr();
+    let hash = wavm::read_bytes32(hash as u64);
+    sp.write_ptr(heapify(hash));
+}
+
+/// Creates an `EvmContext` from its component parts.
+/// Safety: λ(readOnly u32, origin *Bytes20, gasPrice u64, coinbase *Bytes20, gasLimit u64, time *Bytes32, difficulty *Bytes32, baseFee u64, random *Bytes32) *StylusConfig
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmContextImpl(
+    sp: usize,
+) {
+    let mut sp = GoStack::new(sp);
+
+    let mut context = EvmContext::default();
+    context.read_only = sp.read_u32() != 0;
+    let origin: Bytes20 = *Box::from_raw(sp.read_ptr_mut());
+    context.origin = origin;
+    context.gas_price = sp.read_u64();
+    let coinbase: Bytes20 = *Box::from_raw(sp.read_ptr_mut());
+    context.coinbase = coinbase;
+    context.gas_limit = sp.read_u64();
+    let time: Bytes32 = *Box::from_raw(sp.read_ptr_mut());
+    context.time = time;
+    let difficulty: Bytes32 = *Box::from_raw(sp.read_ptr_mut());
+    context.difficulty = difficulty;
+    context.base_fee = sp.read_u64();
+    let random: Bytes32 = *Box::from_raw(sp.read_ptr_mut());
+    context.random = random;
+
+    sp.write_ptr(heapify(context));
 }

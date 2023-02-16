@@ -8,6 +8,7 @@ use native::NativeInstance;
 use prover::programs::prelude::*;
 use run::RunProgram;
 use std::mem;
+use prover::utils::{Bytes20, Bytes32};
 
 mod env;
 pub mod host;
@@ -35,6 +36,35 @@ impl GoParams {
         config.pricing.wasm_gas_price = self.wasm_gas_price;
         config.pricing.hostio_cost = self.hostio_cost;
         config
+    }
+}
+
+#[repr(C)]
+pub struct GoEvmContext {
+    read_only: u32,
+    origin: Bytes20,
+    gas_price: u64,
+    coinbase: Bytes20,
+    gas_limit: u64,
+    time: Bytes32,
+    difficulty: Bytes32,
+    base_fee: u64,
+    random: Bytes32,
+}
+
+impl GoEvmContext {
+    pub fn evm_context(self) -> EvmContext {
+        EvmContext {
+            read_only: self.read_only != 0,
+            origin: self.origin,
+            gas_price: self.gas_price,
+            coinbase: self.coinbase,
+            gas_limit: self.gas_limit,
+            time: self.time,
+            difficulty: self.difficulty,
+            base_fee: self.base_fee,
+            random: self.random,
+        }
     }
 }
 
@@ -101,6 +131,7 @@ pub unsafe extern "C" fn stylus_call(
     module: GoSlice,
     calldata: GoSlice,
     params: GoParams,
+    go_evm_context: GoEvmContext,
     mut output: RustVec,
     evm_gas: *mut u64,
 ) -> UserOutcomeKind {
@@ -121,7 +152,7 @@ pub unsafe extern "C" fn stylus_call(
     }
 
     // Safety: module came from compile_user_wasm
-    let instance = unsafe { NativeInstance::deserialize(module, calldata.clone(), config.clone()) };
+    let instance = unsafe { NativeInstance::deserialize(module, calldata.clone(), config.clone(), go_evm_context.evm_context()) };
 
     let mut instance = match instance {
         Ok(instance) => instance,

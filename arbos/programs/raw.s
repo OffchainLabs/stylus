@@ -25,3 +25,19 @@ TEXT ·rustVecIntoSliceImpl(SB), NOSPLIT, $0
 TEXT ·rustConfigImpl(SB), NOSPLIT, $0
   CallImport
   RET
+
+TEXT ·boolToRustIntImpl(SB), NOSPLIT, $0
+  CallImport
+  RET
+
+TEXT ·addressToRustBytes20Imp(SB), NOSPLIT, $0
+  CallImport
+  RET
+
+TEXT ·hashToRustBytes32Impl(SB), NOSPLIT, $0
+  CallImport
+  RET
+
+TEXT ·rustEvmContextImpl(SB), NOSPLIT, $0
+  CallImport
+  RET

@@ -38,7 +38,14 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 	return err
 }
 
-func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
+func callUserWasm(
+	db vm.StateDB,
+	program common.Address,
+	calldata []byte,
+	gas *uint64,
+	params *goParams,
+	evmContext *goEvmContext,
+) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program, params.version)
 	}
@@ -50,6 +57,7 @@ func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *u
 		goSlice(module),
 		goSlice(calldata),
 		params.encode(),
+		evmContext.encode(),
 		output,
 		(*u64)(gas),
 	))
@@ -87,4 +95,54 @@ func (params *goParams) encode() C.GoParams {
 		wasm_gas_price: u64(params.wasmGasPrice),
 		hostio_cost:    u64(params.hostioCost),
 	}
+}
+
+func (ec *goEvmContext) encode() C.GoEvmContext {
+	var gasPrice u64
+	if ec.gasPrice.IsUint64() {
+		gasPrice = u64(ec.gasPrice.Uint64())
+	}
+	var baseFee u64
+	if ec.baseFee.IsUint64() {
+		baseFee = u64(ec.baseFee.Uint64())
+	}
+
+	time := common.BigToHash(ec.time)
+	difficulty := common.BigToHash(ec.difficulty)
+	return C.GoEvmContext{
+		read_only:  boolToRustIntImpl(ec.readOnly),
+		origin:     *addressToRustBytes20Impl(ec.origin),
+		gas_price:  gasPrice,
+		coinbase:   *addressToRustBytes20Impl(ec.coinbase),
+		gas_limit:  u64(ec.gasLimit),
+		time:       *hashToRustBytes32Impl(&time),
+		difficulty: *hashToRustBytes32Impl(&difficulty),
+		base_fee:   baseFee,
+		random:     *hashToRustBytes32Impl(ec.random),
+	}
+}
+
+func boolToRustIntImpl(b bool) u32 {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func addressToRustBytes20Impl(addr common.Address) *C.struct_Bytes20 {
+	bytes := [20]C.uint8_t{}
+	for index, current := range addr.Bytes() {
+		bytes[index] = C.uint8_t(current)
+	}
+
+	return &C.struct_Bytes20{bytes}
+}
+
+func hashToRustBytes32Impl(hash *common.Hash) *C.struct_Bytes32 {
+	bytes := [32]C.uint8_t{}
+	for index, current := range hash.Bytes() {
+		bytes[index] = C.uint8_t(current)
+	}
+
+	return &C.struct_Bytes32{bytes}
 }

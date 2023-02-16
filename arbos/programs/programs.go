@@ -6,6 +6,7 @@ package programs
 import (
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -114,6 +115,9 @@ func (p Programs) CallProgram(
 	program common.Address,
 	calldata []byte,
 	gas *uint64,
+	readOnly bool,
+	txContext vm.TxContext,
+	blockContext vm.BlockContext,
 ) ([]byte, error) {
 	stylusVersion, err := p.StylusVersion()
 	if err != nil {
@@ -133,7 +137,8 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	return callUserWasm(statedb, program, calldata, gas, params)
+	evmContext := p.goEvmContext(readOnly, txContext, blockContext)
+	return callUserWasm(statedb, program, calldata, gas, params, evmContext)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -178,6 +183,32 @@ func (p Programs) goParams(version uint32) (*goParams, error) {
 }
 
 type userStatus uint8
+
+type goEvmContext struct {
+	readOnly   bool
+	origin     common.Address
+	gasPrice   *big.Int
+	coinbase   common.Address
+	gasLimit   uint64
+	time       *big.Int
+	difficulty *big.Int
+	baseFee    *big.Int
+	random     *common.Hash
+}
+
+func (p Programs) goEvmContext(readOnly bool, txContext vm.TxContext, blockContext vm.BlockContext) *goEvmContext {
+	return &goEvmContext{
+		readOnly:   readOnly,
+		origin:     txContext.Origin,
+		gasPrice:   txContext.GasPrice,
+		coinbase:   blockContext.Coinbase,
+		gasLimit:   blockContext.GasLimit,
+		time:       blockContext.Time,
+		difficulty: blockContext.Difficulty,
+		baseFee:    blockContext.BaseFee,
+		random:     blockContext.Random,
+	}
+}
 
 const (
 	userSuccess userStatus = iota

@@ -16,6 +16,7 @@ use {
     wasmer::{CompilerConfig, Store},
     wasmer_compiler_singlepass::Singlepass,
 };
+use crate::utils::{Bytes20, Bytes32};
 
 pub type OpCosts = fn(&Operator) -> u64;
 
@@ -45,6 +46,19 @@ pub struct PricingParams {
     pub wasm_gas_price: u64,
     /// The amount of wasm gas one pays to do a user_host call
     pub hostio_cost: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EvmContext {
+    pub read_only: bool,
+    pub origin: Bytes20,
+    pub gas_price: u64,
+    pub coinbase: Bytes20,
+    pub gas_limit: u64,
+    pub time: Bytes32,
+    pub difficulty: Bytes32,
+    pub base_fee: u64,
+    pub random: Bytes32,
 }
 
 impl Default for StylusConfig {

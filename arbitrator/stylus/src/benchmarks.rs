@@ -4,7 +4,7 @@
 use crate::{env::WasmEnv, native::NativeInstance};
 use arbutil::{crypto, format};
 use eyre::Result;
-use prover::programs::{config::StylusConfig, STYLUS_ENTRY_POINT};
+use prover::programs::{config::StylusConfig, config::EvmContext, STYLUS_ENTRY_POINT};
 use std::time::{Duration, Instant};
 use wasmer::{CompilerConfig, Imports, Instance, Module, Store};
 use wasmer_compiler_cranelift::{Cranelift, CraneliftOptLevel};
@@ -63,7 +63,8 @@ fn benchmark_wasmer() -> Result<()> {
         let env = WasmEnv::new(config, args);
 
         let file = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
-        let mut instance = NativeInstance::from_path(file, env)?;
+        let evmContext = EvmContext::default();
+        let mut instance = NativeInstance::from_path(file, env, evmContext)?;
         let exports = &instance.exports;
         let main = exports.get_typed_function::<i32, i32>(&instance.store, STYLUS_ENTRY_POINT)?;
 

@@ -41,6 +41,7 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let module: Vec<u8> = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
     let calldata = sp.read_go_slice_owned();
     let config: StylusConfig = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
+    let evm_context: EvmContext = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
 
     macro_rules! error {
         ($msg:expr, $report:expr) => {
@@ -60,7 +61,7 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
     // Safety: module came from compile_user_wasm
     let instance =
-        unsafe { NativeInstance::deserialize(&module, calldata.clone(), config.clone()) };
+        unsafe { NativeInstance::deserialize(&module, calldata.clone(), config.clone(), evm_context) };
 
     let mut instance = match instance {
         Ok(instance) => instance,

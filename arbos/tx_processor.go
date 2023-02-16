@@ -98,12 +98,15 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 }
 
 func (p *TxProcessor) ExecuteWASM(contract *vm.Contract, input []byte, readOnly bool, txContext vm.TxContext, blockContext vm.BlockContext) ([]byte, error) {
-	// We recieve a number of extra args here to prepare for being stateful and context-aware execution
+	// We receive a number of extra args here to prepare for being stateful and context-aware execution
 	return p.state.Programs().CallProgram(
 		p.evm.StateDB,
 		contract.Address(),
 		input,
 		&contract.Gas,
+		readOnly,
+		txContext,
+		blockContext,
 	)
 }
 

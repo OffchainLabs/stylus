@@ -28,20 +28,22 @@ pub struct NativeInstance {
     pub instance: Instance,
     pub store: Store,
     pub env: FunctionEnv<WasmEnv>,
+    pub evm_context: EvmContext,
 }
 
 impl NativeInstance {
-    pub fn new(instance: Instance, store: Store, env: FunctionEnv<WasmEnv>) -> Self {
+    pub fn new(instance: Instance, store: Store, env: FunctionEnv<WasmEnv>, evm_context: EvmContext) -> Self {
         Self {
             instance,
             store,
             env,
+            evm_context,
         }
     }
 
-    pub fn new_sans_env(instance: Instance, mut store: Store) -> Self {
+    pub fn new_sans_env(instance: Instance, mut store: Store, evm_context: EvmContext) -> Self {
         let env = FunctionEnv::new(&mut store, WasmEnv::default());
-        Self::new(instance, store, env)
+        Self::new(instance, store, env, evm_context)
     }
 
     pub fn env(&self) -> &WasmEnv {
@@ -54,21 +56,22 @@ impl NativeInstance {
         module: &[u8],
         calldata: Vec<u8>,
         config: StylusConfig,
+        evm_context: EvmContext,
     ) -> Result<Self> {
         let env = WasmEnv::new(config, calldata);
         let store = env.config.store();
         let module = Module::deserialize(&store, module)?;
-        Self::from_module(module, store, env)
+        Self::from_module(module, store, env, evm_context)
     }
 
-    pub fn from_path(path: &str, env: WasmEnv) -> Result<Self> {
+    pub fn from_path(path: &str, env: WasmEnv, evm_context: EvmContext) -> Result<Self> {
         let store = env.config.store();
         let wat_or_wasm = std::fs::read(path)?;
         let module = Module::new(&store, wat_or_wasm)?;
-        Self::from_module(module, store, env)
+        Self::from_module(module, store, env, evm_context)
     }
 
-    fn from_module(module: Module, mut store: Store, env: WasmEnv) -> Result<Self> {
+    fn from_module(module: Module, mut store: Store, env: WasmEnv, evm_context: EvmContext) -> Result<Self> {
         let func_env = FunctionEnv::new(&mut store, env);
         let imports = imports! {
             "forward" => {
@@ -91,7 +94,7 @@ impl NativeInstance {
             gas_status,
             pricing: env.config.pricing,
         });
-        Ok(Self::new(instance, store, func_env))
+        Ok(Self::new(instance, store, func_env, evm_context))
     }
 
     pub fn get_global<T>(&mut self, name: &str) -> Result<T>
