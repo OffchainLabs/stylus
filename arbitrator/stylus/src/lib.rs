@@ -3,7 +3,7 @@
 
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
-use eyre::ErrReport;
+use eyre::{eyre, ErrReport};
 use native::NativeInstance;
 use prover::programs::prelude::*;
 use run::RunProgram;
@@ -144,7 +144,7 @@ pub unsafe extern "C" fn stylus_call(
     macro_rules! error {
         ($msg:expr, $report:expr) => {{
             let report: ErrReport = $report.into();
-            let report = report.wrap_err(ErrReport::msg($msg));
+            let report = report.wrap_err(eyre!($msg));
             output.write_err(report);
             *evm_gas = 0; // burn all gas
             return UserOutcomeKind::Failure;
@@ -152,7 +152,7 @@ pub unsafe extern "C" fn stylus_call(
     }
 
     // Safety: module came from compile_user_wasm
-    let instance = unsafe { NativeInstance::deserialize(module, calldata.clone(), config.clone(), go_evm_context.evm_context()) };
+    let instance = unsafe { NativeInstance::deserialize(module, config.clone(), go_evm_context.evm_context()) };
 
     let mut instance = match instance {
         Ok(instance) => instance,

@@ -52,19 +52,15 @@ impl NativeInstance {
 
     /// Creates a `NativeInstance` from a serialized module
     /// Safety: module bytes must represent a module
-    pub unsafe fn deserialize(
-        module: &[u8],
-        calldata: Vec<u8>,
-        config: StylusConfig,
-        evm_context: EvmContext,
-    ) -> Result<Self> {
-        let env = WasmEnv::new(config, calldata);
+    pub unsafe fn deserialize(module: &[u8], config: StylusConfig, evm_context: EvmContext) -> Result<Self> {
+        let env = WasmEnv::new(config);
         let store = env.config.store();
         let module = Module::deserialize(&store, module)?;
         Self::from_module(module, store, env, evm_context)
     }
 
-    pub fn from_path(path: &str, env: WasmEnv, evm_context: EvmContext) -> Result<Self> {
+    pub fn from_path(path: &str, config: &StylusConfig, evm_context: EvmContext) -> Result<Self> {
+        let env = WasmEnv::new(config.clone());
         let store = env.config.store();
         let wat_or_wasm = std::fs::read(path)?;
         let module = Module::new(&store, wat_or_wasm)?;
