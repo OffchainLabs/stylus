@@ -27,7 +27,7 @@ impl Config for WasmConfig {
         self.min_funcs // upstream bug ignores this for small slices
     }
     fn max_funcs(&self) -> usize {
-        200
+        20
     }
     fn max_instructions(&self) -> usize {
         256
@@ -55,6 +55,15 @@ impl Config for WasmConfig {
     }
     fn threads_enabled(&self) -> bool {
         false
+    }
+    fn min_memories(&self) -> u32 {
+        1
+    }
+    fn max_memories(&self) -> usize {
+        1
+    }
+    fn export_everything(&self) -> bool {
+        true
     }
 }
 

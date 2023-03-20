@@ -1,0 +1,113 @@
+Time elapsed in running program() is: 145.493µs
+Block	842
+
+Loop	29
+
+If	1309
+
+End	67
+
+Br	167
+
+BrIf	796
+
+BrTable	27
+
+Return	74
+
+Call	60
+
+CallIndirect	15
+
+Drop	2
+
+Select	138
+
+LocalGet	6408
+
+LocalSet	1424
+
+LocalTee	1879
+
+GlobalGet	24550
+
+GlobalSet	23256
+
+I32Load	412
+
+I64Load	95
+
+I32Load8S	19
+
+I32Load8U	12
+
+I32Load16U	1
+
+I64Load32U	1
+
+I32Store	355
+
+I64Store	55
+
+I32Store8	17
+
+I32Store16	1
+
+MemoryGrow	1
+
+I32Const	2347
+
+I64Const	25617
+
+I32Eqz	78
+
+I32Eq	62
+
+I32Ne	256
+
+I32LtS	4
+
+I32LtU	368
+
+I32GtU	160
+
+I32LeS	20
+
+I32LeU	78
+
+I32GeU	23
+
+I64LtU	1235
+
+I64GeU	1
+
+I32Add	964
+
+I32Sub	237
+
+I32Mul	2
+
+I32And	78
+
+I32Or	27
+
+I32Xor	19
+
+I32Shl	294
+
+I32ShrU	177
+
+I32Rotl	1
+
+I64Add	21843
+
+I64Sub	1235
+
+I64And	600
+
+I64Xor	2441
+
+I64Rotl	700
+
+I32WrapI64	1
+
