@@ -3,17 +3,16 @@ use core::panic;
 use prover::{
     binary::parse,
     programs::{
-        config::{StylusConfig, StylusDebugConfig},
+        config::{StylusConfig},
         counter::CountingMachine,
         start::StartlessMachine,
         STYLUS_ENTRY_POINT,
     },
 };
 use regex;
-use std::time::{Duration, Instant};
 use stylus::{
     env::WasmEnv,
-    stylus::{instance, instance_from_module, NativeInstance},
+    native::NativeInstance,
 };
 use wasmer::Module;
 use wasmparser::{Operator, Validator, WasmFeatures};
@@ -63,9 +62,14 @@ pub fn validate(input: &[u8]) -> bool {
     res.is_ok()
 }
 
+fn add_debug_params(config: &mut StylusConfig) {
+    config.debug.debug_funcs = true; 
+    config.debug.count_ops = true;
+}
+
 fn uniform_cost_config() -> StylusConfig {
     let mut config = StylusConfig::default();
-    config.add_debug_params();
+    add_debug_params(&mut config);
     config.start_gas = 1_000_000;
     config.pricing.wasm_gas_price = 100_00;
     config.pricing.hostio_cost = 100;
@@ -137,7 +141,7 @@ fn fuzz_me(wasm_data: &[u8]) {
 
     let mut config = StylusConfig::default();
     if enable_counter {
-        config.add_debug_params();
+        add_debug_params(&mut config);
     }
     config.costs = |_: &Operator| -> u64 { 1 };
     config.start_gas = gas_limit;
@@ -151,8 +155,8 @@ fn fuzz_me(wasm_data: &[u8]) {
         }
     };
     // println!("hi1");
-    let env = WasmEnv::new(config.clone(), vec![]);
-    let mut instance = match instance_from_module(module, config.store(), env) {
+    let env = WasmEnv::new(config.clone());
+    let mut instance = match NativeInstance::from_module(module, config.store(), env) {
         Ok(instance) => instance,
         Err(err) => {
             let err = err.to_string();
