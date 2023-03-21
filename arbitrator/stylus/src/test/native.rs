@@ -1,5 +1,5 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![allow(
     clippy::field_reassign_with_default,
@@ -7,9 +7,9 @@
 )]
 
 use crate::{
-    env::WasmEnv,
+    native::NativeInstance,
     run::RunProgram,
-    stylus::{self, NativeInstance},
+    test::api::{TestEvmContracts, TestEvmStorage},
 };
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
@@ -19,8 +19,9 @@ use prover::{
         counter::{Counter, CountingMachine},
         prelude::*,
         start::StartMover,
-        MiddlewareWrapper, ModuleMod, STYLUS_ENTRY_POINT,
+        MiddlewareWrapper, ModuleMod,
     },
+    utils::{Bytes20, Bytes32},
     Machine,
 };
 use std::{path::Path, sync::Arc};
@@ -62,12 +63,28 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
 
 fn uniform_cost_config() -> StylusConfig {
     let mut config = StylusConfig::default();
-    config.add_debug_params();
+    config.debug.count_ops = true;
+    config.debug.debug_funcs = true;
     config.start_gas = 1_000_000;
     config.pricing.wasm_gas_price = 100_00;
     config.pricing.hostio_cost = 100;
     config.costs = |_| 1;
     config
+}
+
+fn run_native(native: &mut NativeInstance, args: &[u8]) -> Result<Vec<u8>> {
+    let config = native.env().config.clone();
+    match native.run_main(&args, &config)? {
+        UserOutcome::Success(output) => Ok(output),
+        err => bail!("user program failure: {}", err.red()),
+    }
+}
+
+fn run_machine(machine: &mut Machine, args: &[u8], config: &StylusConfig) -> Result<Vec<u8>> {
+    match machine.run_main(&args, &config)? {
+        UserOutcome::Success(output) => Ok(output),
+        err => bail!("user program failure: {}", err.red()),
+    }
 }
 
 fn check_instrumentation(mut native: NativeInstance, mut machine: Machine) -> Result<()> {
@@ -332,28 +349,16 @@ fn test_rust() -> Result<()> {
 
     let mut args = vec![0x01];
     args.extend(preimage);
-    let args_len = args.len() as u32;
 
     let config = uniform_cost_config();
-    let env = WasmEnv::new(config.clone(), args.clone());
-    let mut native = stylus::instance(filename, env)?;
-    let exports = &native.instance.exports;
-    let store = &mut native.store;
-
-    let main = exports.get_typed_function::<u32, i32>(store, STYLUS_ENTRY_POINT)?;
-    let status = main.call(store, args_len)?;
-    assert_eq!(status, 0);
-
-    let env = native.env.as_ref(&store);
-    assert_eq!(hex::encode(&env.outs), hash);
+    let mut native = NativeInstance::from_path(filename, &config)?;
+    let output = run_native(&mut native, &args)?;
+    assert_eq!(hex::encode(output), hash);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    let output = match machine.run_main(&args, &config)? {
-        UserOutcome::Success(output) => hex::encode(output),
-        err => bail!("user program failure: {}", err.red()),
-    };
+    let output = run_machine(&mut machine, &args, &config)?;
+    assert_eq!(hex::encode(output), hash);
 
-    assert_eq!(output, hash);
     check_instrumentation(native, machine)
 }
 
@@ -370,30 +375,90 @@ fn test_c() -> Result<()> {
     let key: [u8; 16] = key.try_into().unwrap();
     let hash = crypto::siphash(&text, &key);
 
+    let config = uniform_cost_config();
     let mut args = hash.to_le_bytes().to_vec();
     args.extend(key);
     args.extend(text);
-    let args_len = args.len() as i32;
+    let args_string = hex::encode(&args);
 
-    let config = uniform_cost_config();
-    let env = WasmEnv::new(config.clone(), args.clone());
-    let mut native = stylus::instance(filename, env)?;
-    let exports = &native.instance.exports;
-    let store = &mut native.store;
-
-    let main = exports.get_typed_function::<i32, i32>(store, STYLUS_ENTRY_POINT)?;
-    let status = main.call(store, args_len)?;
-    assert_eq!(status, 0);
-
-    let env = native.env.as_ref(&store);
-    assert_eq!(hex::encode(&env.outs), hex::encode(&env.args));
+    let mut native = NativeInstance::from_path(filename, &config)?;
+    let output = run_native(&mut native, &args)?;
+    assert_eq!(hex::encode(output), args_string);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    let output = match machine.run_main(&args, &config)? {
-        UserOutcome::Success(output) => hex::encode(output),
-        err => bail!("user program failure: {}", err.red()),
-    };
+    let output = run_machine(&mut machine, &args, &config)?;
+    assert_eq!(hex::encode(output), args_string);
 
-    assert_eq!(output, hex::encode(&env.outs));
     check_instrumentation(native, machine)
+}
+
+#[test]
+fn test_fallible() -> Result<()> {
+    // in fallible.rs
+    //     an input starting with 0x00 will execute an unreachable
+    //     an empty input induces a panic
+
+    let filename = "tests/fallible/target/wasm32-unknown-unknown/release/fallible.wasm";
+    let config = uniform_cost_config();
+
+    let mut native = NativeInstance::from_path(filename, &config)?;
+    match native.run_main(&[0x00], &config)? {
+        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
+        err => bail!("expected hard error: {}", err.red()),
+    }
+    match native.run_main(&[], &config)? {
+        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
+        err => bail!("expected hard error: {}", err.red()),
+    }
+
+    let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
+    match machine.run_main(&[0x00], &config)? {
+        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
+        err => bail!("expected hard error: {}", err.red()),
+    }
+    match machine.run_main(&[], &config)? {
+        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
+        err => bail!("expected hard error: {}", err.red()),
+    }
+
+    assert_eq!(native.gas_left(), machine.gas_left());
+    assert_eq!(native.stack_left(), machine.stack_left());
+
+    let native_counts = native.operator_counts()?;
+    let machine_counts = machine.operator_counts()?;
+    assert_eq!(native_counts, machine_counts);
+    Ok(())
+}
+
+#[test]
+fn test_storage() -> Result<()> {
+    // in storage.rs
+    //     an input starting with 0x00 will induce a storage read
+    //     all other inputs induce a storage write
+
+    let filename = "tests/storage/target/wasm32-unknown-unknown/release/storage.wasm";
+    let config = uniform_cost_config();
+
+    let key = crypto::keccak(filename.as_bytes());
+    let value = crypto::keccak("value".as_bytes());
+
+    let mut args = vec![0x01];
+    args.extend(key);
+    args.extend(value);
+
+    let address = Bytes20::default();
+    let mut native = NativeInstance::from_path(filename, &config)?;
+    let api = native.set_test_evm_api(
+        address,
+        TestEvmStorage::default(),
+        TestEvmContracts::default(),
+    );
+
+    run_native(&mut native, &args)?;
+    assert_eq!(api.get_bytes32(address, Bytes32(key)), Some(Bytes32(value)));
+
+    args[0] = 0x00; // load the value
+    let output = run_native(&mut native, &args)?;
+    assert_eq!(output, value);
+    Ok(())
 }

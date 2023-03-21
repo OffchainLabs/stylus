@@ -97,6 +97,27 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 	}
 }
 
+func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpreter *vm.EVMInterpreter) ([]byte, error) {
+
+	contract := scope.Contract
+	program := contract.Address()
+
+	var tracingInfo *util.TracingInfo
+	if interpreter.Config().Debug {
+		caller := contract.CallerAddress
+		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, program, util.TracingDuringEVM)
+	}
+
+	return p.state.Programs().CallProgram(
+		scope,
+		p.evm.StateDB,
+		interpreter,
+		tracingInfo,
+		input,
+		&contract.Gas,
+	)
+}
+
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true

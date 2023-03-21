@@ -3,11 +3,12 @@
 
 #![cfg(feature = "native")]
 
+use arbutil::{format, Color, DebugColor};
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
-    utils::{Bytes32, CBytes},
+    utils::{file_bytes, Bytes32, CBytes},
     wavm::Opcode,
 };
 use sha3::{Digest, Keccak256};
@@ -68,6 +69,8 @@ struct Opts {
     delayed_inbox: Vec<PathBuf>,
     #[structopt(long)]
     preimages: Option<PathBuf>,
+    #[structopt(long)]
+    stylus_modules: Vec<PathBuf>,
     /// Require that the machine end in the Finished state
     #[structopt(long)]
     require_success: bool,
@@ -193,6 +196,13 @@ fn main() -> Result<()> {
         inbox_contents,
         preimage_resolver,
     )?;
+
+    for module in &opts.stylus_modules {
+        let error = || format!("failed to read module at {}", module.to_string_lossy());
+        let wasm = file_bytes(module).wrap_err_with(error)?;
+        mach.add_program(&wasm, 1, None).wrap_err_with(error)?;
+    }
+
     if let Some(output_path) = opts.generate_binaries {
         let mut module_root_file = File::create(output_path.join("module-root.txt"))?;
         writeln!(module_root_file, "0x{}", mach.get_modules_root())?;
@@ -317,13 +327,27 @@ fn main() -> Result<()> {
                 backtrace_stack.pop();
             }
         } else {
-            println!("Machine stack: {:?}", mach.get_data_stack());
+            let values = mach.get_data_stack();
+            let inters = mach.get_internals_stack();
+            let guards = mach.get_guards();
+            if !values.is_empty() {
+                println!("{} {}", "Machine stack".grey(), format::commas(values));
+            }
+            if !inters.is_empty() {
+                println!("{} {}", "Internals    ".grey(), format::commas(inters));
+            }
+            if !guards.is_empty() {
+                println!("{} {}", "Error guards ".grey(), format::commas(guards));
+            }
             print!(
-                "Generating proof \x1b[36m#{}\x1b[0m (inst \x1b[36m#{}\x1b[0m) of opcode \x1b[32m{:?}\x1b[0m with data 0x{:x}",
-                proofs.len(),
-                mach.get_steps(),
-                next_opcode,
-                next_inst.argument_data,
+                "Generating proof {} (inst {}) for {}{}",
+                proofs.len().blue(),
+                mach.get_steps().blue(),
+                next_opcode.debug_mint(),
+                match next_inst.argument_data {
+                    0 => "".into(),
+                    v => format!(" with data 0x{v:x}"),
+                }
             );
             std::io::stdout().flush().unwrap();
             let before = mach.hash();

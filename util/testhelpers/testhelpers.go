@@ -36,10 +36,25 @@ func RandomizeSlice(slice []byte) []byte {
 	return slice
 }
 
+func RandomHash() common.Hash {
+	var hash common.Hash
+	RandomizeSlice(hash[:])
+	return hash
+}
+
 func RandomAddress() common.Address {
 	var address common.Address
 	RandomizeSlice(address[:])
 	return address
+}
+
+// Computes a psuedo-random uint64 on the interval [min, max]
+func RandomUint64(min, max uint64) uint64 {
+	return uint64(rand.Uint64()%(max-min+1) + min)
+}
+
+func RandomBool() bool {
+	return rand.Int31n(2) == 0
 }
 
 type LogHandler struct {

@@ -3,8 +3,6 @@
 
 use crate::{binary::FloatType, utils::Bytes32};
 use arbutil::Color;
-use wasmparser::{FuncType, Type};
-
 use digest::Digest;
 use eyre::{bail, ErrReport, Result};
 use serde::{Deserialize, Serialize};
@@ -13,7 +11,9 @@ use sha3::Keccak256;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Display,
+    ops::Add,
 };
+use wasmparser::{FuncType, Type};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -156,6 +156,31 @@ impl ProgramCounter {
     }
 }
 
+impl Add<u32> for ProgramCounter {
+    type Output = ProgramCounter;
+
+    fn add(self, rhs: u32) -> Self::Output {
+        let mut counter = self;
+        counter.inst += rhs;
+        counter
+    }
+}
+
+impl Display for ProgramCounter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} {} {}{}{}",
+            "inst".grey(),
+            self.inst.pink(),
+            "in".grey(),
+            self.module.pink(),
+            ":".grey(),
+            self.func.pink()
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Value {
     I32(u32),
@@ -254,20 +279,23 @@ impl Value {
             }
         }
     }
+}
 
-    pub fn pretty_print(&self) -> String {
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let lparem = "(".grey();
         let rparem = ")".grey();
 
         macro_rules! single {
             ($ty:expr, $value:expr) => {{
-                format!("{}{}{}{}", $ty.grey(), lparem, $value, rparem)
+                write!(f, "{}{}{}{}", $ty.grey(), lparem, $value, rparem)
             }};
         }
         macro_rules! pair {
             ($ty:expr, $left:expr, $right:expr) => {{
                 let eq = "=".grey();
-                format!(
+                write!(
+                    f,
                     "{}{}{} {} {}{}",
                     $ty.grey(),
                     lparem,
@@ -295,17 +323,10 @@ impl Value {
             }
             Value::F32(value) => single!("f32", *value),
             Value::F64(value) => single!("f64", *value),
-            Value::RefNull => "null".into(),
-            Value::FuncRef(func) => format!("func {}", func),
-            Value::InternalRef(pc) => format!("inst {} in {}-{}", pc.inst, pc.module, pc.func),
+            Value::RefNull => write!(f, "null"),
+            Value::FuncRef(func) => write!(f, "func {func}"),
+            Value::InternalRef(pc) => write!(f, "{pc}"),
         }
-    }
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let text = self.pretty_print();
-        write!(f, "{}", text)
     }
 }
 
@@ -336,6 +357,12 @@ impl From<f32> for Value {
 impl From<f64> for Value {
     fn from(value: f64) -> Self {
         Value::F64(value)
+    }
+}
+
+impl From<ProgramCounter> for Value {
+    fn from(value: ProgramCounter) -> Self {
+        Value::InternalRef(value)
     }
 }
 
