@@ -1,11 +1,22 @@
-use regex;
 use arbutil::crypto;
-use prover::{binary::parse, programs::{start::StartlessMachine, config::{StylusConfig, StylusDebugConfig}, counter::CountingMachine, STYLUS_ENTRY_POINT}};
 use core::panic;
+use prover::{
+    binary::parse,
+    programs::{
+        config::{StylusConfig, StylusDebugConfig},
+        counter::CountingMachine,
+        start::StartlessMachine,
+        STYLUS_ENTRY_POINT,
+    },
+};
+use regex;
 use std::time::{Duration, Instant};
-use stylus::{env::WasmEnv, stylus::{instance_from_module, NativeInstance, instance}};
+use stylus::{
+    env::WasmEnv,
+    stylus::{instance, instance_from_module, NativeInstance},
+};
 use wasmer::Module;
-use wasmparser::{Validator, WasmFeatures, Operator};
+use wasmparser::{Operator, Validator, WasmFeatures};
 
 macro_rules! wat {
     ($wasm:expr) => {{
@@ -51,7 +62,6 @@ pub fn validate(input: &[u8]) -> bool {
     // }
     res.is_ok()
 }
-    
 
 fn uniform_cost_config() -> StylusConfig {
     let mut config = StylusConfig::default();
@@ -62,7 +72,6 @@ fn uniform_cost_config() -> StylusConfig {
     config.costs = |_| 1;
     config
 }
-
 
 fn rewrite_memory_line(line: String) -> String {
     let prefix = "(memory (;0;) (export \"";
@@ -95,16 +104,15 @@ fn modify_wat(wat: String) -> String {
     ans
 }
 
-
-fn fuzz_me(wasm_data: &[u8]){
+fn fuzz_me(wasm_data: &[u8]) {
     let wat = match wabt::Wasm2Wat::new()
-                .fold_exprs(true)
-                .inline_export(true)
-                .convert(&wasm_data)
-        {
-            Ok(wat) => String::from_utf8(wat.as_ref().to_vec()).unwrap(),
-            Err(err) => format!("wasm2wat failed: {}", err),
-        };
+        .fold_exprs(true)
+        .inline_export(true)
+        .convert(&wasm_data)
+    {
+        Ok(wat) => String::from_utf8(wat.as_ref().to_vec()).unwrap(),
+        Err(err) => format!("wasm2wat failed: {}", err),
+    };
     let new_wat = modify_wat(wat);
     let wasm_data = wabt::wat2wasm(new_wat).unwrap();
     // let round_trip_wasm = wabt::wat2wasm(&wat).unwrap();
@@ -121,7 +129,6 @@ fn fuzz_me(wasm_data: &[u8]){
     //     panic!("wats differed");
     // }
 
-
     if !validate(&wasm_data) {
         panic!("wasm didn't validate!");
     }
@@ -132,7 +139,7 @@ fn fuzz_me(wasm_data: &[u8]){
     if enable_counter {
         config.add_debug_params();
     }
-    config.costs = |_: &Operator| -> u64 {1};
+    config.costs = |_: &Operator| -> u64 { 1 };
     config.start_gas = gas_limit;
     config.pricing.wasm_gas_price = 1;
 
@@ -150,16 +157,16 @@ fn fuzz_me(wasm_data: &[u8]){
         Err(err) => {
             let err = err.to_string();
 
-            if err.contains("Missing export memory") 
-                || err.contains("out of bounds memory access") 
-                || err.contains("out of bounds table access") 
+            if err.contains("Missing export memory")
+                || err.contains("out of bounds memory access")
+                || err.contains("out of bounds table access")
             //    err.contains("Incompatible Export Type") ||
             //    err.contains("WebAssembly transaction error") ||
             {
                 println!("instance err: {}", err);
                 panic!();
             }
-            
+
             dbg!(&err);
             println!("wat = {}", wat!(&wasm_data));
             panic!("Failed to create instance: {}", err);
@@ -200,72 +207,69 @@ fn fuzz_me(wasm_data: &[u8]){
     println!("run succeeded!");
 }
 
-
 fn main() {
     let mywat = include_str!("my_wat.wat");
     let mywasm = wabt::wat2wasm(mywat).expect("it's a valid wat");
-    fuzz_me(&mywasm); 
+    fuzz_me(&mywasm);
 
-//     let enable_counter = false;
-//     let gas_limit = 200;
+    //     let enable_counter = false;
+    //     let gas_limit = 200;
 
+    //     let mut config = StylusConfig::default();
+    //     if enable_counter {
+    //         config.add_debug_params();
+    //     }
+    //     config.costs = |_: &Operator| -> u64 {1};
+    //     config.start_gas = gas_limit;
+    //     config.pricing.wasm_gas_price = 1;
 
-//     let mut config = StylusConfig::default();
-//     if enable_counter {
-//         config.add_debug_params();
-//     }
-//     config.costs = |_: &Operator| -> u64 {1};
-//     config.start_gas = gas_limit;
-//     config.pricing.wasm_gas_price = 1;
+    //     let filename = "../stylus/tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
+    //     // let pathcontents : Vec<_> = std::fs::read_dir("..").unwrap().collect();
+    //     // dbg!(pathcontents);
+    //     let preimage = "°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
+    //     let preimage = preimage.as_bytes().to_vec();
+    //     let hash = hex::encode(crypto::keccak(&preimage));
 
-//     let filename = "../stylus/tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
-//     // let pathcontents : Vec<_> = std::fs::read_dir("..").unwrap().collect();
-//     // dbg!(pathcontents);
-//     let preimage = "°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
-//     let preimage = preimage.as_bytes().to_vec();
-//     let hash = hex::encode(crypto::keccak(&preimage));
+    //     let mut args = vec![0x01];
+    //     args.extend(preimage);
+    //     let args_len = args.len() as u32;
+    //     let config = uniform_cost_config();
 
-//     let mut args = vec![0x01];
-//     args.extend(preimage);
-//     let args_len = args.len() as u32;
-//     let config = uniform_cost_config();
+    //     let env = WasmEnv::new(config.clone(), args.clone());
+    //     let mut native = match stylus::stylus::instance(filename, env) {
+    //         Ok(native) => native,
+    //         Err(err) => panic!("failed to create instance. err was {err}"),
+    //     };
+    //     let exports = &native.instance.exports;
+    //     let store = &mut native.store;
 
-//     let env = WasmEnv::new(config.clone(), args.clone());
-//     let mut native = match stylus::stylus::instance(filename, env) {
-//         Ok(native) => native, 
-//         Err(err) => panic!("failed to create instance. err was {err}"),
-//     };
-//     let exports = &native.instance.exports;
-//     let store = &mut native.store;
+    //     let main = match exports.get_typed_function::<u32, i32>(store, STYLUS_ENTRY_POINT) {
+    //         Ok(main) => main,
+    //         Err(err) => panic!("failed to get main. err was {err}"),
+    //     };
 
-//     let main = match exports.get_typed_function::<u32, i32>(store, STYLUS_ENTRY_POINT) {
-//         Ok(main) => main,
-//         Err(err) => panic!("failed to get main. err was {err}"),
-//     };
+    //     //start timing
+    //     let start = Instant::now();
+    //     let status = match main.call(store, args_len) {
+    //         Ok(status) => status,
+    //         Err(err) => panic!("failed to run main. err was {err}"),
+    //     };
+    //     let duration = start.elapsed();
+    //     //end timing
+    //     assert_eq!(status, 0);
 
-//     //start timing
-//     let start = Instant::now();
-//     let status = match main.call(store, args_len) {
-//         Ok(status) => status, 
-//         Err(err) => panic!("failed to run main. err was {err}"),
-//     };
-//     let duration = start.elapsed();
-//     //end timing
-//     assert_eq!(status, 0);
+    //     println!("Time elapsed in running program() is: {:?}", duration);
 
-//     println!("Time elapsed in running program() is: {:?}", duration);
-    
-//     let env = native.env.as_ref(&store);
-//     assert_eq!(hex::encode(&env.outs), hash);
+    //     let env = native.env.as_ref(&store);
+    //     assert_eq!(hex::encode(&env.outs), hash);
 
-//     let counts = match native.operator_counts() {
-//         Ok(counts) => counts,
-//         Err(err) => {
-//             panic!("Failed to get operator counts: {err}");
-//         }
-//     };
-//     for (op, count) in counts.into_iter() {
-//         println!("{op}\t{count}\n");
-//     }
-
+    //     let counts = match native.operator_counts() {
+    //         Ok(counts) => counts,
+    //         Err(err) => {
+    //             panic!("Failed to get operator counts: {err}");
+    //         }
+    //     };
+    //     for (op, count) in counts.into_iter() {
+    //         println!("{op}\t{count}\n");
+    //     }
 }
