@@ -134,6 +134,7 @@ impl StartlessMachine for NativeInstance {
     fn get_start(&self) -> Result<TypedFunction<(), ()>> {
         let store = &self.store;
         let exports = &self.instance.exports;
+        dbg!(&exports);
         exports
             .get_typed_function(store, STYLUS_START)
             .map_err(ErrReport::new)
@@ -171,8 +172,9 @@ pub fn instance_from_module(
     let exports = &instance.exports;
 
     let expect_global = |name| -> Global { instance.exports.get_global(name).unwrap().clone() };
-
+    // println!("exports: {:?}", &exports);
     let memory = exports.get_memory("memory")?.clone();
+    println!("hi5");
     let gas_left = expect_global(STYLUS_GAS_LEFT);
     let gas_status = expect_global(STYLUS_GAS_STATUS);
 
