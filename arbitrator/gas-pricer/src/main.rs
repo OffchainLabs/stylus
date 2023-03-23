@@ -165,6 +165,12 @@ fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> String {
         dbg!(payload, stack_depth); 
     }
 
+    // drop all the remaining stack values to have an empty stack since we return nothing
+    for _ in (0..stack_depth) {
+        wat += Drop.to_str();
+        wat += "\n";
+    }
+    
     // append the suffix to finish out the wat
     wat.push_str(wat_suffix);
     wat
