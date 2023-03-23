@@ -5,6 +5,7 @@ members = [
         "stylus",
         "jit",
         "seraphina-runner",
+        "gas-pricer",
 ]
 exclude = [
         "stylus/tests/"

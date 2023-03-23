@@ -20,3 +20,4 @@ stylus = { path = "../stylus" }
 eyre = "0.6.5"
 hex = "0.4.3"
 regex = "1.7.1"
+anyhow = "1.0.70"

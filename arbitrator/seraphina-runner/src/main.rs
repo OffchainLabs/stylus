@@ -14,7 +14,7 @@ use stylus::{
     env::WasmEnv,
     native::NativeInstance,
 };
-use wasmer::Module;
+use wasmer::{Module, EngineBuilder, Cranelift};
 use wasmparser::{Operator, Validator, WasmFeatures};
 
 macro_rules! wat {
@@ -109,16 +109,18 @@ fn modify_wat(wat: String) -> String {
 }
 
 fn fuzz_me(wasm_data: &[u8]) {
-    let wat = match wabt::Wasm2Wat::new()
-        .fold_exprs(true)
-        .inline_export(true)
-        .convert(&wasm_data)
-    {
-        Ok(wat) => String::from_utf8(wat.as_ref().to_vec()).unwrap(),
-        Err(err) => format!("wasm2wat failed: {}", err),
-    };
-    let new_wat = modify_wat(wat);
-    let wasm_data = wabt::wat2wasm(new_wat).unwrap();
+    // let wat = match wabt::Wasm2Wat::new()
+    //     .fold_exprs(true)
+    //     .inline_export(true)
+    //     .convert(&wasm_data)
+    // {
+    //     Ok(wat) => String::from_utf8(wat.as_ref().to_vec()).unwrap(),
+    //     Err(err) => format!("wasm2wat failed: {}", err),
+    // };
+    // let new_wat = modify_wat(wat);
+    // let wasm_data = wabt::wat2wasm(new_wat).unwrap();
+
+
     // let round_trip_wasm = wabt::wat2wasm(&wat).unwrap();
     // if wasm_data != round_trip_wasm {
     //     let wat2 = match wabt::Wasm2Wat::new()
@@ -147,7 +149,11 @@ fn fuzz_me(wasm_data: &[u8]) {
     config.start_gas = gas_limit;
     config.pricing.wasm_gas_price = 1;
 
-    let module = match Module::new(&config.store(), wasm_data.clone()) {
+    let compiler = Cranelift::default();
+    let engine = EngineBuilder::new(compiler).engine();
+
+    // let module = match Module::new(&config.store(), wasm_data.clone()) {
+    let module = match Module::new(&engine, wasm_data.clone()) {
         Ok(module) => module,
         Err(err) => {
             println!("error in module creation: {}", err);
