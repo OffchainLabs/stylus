@@ -35,6 +35,10 @@
         workload somewhat more realistic
  */
 
+use std::collections::HashMap;
+use std::time::Duration;
+use std::time::Instant;
+
 use rand::prelude::*;
 use rand::Rng;
 use rand::distributions::WeightedIndex;
@@ -53,6 +57,8 @@ enum Opcode {
     LocalGet, 
     LocalTee,
 }
+use Opcode::*;
+
 impl Opcode {
     fn to_str(&self) -> &str {
         match self {
@@ -65,8 +71,19 @@ impl Opcode {
             LocalTee => "local.tee",
         }
     }
+
+    // fn requires_arg(&self) -> bool {
+    //     match self {
+    //         I32Add => false,
+    //         I32Mul => false,
+    //         Drop => false,
+    //         I32Const => true,
+    //         LocalSet => true,
+    //         LocalGet => true,
+    //         LocalTee => true,
+    //     }
+    // }
 }
-use Opcode::*;
 
 // first result is how large the stack must be. second result is net change in stack. 
 fn opcode_stack_req(op: Opcode) -> (i32, i32) {
@@ -81,48 +98,82 @@ fn opcode_stack_req(op: Opcode) -> (i32, i32) {
     }
 }
 
-fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> String {
-    // skeleton is fixed
-    let mut wat : String = r#"
-    (module
-      (func $main (export "main")
-    "#.to_string();
-    // this will be appended to the wat at the end
-    let wat_suffix = r#"
-      )
-      (memory (export "memory") 0)
-      (start 0)
-    )  
-    "#;
+struct WatBuilder { 
+    wat : String,
+    opcode_counts : HashMap<Opcode, i32>
+}
+
+impl WatBuilder {
+    fn new() -> Self {
+        let wat : String = r#"
+        (module
+          (func $main (export "main") (result i32)
+        "#.to_string();
+        let opcode_counts = HashMap::new();
+        Self{wat, opcode_counts}
+    }
+
+    fn count_opcode(&mut self, op: Opcode) {
+        *self.opcode_counts.entry(op).or_insert(0) += 1;
+    }
+
+    fn add_opcode(&mut self, op: Opcode, argument: Option<i32>) {
+        self.wat.push_str(op.to_str());
+        if let Some(i) = argument {
+            self.wat += " ";
+            self.wat += &i.to_string();
+        }
+        self.wat += "\n";
+        self.count_opcode(op);
+    }
+
+    fn push_str(&mut self, str: &str) {
+        self.wat.push_str(str);
+    }
+
+    fn finish_wat(&mut self) {
+        let wat_suffix = r#"
+            return
+            )
+            (memory (export "memory") 0)
+        )  
+        "#;
+        self.wat.push_str(wat_suffix);
+    }
+
+}
+
+fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> WatBuilder {
+    let mut builder = WatBuilder::new();
+
     // generate # of locals
-    let min_locals = 1;
+    let min_locals = 3;
     let max_locals = 10;
 
     let num_locals = rng.gen_range(min_locals..=max_locals);
     // add that many locals to the wat 
     let mut locals_string = String::from("(local");
     for _ in 0..num_locals { 
-        locals_string.push_str(" i32")
+        locals_string.push_str(" i32");
     }
     locals_string.push_str(")\n");
-    wat.push_str(&locals_string);
+    builder.push_str(&locals_string);
     // initialize local i to the integer i 
     for i in 1..=num_locals { 
-        let mut init_string = "i32.const ".to_string() + &i.to_string();
-        init_string += "\nlocal.set "; 
-        init_string += &(i-1).to_string();
-        init_string += "\n";
-        wat.push_str(&init_string);
+        builder.add_opcode(I32Const, Some(i));
+        builder.add_opcode(LocalSet, Some(i-1));
     }
 
     // generate list of payloads
-    let min_payloads = 10;
-    let max_payloads = 20;
-    let payload_choices = [I32Add, I32Mul, Drop];
-    let payload_weights = [5, 5, 1];
+    let min_payloads = 1000000;
+    let max_payloads = 2000000;
+    let num_payloads = rng.gen_range(min_payloads..=max_payloads);
+
+    let payload_choices = [LocalSet, I32Add, I32Mul, Drop];
+    let payload_weights = [8, 5, 5, 1];
     let payload_dist = WeightedIndex::new(&payload_weights).expect("weights are hardcoded");
     
-    let num_payloads = rng.gen_range(min_payloads..=max_payloads);
+    dbg!(num_payloads);
     let mut payloads = vec![];
     for _ in 0..num_payloads {
         let payload = payload_choices[payload_dist.sample(rng)];
@@ -142,58 +193,75 @@ fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> String {
             match increase_op {
                 LocalGet => {
                     let local_to_get = rng.gen_range(0..num_locals);
-                    wat += "local.get "; 
-                    wat += &local_to_get.to_string();
-                    wat += "\n";
+                    builder.add_opcode(LocalGet, Some(local_to_get));
                 }, 
                 other => {
                     assert_eq!(other, I32Const); 
                     let const_val = rng.gen_range(-100..100);
-                    wat += "i32.const ";
-                    wat += &const_val.to_string();
-                    wat += "\n"
+                    builder.add_opcode(I32Const, Some(const_val));
                 },   
             }
             let (_increase_req, increase_amt) = opcode_stack_req(increase_op);
             
             stack_depth += increase_amt;
-            dbg!(increase_op, stack_depth);
+            // dbg!(increase_op, stack_depth);
         }
-        wat += payload.to_str();
-        wat += "\n";
+        let payload_arg = if payload == LocalSet {
+            Some(rng.gen_range(0..num_locals))
+        } else {None};
+        builder.add_opcode(payload, payload_arg);
         stack_depth += stack_change;
-        dbg!(payload, stack_depth); 
+        // dbg!(payload, stack_depth); 
     }
 
     // drop all the remaining stack values to have an empty stack since we return nothing
-    for _ in (0..stack_depth) {
-        wat += Drop.to_str();
-        wat += "\n";
+    for _ in 0..stack_depth {
+        builder.add_opcode(Drop, None);
     }
-    
-    // append the suffix to finish out the wat
-    wat.push_str(wat_suffix);
-    wat
 
+    for i in 0..num_locals {
+        builder.add_opcode(LocalGet, Some(i));
+    }
+    for _i in 0..num_locals - 1 {
+        builder.add_opcode(I32Mul, None);
+    }
+    // append the suffix to finish out the wat
+    builder.finish_wat();
+    builder
+}
+
+fn time_wat(wat: String) -> anyhow::Result<Duration> {
+    let wasm = wabt::wat2wasm(wat).expect("it's a valid wat");
+    let mut store = Store::default();
+    let module = Module::new(&store, &wasm)?;
+    // The module doesn't import anything, so we create an empty import object.
+    let import_object = imports! {};
+    let instance = Instance::new(&mut store, &module, &import_object)?;
+
+    let main = instance.exports.get_function("main")?;
+
+    let start = Instant::now();
+    let result = main.call(&mut store, &[])?;
+    dbg!(result);
+    let duration = start.elapsed();
+    return Ok(duration)
 }
 
 fn main() -> anyhow::Result<()>  {
     // let mywat = include_str!("my_wat.wat");
     let mut rng = Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7);
-    let mywat = generate_wat(&mut rng); 
-    println!("wat: {}", mywat);
-    let mywasm = wabt::wat2wasm(mywat).expect("it's a valid wat");
-    let mut store = Store::default();
-    let module = Module::new(&store, &mywasm)?;
-    // The module doesn't import anything, so we create an empty import object.
-    let import_object = imports! {};
-    let instance = Instance::new(&mut store, &module, &import_object)?;
-
-    let add_one = instance.exports.get_function("main")?;
-    let result = add_one.call(&mut store, &[])?;
-
-    println!("res: {:?}", result);
-
-
+    let wat_builder = generate_wat(&mut rng); 
+    let mywat = wat_builder.wat;
+    // println!("wat: {}", mywat);
+    println!("counts: {:?}", wat_builder.opcode_counts);
+    let duration = time_wat(mywat);
+    // TODO: 1) time execution of the wasm 2) count opcodes put in the wasm
+    println!("timing: {:?}", duration);
     Ok(())
 }
+
+/* times (fastest of 3)
+180 -> 93u
+1097 -> 92
+10978 -> 86
+*/

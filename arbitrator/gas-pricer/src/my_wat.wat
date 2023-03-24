@@ -1,5 +1,10 @@
 (module
-  (func (export "main")
+  (func (export "main") 
+  (call $do_work)
+  drop 
+  drop
+  )
+  (func $do_work (export "do_work") (result i32 i32)
     (local i32 i32)
     i32.const 3
     local.tee 0
@@ -21,9 +26,14 @@
     i32.const 27 
     i32.eq 
     (if 
-        (then return)
+        (then nop)
         (else unreachable))
+    i32.const 5
+    i32.const 5
+    i32.const 5
+    return
   )
+
   (memory (export "memory") 0)
   (start 0)
 )
