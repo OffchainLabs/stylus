@@ -107,7 +107,7 @@ impl WatBuilder {
     fn new() -> Self {
         let wat : String = r#"
         (module
-          (func $main (export "main") (result i32)
+          (func $main (export "main") (param i32) (result i32)
         "#.to_string();
         let opcode_counts = HashMap::new();
         Self{wat, opcode_counts}
@@ -158,19 +158,19 @@ fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> WatBuilder {
     }
     locals_string.push_str(")\n");
     builder.push_str(&locals_string);
-    // initialize local i to the integer i 
+    // initialize local i to the integer i; note local 0 is the param
     for i in 1..=num_locals { 
         builder.add_opcode(I32Const, Some(i));
-        builder.add_opcode(LocalSet, Some(i-1));
+        builder.add_opcode(LocalSet, Some(i));
     }
 
     // generate list of payloads
-    let min_payloads = 1000000;
-    let max_payloads = 2000000;
+    let min_payloads = 150;
+    let max_payloads = 200;
     let num_payloads = rng.gen_range(min_payloads..=max_payloads);
 
-    let payload_choices = [LocalSet, I32Add, I32Mul, Drop];
-    let payload_weights = [8, 5, 5, 1];
+    let payload_choices = [LocalSet, I32Add, I32Mul];
+    let payload_weights = [8, 5, 5];
     let payload_dist = WeightedIndex::new(&payload_weights).expect("weights are hardcoded");
     
     dbg!(num_payloads);
@@ -180,9 +180,17 @@ fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> WatBuilder {
         payloads.push(payload);
     }
 
-    let mut stack_depth = 0;
+    // just for debugging
+    let payloads_to_keep = 106;
+    payloads.truncate(payloads_to_keep);
+
+    // get the param to main, so everything depends on it and can't be removed 
+    // by constant folding
+    builder.add_opcode(LocalGet, Some(0));
+    let mut stack_depth = 1;
+
     let stack_increase_choices = [LocalGet, I32Const]; 
-    let stack_increase_weights = [1, 1];
+    let stack_increase_weights = [10, 1];
     let stack_increase_dist = WeightedIndex::new(&stack_increase_weights).expect("weights are hardcoded");
     // push payloads into string, keeping track of depth of stack 
     for payload in payloads {
@@ -192,7 +200,7 @@ fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> WatBuilder {
             let increase_op = stack_increase_choices[stack_increase_dist.sample(rng)];
             match increase_op {
                 LocalGet => {
-                    let local_to_get = rng.gen_range(0..num_locals);
+                    let local_to_get = rng.gen_range(0..=num_locals);
                     builder.add_opcode(LocalGet, Some(local_to_get));
                 }, 
                 other => {
@@ -207,19 +215,20 @@ fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> WatBuilder {
             // dbg!(increase_op, stack_depth);
         }
         let payload_arg = if payload == LocalSet {
-            Some(rng.gen_range(0..num_locals))
+            Some(rng.gen_range(0..=num_locals))
         } else {None};
         builder.add_opcode(payload, payload_arg);
         stack_depth += stack_change;
         // dbg!(payload, stack_depth); 
     }
 
-    // drop all the remaining stack values to have an empty stack since we return nothing
-    for _ in 0..stack_depth {
-        builder.add_opcode(Drop, None);
+    // take the produce of all the remaining stack values with all locals
+    for _ in 0..stack_depth-1 {
+        builder.add_opcode(I32Mul, None);
     }
 
-    for i in 0..num_locals {
+    // return the product of all locals, so that the code is not dead
+    for i in 0..=num_locals {
         builder.add_opcode(LocalGet, Some(i));
     }
     for _i in 0..num_locals - 1 {
@@ -241,9 +250,10 @@ fn time_wat(wat: String) -> anyhow::Result<Duration> {
     let main = instance.exports.get_function("main")?;
 
     let start = Instant::now();
-    let result = main.call(&mut store, &[])?;
-    dbg!(result);
+    let result = main.call(&mut store, &[wasmer::Value::I32(57)])?;
     let duration = start.elapsed();
+    let result2 = main.call(&mut store, &[wasmer::Value::I32(58)])?;
+    dbg!(result, result2);
     return Ok(duration)
 }
 
@@ -252,7 +262,7 @@ fn main() -> anyhow::Result<()>  {
     let mut rng = Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7);
     let wat_builder = generate_wat(&mut rng); 
     let mywat = wat_builder.wat;
-    // println!("wat: {}", mywat);
+    println!("wat: {}", mywat);
     println!("counts: {:?}", wat_builder.opcode_counts);
     let duration = time_wat(mywat);
     // TODO: 1) time execution of the wasm 2) count opcodes put in the wasm

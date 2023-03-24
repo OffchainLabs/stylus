@@ -1,11 +1,11 @@
 (module
   (func (export "main") 
+  (i32.const 1)
+  (i32.const 2)
   (call $do_work)
-  drop 
-  drop
   )
-  (func $do_work (export "do_work") (result i32 i32)
-    (local i32 i32)
+  (func $do_work (export "do_work") (param i32 i32)
+    ;; (local i32 i32)
     i32.const 3
     local.tee 0
     local.tee 1 
