@@ -36,6 +36,9 @@
  */
 
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
+use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -43,9 +46,14 @@ use rand::prelude::*;
 use rand::Rng;
 use rand::distributions::WeightedIndex;
 use rand_pcg::Pcg32;
+use wasmer::Cranelift;
+use wasmer::CraneliftOptLevel;
 use wasmer::{Store, Module, Instance, Value, imports};
 use wasmer::FunctionEnv;
 use anyhow;
+
+mod rng;
+use crate::rng::Lcg64XshRR32;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 enum Opcode {
@@ -143,7 +151,7 @@ impl WatBuilder {
 
 }
 
-fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> WatBuilder {
+fn generate_wat<R: Rng + ?Sized>(rng: &mut R, set_payload_num: i32) -> WatBuilder {
     let mut builder = WatBuilder::new();
 
     // generate # of locals
@@ -165,9 +173,11 @@ fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> WatBuilder {
     }
 
     // generate list of payloads
-    let min_payloads = 150;
+    let min_payloads = 100;
     let max_payloads = 200;
     let num_payloads = rng.gen_range(min_payloads..=max_payloads);
+    //for debugging?
+    let num_payloads = set_payload_num;
 
     let payload_choices = [LocalSet, I32Add, I32Mul];
     let payload_weights = [8, 5, 5];
@@ -181,8 +191,8 @@ fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> WatBuilder {
     }
 
     // just for debugging
-    let payloads_to_keep = 106;
-    payloads.truncate(payloads_to_keep);
+    // let payloads_to_keep = 106;
+    // payloads.truncate(payloads_to_keep);
 
     // get the param to main, so everything depends on it and can't be removed 
     // by constant folding
@@ -222,9 +232,9 @@ fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> WatBuilder {
         // dbg!(payload, stack_depth); 
     }
 
-    // take the produce of all the remaining stack values with all locals
+    // take the product of all the remaining stack values with all locals
     for _ in 0..stack_depth-1 {
-        builder.add_opcode(I32Mul, None);
+        builder.add_opcode(I32Add, None);
     }
 
     // return the product of all locals, so that the code is not dead
@@ -232,17 +242,22 @@ fn generate_wat<R: Rng + ?Sized>(rng: &mut R) -> WatBuilder {
         builder.add_opcode(LocalGet, Some(i));
     }
     for _i in 0..num_locals - 1 {
-        builder.add_opcode(I32Mul, None);
+        builder.add_opcode(I32Add, None);
     }
     // append the suffix to finish out the wat
     builder.finish_wat();
     builder
 }
 
-fn time_wat(wat: String) -> anyhow::Result<Duration> {
+fn time_wat(imp1 : i32, wat: String) -> anyhow::Result<Duration> {
     let wasm = wabt::wat2wasm(wat).expect("it's a valid wat");
-    let mut store = Store::default();
+    let mut compiler = Cranelift::new();
+    compiler.opt_level(CraneliftOptLevel::None);
+    // dbg!(&compiler);
+    let mut store = Store::new(compiler);
+    // dbg!(store.engine());
     let module = Module::new(&store, &wasm)?;
+    // dbg!(module.info());
     // The module doesn't import anything, so we create an empty import object.
     let import_object = imports! {};
     let instance = Instance::new(&mut store, &module, &import_object)?;
@@ -250,28 +265,80 @@ fn time_wat(wat: String) -> anyhow::Result<Duration> {
     let main = instance.exports.get_function("main")?;
 
     let start = Instant::now();
-    let result = main.call(&mut store, &[wasmer::Value::I32(57)])?;
+    let result = main.call(&mut store, &[wasmer::Value::I32(imp1)])?;
+    // let result2 = main.call(&mut store, &[wasmer::Value::I32(imp2)])?;
+    // let results : Vec<_> = (1..=1000)
+    //   .map(|i|main.call(&mut store, &[wasmer::Value::I32(imp2)])).collect();
     let duration = start.elapsed();
-    let result2 = main.call(&mut store, &[wasmer::Value::I32(58)])?;
-    dbg!(result, result2);
+
+    dbg!(result);
+    // dbg!(results.clone().truncate(10));
     return Ok(duration)
 }
 
-fn main() -> anyhow::Result<()>  {
-    // let mywat = include_str!("my_wat.wat");
-    let mut rng = Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7);
-    let wat_builder = generate_wat(&mut rng); 
+fn generate_and_time_wat<R: Rng + ?Sized>(rng: &mut R, set_payload_num: i32) -> Duration {
+    let wat_builder = generate_wat(rng, set_payload_num); 
     let mywat = wat_builder.wat;
-    println!("wat: {}", mywat);
+    // let path = "gen_wat.txt";
+    // let mut buffer = File::create(path)?;   
+    // buffer.write_all(mywat.as_bytes())?;
+
+    // println!("wat: {}", mywat);
     println!("counts: {:?}", wat_builder.opcode_counts);
-    let duration = time_wat(mywat);
-    // TODO: 1) time execution of the wasm 2) count opcodes put in the wasm
-    println!("timing: {:?}", duration);
+    let imp1 = rng.gen();
+    // let imp2 = rng.gen();
+    let duration = time_wat(imp1, mywat).expect("wasmer exploded");
+    return duration
+}
+
+fn myrng(loops: i32) -> u64 {
+    let mut myrng = Lcg64XshRR32::default();
+    for _ in 0..loops {myrng.advance()}
+    myrng.state
+}
+
+fn watrng(loops: i32) -> anyhow::Result<(u64, Duration)> {
+    let pcgwat = include_str!("pcg32.wat");
+    let wasm = wabt::wat2wasm(pcgwat).expect("it's a valid wat");
+    let mut compiler = Cranelift::new();
+    compiler.opt_level(CraneliftOptLevel::None);
+    let mut store = Store::new(compiler);
+    let module = Module::new(&store, &wasm)?;
+    // The module doesn't import anything, so we create an empty import object.
+    let import_object = imports! {};
+    let instance = Instance::new(&mut store, &module, &import_object)?;
+    let main = instance.exports.get_function("main")?;
+    let start = Instant::now();
+    let result = main.call(&mut store, &[wasmer::Value::I32(loops)])?;
+    let duration = start.elapsed();
+    match &result[0] {
+        wasmer::Value::I64(ans) => return Ok((u64::from_be_bytes(ans.to_be_bytes()), duration)),
+        other => panic!("wasmer returned {:?}", other)
+    }
+}
+
+fn main() -> anyhow::Result<()>  {
+    // // let mywat = include_str!("my_wat.wat");
+    // let mut rng = Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7);
+    // let payload_nums = [100, 1_000, 10_000, 100_000, 1_000_000];
+    // for payload_num in payload_nums { 
+    //     let duration = generate_and_time_wat(&mut rng, payload_num);
+    //     println!("num payloads: {:?} timing: {:?}", payload_num, duration);
+    // }
+
+    for i in [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000, 1_000_000_000] {
+        let myval = myrng(i-1);
+        let theirval = watrng(i).unwrap();
+        println!("{} me {} them {:?} same {}", i, myval, theirval, myval == theirval.0);
+    }
+    
+    
     Ok(())
 }
 
-/* times (fastest of 3)
-180 -> 93u
-1097 -> 92
-10978 -> 86
+/* wasm-interp times:
+15k -> 46ms 
+49k -> 128ms
+150k -> 338ms
+494k -> 1090ms
 */
