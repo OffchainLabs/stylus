@@ -106,16 +106,63 @@ fn opcode_stack_req(op: Opcode) -> (i32, i32) {
     }
 }
 
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum Operation {
+    WithConst{constant: i32},
+    WithLocal{other_local: i32},
+}
+
+impl Operation {
+    fn gen_op<R: Rng + ?Sized>(rng: &mut R, num_locals: i32) -> Self {
+        if rng.gen_bool(0.5) {
+            // generate BinConst
+            let constant = rng.gen_range(-10000..10000);
+            Operation::WithConst{constant}
+        } else {
+            // generate BinTwo
+            let other_local = rng.gen_range(1..=num_locals);
+            Operation::WithLocal{other_local}
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct Payload { 
+    opcode: Opcode, input_local: i32, output_local: i32, op: Operation
+}
+
+impl Payload {
+    fn gen_payloads<R: Rng + ?Sized>(rng: &mut R, num_locals: i32, num_payloads: i32) -> Vec<Self> {
+        let mut out = vec![];
+
+        let opcode_choices = [I32Add, I32Mul];
+        let opcode_weights = [1, 1];
+        let opcode_dist = WeightedIndex::new(&opcode_weights).expect("weights are hardcoded");
+
+        for _ in 0..num_payloads {
+            let opcode = opcode_choices[opcode_dist.sample(rng)];
+            let input_local = rng.gen_range(1..=num_locals);
+            let output_local = rng.gen_range(1..=num_locals);
+            let op = Operation::gen_op(rng, num_locals);
+            out.push(Payload{opcode, input_local, output_local, op});
+        }
+        out
+    }
+}
+
 struct WatBuilder { 
     wat : String,
     opcode_counts : HashMap<Opcode, i32>
 }
 
 impl WatBuilder {
+    // param 0 is loopcount; no one else should read or write it. param 1 is the "input" which 
+    // everything depends on
     fn new() -> Self {
         let wat : String = r#"
         (module
-          (func $main (export "main") (param i32) (result i32)
+          (func $main (export "main") (param i32 i32) (result i32)
         "#.to_string();
         let opcode_counts = HashMap::new();
         Self{wat, opcode_counts}
@@ -135,11 +182,44 @@ impl WatBuilder {
         self.count_opcode(op);
     }
 
+    fn add_operation(&mut self, op: Operation) {
+        match op {
+            Operation::WithConst { constant } => self.add_opcode(I32Const, Some(constant)),
+            Operation::WithLocal { other_local } => self.add_opcode(LocalGet, Some(other_local)),
+        }
+    }
+
+    fn add_payload(&mut self, Payload { opcode, input_local, output_local, op }: Payload) {
+        self.add_opcode(LocalGet, Some(input_local));
+        self.add_operation(op);
+        self.add_opcode(opcode, None);
+        self.add_opcode(LocalSet, Some(output_local));        
+    }
+
     fn push_str(&mut self, str: &str) {
         self.wat.push_str(str);
     }
 
-    fn finish_wat(&mut self) {
+    fn finish_wat(&mut self, num_locals: i32) {
+        let finish_loop = r#"
+        local.get 0
+        i32.const 1 
+        i32.sub 
+        local.tee 0
+        i32.const 0 
+        i32.ne   
+        br_if $loop 
+        )
+"#;
+        self.wat.push_str(finish_loop);
+        // return the sum of all locals, so that the code is not dead
+        for i in 0..=num_locals {
+            self.add_opcode(LocalGet, Some(i));
+        }
+        for _i in 0..num_locals - 1 {
+            self.add_opcode(I32Add, None);
+        }
+
         let wat_suffix = r#"
             return
             )
@@ -161,95 +241,35 @@ fn generate_wat<R: Rng + ?Sized>(rng: &mut R, set_payload_num: i32) -> WatBuilde
     let num_locals = rng.gen_range(min_locals..=max_locals);
     // add that many locals to the wat 
     let mut locals_string = String::from("(local");
-    for _ in 0..num_locals { 
+    for _ in 0..num_locals-1 { 
         locals_string.push_str(" i32");
     }
     locals_string.push_str(")\n");
     builder.push_str(&locals_string);
-    // initialize local i to the integer i; note local 0 is the param
+    builder.push_str("          (loop $loop\n");
+    // initialize all other locals to the param
     for i in 1..=num_locals { 
-        builder.add_opcode(I32Const, Some(i));
+        builder.add_opcode(LocalGet, Some(1));
         builder.add_opcode(LocalSet, Some(i));
     }
 
     // generate list of payloads
     let min_payloads = 100;
     let max_payloads = 200;
-    let num_payloads = rng.gen_range(min_payloads..=max_payloads);
+    // let num_payloads = rng.gen_range(min_payloads..=max_payloads);
     //for debugging?
     let num_payloads = set_payload_num;
-
-    let payload_choices = [LocalSet, I32Add, I32Mul];
-    let payload_weights = [8, 5, 5];
-    let payload_dist = WeightedIndex::new(&payload_weights).expect("weights are hardcoded");
-    
-    dbg!(num_payloads);
-    let mut payloads = vec![];
-    for _ in 0..num_payloads {
-        let payload = payload_choices[payload_dist.sample(rng)];
-        payloads.push(payload);
-    }
-
-    // just for debugging
-    // let payloads_to_keep = 106;
-    // payloads.truncate(payloads_to_keep);
-
-    // get the param to main, so everything depends on it and can't be removed 
-    // by constant folding
-    builder.add_opcode(LocalGet, Some(0));
-    let mut stack_depth = 1;
-
-    let stack_increase_choices = [LocalGet, I32Const]; 
-    let stack_increase_weights = [10, 1];
-    let stack_increase_dist = WeightedIndex::new(&stack_increase_weights).expect("weights are hardcoded");
-    // push payloads into string, keeping track of depth of stack 
+    // dbg!(num_payloads);
+    let payloads = Payload::gen_payloads(rng, num_locals, num_payloads);
     for payload in payloads {
-        let (stack_req, stack_change) = opcode_stack_req(payload);
-        while stack_depth < stack_req {
-            // we need to add an opcode which increases the size of the stack 
-            let increase_op = stack_increase_choices[stack_increase_dist.sample(rng)];
-            match increase_op {
-                LocalGet => {
-                    let local_to_get = rng.gen_range(0..=num_locals);
-                    builder.add_opcode(LocalGet, Some(local_to_get));
-                }, 
-                other => {
-                    assert_eq!(other, I32Const); 
-                    let const_val = rng.gen_range(-100..100);
-                    builder.add_opcode(I32Const, Some(const_val));
-                },   
-            }
-            let (_increase_req, increase_amt) = opcode_stack_req(increase_op);
-            
-            stack_depth += increase_amt;
-            // dbg!(increase_op, stack_depth);
-        }
-        let payload_arg = if payload == LocalSet {
-            Some(rng.gen_range(0..=num_locals))
-        } else {None};
-        builder.add_opcode(payload, payload_arg);
-        stack_depth += stack_change;
-        // dbg!(payload, stack_depth); 
-    }
-
-    // take the product of all the remaining stack values with all locals
-    for _ in 0..stack_depth-1 {
-        builder.add_opcode(I32Add, None);
-    }
-
-    // return the product of all locals, so that the code is not dead
-    for i in 0..=num_locals {
-        builder.add_opcode(LocalGet, Some(i));
-    }
-    for _i in 0..num_locals - 1 {
-        builder.add_opcode(I32Add, None);
+        builder.add_payload(payload);
     }
     // append the suffix to finish out the wat
-    builder.finish_wat();
+    builder.finish_wat(num_locals);
     builder
 }
 
-fn time_wat(imp1 : i32, wat: String) -> anyhow::Result<Duration> {
+fn time_wat(imp1: i32, imp2: i32, num_loops: i32, wat: String) -> anyhow::Result<Duration> {
     let wasm = wabt::wat2wasm(wat).expect("it's a valid wat");
     let mut compiler = Cranelift::new();
     compiler.opt_level(CraneliftOptLevel::None);
@@ -265,13 +285,13 @@ fn time_wat(imp1 : i32, wat: String) -> anyhow::Result<Duration> {
     let main = instance.exports.get_function("main")?;
 
     let start = Instant::now();
-    let result = main.call(&mut store, &[wasmer::Value::I32(imp1)])?;
-    // let result2 = main.call(&mut store, &[wasmer::Value::I32(imp2)])?;
+    let result = main.call(&mut store, &[wasmer::Value::I32(num_loops), wasmer::Value::I32(imp1)])?;
+    let result2 = main.call(&mut store, &[wasmer::Value::I32(num_loops), wasmer::Value::I32(imp2)])?;
     // let results : Vec<_> = (1..=1000)
     //   .map(|i|main.call(&mut store, &[wasmer::Value::I32(imp2)])).collect();
     let duration = start.elapsed();
 
-    dbg!(result);
+    // dbg!(imp1, imp2, result, result2);
     // dbg!(results.clone().truncate(10));
     return Ok(duration)
 }
@@ -286,8 +306,8 @@ fn generate_and_time_wat<R: Rng + ?Sized>(rng: &mut R, set_payload_num: i32) -> 
     // println!("wat: {}", mywat);
     println!("counts: {:?}", wat_builder.opcode_counts);
     let imp1 = rng.gen();
-    // let imp2 = rng.gen();
-    let duration = time_wat(imp1, mywat).expect("wasmer exploded");
+    let imp2 = rng.gen();
+    let duration = time_wat(imp1, imp2, 10_000, mywat).expect("wasmer exploded");
     return duration
 }
 
@@ -319,18 +339,22 @@ fn watrng(loops: i32) -> anyhow::Result<(u64, Duration)> {
 
 fn main() -> anyhow::Result<()>  {
     // // let mywat = include_str!("my_wat.wat");
-    // let mut rng = Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7);
+    let mut rng = Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7);
+    // let payload_nums = [10];
     // let payload_nums = [100, 1_000, 10_000, 100_000, 1_000_000];
     // for payload_num in payload_nums { 
-    //     let duration = generate_and_time_wat(&mut rng, payload_num);
-    //     println!("num payloads: {:?} timing: {:?}", payload_num, duration);
-    // }
-
-    for i in [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000, 1_000_000_000] {
-        let myval = myrng(i-1);
-        let theirval = watrng(i).unwrap();
-        println!("{} me {} them {:?} same {}", i, myval, theirval, myval == theirval.0);
+    let num_loops = 100;
+    let payload_num = 100_000;
+    for _ in 0..num_loops {
+        let duration = generate_and_time_wat(&mut rng, payload_num);
+        println!("num payloads: {:?} timing: {:?}", payload_num, duration);
     }
+
+    // for i in [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000, 1_000_000_000] {
+    //     let myval = myrng(i-1);
+    //     let theirval = watrng(i).unwrap();
+    //     println!("{} me {} them {:?} same {}", i, myval, theirval, myval == theirval.0);
+    // }
     
     
     Ok(())
