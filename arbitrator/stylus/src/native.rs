@@ -77,6 +77,13 @@ impl NativeInstance {
         Self::from_module(module, store, env)
     }
 
+    pub fn from_bytes(wat_or_wasm: &[u8], config: &StylusConfig) -> Result<Self> {
+        let env = WasmEnv::new(config.clone());
+        let store = env.config.store();
+        let module = Module::new(&store, wat_or_wasm)?;
+        Self::from_module(module, store, env)
+    }
+
     fn from_module(module: Module, mut store: Store, env: WasmEnv) -> Result<Self> {
         let debug_funcs = env.config.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);

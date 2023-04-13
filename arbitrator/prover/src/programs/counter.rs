@@ -89,7 +89,7 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
     {
         use Operator::*;
 
-        let end = op.ends_basic_block();
+        let end = op.ends_basic_block() || matches!(op, Unreachable);
         self.block.push(op);
 
         if end {

@@ -33,6 +33,7 @@ pub mod dynamic;
 pub mod heap;
 pub mod meter;
 pub mod prelude;
+pub mod print;
 pub mod run;
 pub mod start;
 
@@ -235,6 +236,8 @@ impl ModuleMod for ModuleInfo {
             let bound = memory.maximum.unwrap_or(limit);
             let bound = bound.min(limit);
             memory.maximum = Some(bound);
+
+            println!("MEM: {:?} {:?}", memory.minimum, bound);
 
             if memory.minimum > bound {
                 let minimum = memory.minimum.0.red();

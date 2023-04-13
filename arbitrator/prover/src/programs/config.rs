@@ -11,7 +11,7 @@ use wasmparser::Operator;
 use {
     super::{
         counter::Counter, depth::DepthChecker, dynamic::DynamicMeter, heap::HeapBound,
-        meter::Meter, start::StartMover, MiddlewareWrapper,
+        meter::Meter, print::Printer, start::StartMover, MiddlewareWrapper,
     },
     std::sync::Arc,
     wasmer::{CompilerConfig, Store},
@@ -24,6 +24,7 @@ pub type OpCosts = fn(&Operator) -> u64;
 pub struct StylusDebugParams {
     pub debug_funcs: bool,
     pub count_ops: bool,
+    pub print_ops: bool,
 }
 
 #[derive(Clone)]
@@ -102,7 +103,7 @@ impl StylusConfig {
                 config.costs = |_| 1;
                 config.pricing.memory_fill_ink = 1;
                 config.pricing.memory_copy_ink = 1;
-                config.heap_bound = Bytes(2 * 1024 * 1024);
+                config.heap_bound = Bytes(65536); // 1 page
                 config.depth.max_depth = 1 * 1024 * 1024;
             }
             _ => panic!("no config exists for Stylus version {version}"),
@@ -164,6 +165,10 @@ impl StylusConfig {
         if self.debug.count_ops {
             let counter = Counter::new();
             compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
+        }
+        if self.debug.print_ops {
+            let print = MiddlewareWrapper::new(Printer::default());
+            compiler.push_middleware(Arc::new(print));
         }
 
         Store::new(compiler)

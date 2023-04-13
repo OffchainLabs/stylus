@@ -11,7 +11,7 @@ use prover::{
 };
 use rand::prelude::*;
 use std::{collections::HashMap, path::Path, sync::Arc};
-use wasmer::{imports, wasmparser::Operator, Function, Imports, Instance, Module, Store};
+use wasmer::{imports, wasmparser::Operator, Function, Imports, Instance, Module, Store, Pages};
 
 mod api;
 mod misc;
@@ -42,6 +42,7 @@ fn uniform_cost_config() -> StylusConfig {
     config.debug.count_ops = true;
     config.debug.debug_funcs = true;
     config.start_ink = 1_000_000;
+    config.heap_bound = Pages(1).into();
     config.pricing.ink_price = 100_00;
     config.pricing.hostio_ink = 100;
     config.pricing.memory_fill_ink = 1;

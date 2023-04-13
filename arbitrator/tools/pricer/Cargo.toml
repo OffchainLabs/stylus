@@ -1,0 +1,23 @@
+[package]
+name = "pricer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arbitrary = "1.1.6"
+affinity = "0.1.2"
+eyre = "0.6.5"
+rand = "0.8.5"
+parking_lot = "0.12.1"
+lazy_static = "1.4.0"
+wabt = "0.10.0"
+wat = "1.0.56"
+libc = "0.2.141"
+arbutil = { path = "../../arbutil" }
+wasmer = { path = "../wasmer/lib/api" }
+wasm-smith = { path = "../wasm-tools/crates/wasm-smith" }
+wasmprinter = { path = "../wasm-tools/crates/wasmprinter" }
+stylus = { path = "../../stylus" }
+prover = { path = "../../prover"}
+
+[workspace]

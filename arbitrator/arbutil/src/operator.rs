@@ -7,7 +7,7 @@ use std::hash::Hash;
 use wasmparser::Operator;
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct OperatorCode(usize);
+pub struct OperatorCode(pub usize);
 
 impl OperatorCode {
     // TODO: use std::mem::variant_count when it's stabilized
