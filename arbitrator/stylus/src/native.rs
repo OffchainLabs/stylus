@@ -174,6 +174,7 @@ impl NativeInstance {
             };
         }
 
+        let block_hash = api.block_hash;
         let get_bytes32 = api.get_bytes32;
         let set_bytes32 = api.set_bytes32;
         let contract_call = api.contract_call;
@@ -185,6 +186,11 @@ impl NativeInstance {
         let emit_log = api.emit_log;
         let id = api.id;
 
+        let block_hash = Box::new(move |block| unsafe {
+            let mut cost = 0;
+            let hash = block_hash(id, block, ptr!(cost));
+            (hash, cost)
+        });
         let get_bytes32 = Box::new(move |key| unsafe {
             let mut cost = 0;
             let value = get_bytes32(id, key, ptr!(cost));
@@ -290,6 +296,7 @@ impl NativeInstance {
         });
 
         env.set_evm_api(
+            block_hash,
             get_bytes32,
             set_bytes32,
             contract_call,
