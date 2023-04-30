@@ -16,7 +16,9 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 const MaxWasmSize = 64 * 1024
@@ -220,7 +222,7 @@ func (status userStatus) output(data []byte) ([]byte, error) {
 	case userOutOfStack:
 		return nil, vm.ErrDepth
 	default:
-		log.Error("program errored with unknown status", "status", status, "data", common.Bytes2Hex(data))
+		log.Error("program errored with unknown status", "status", status, "data", colors.Uncolor(arbutil.ToStringOrHex(data)))
 		return nil, vm.ErrExecutionReverted
 	}
 }

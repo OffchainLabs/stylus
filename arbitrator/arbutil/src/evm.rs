@@ -51,3 +51,6 @@ pub const GASPRICE_GAS: u64 = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
 pub const ORIGIN_GAS: u64 = GAS_QUICK_STEP;
+
+// vm.params.EcrecoverGas (see contracts.go)
+pub const ECRECOVER_GAS: u64 = 3000;

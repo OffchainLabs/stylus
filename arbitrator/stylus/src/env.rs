@@ -467,3 +467,9 @@ impl From<ErrReport> for Escape {
         Self::Internal(err)
     }
 }
+
+impl From<secp256k1::Error> for Escape {
+    fn from(err: secp256k1::Error) -> Self {
+        Self::Internal(err.into())
+    }
+}

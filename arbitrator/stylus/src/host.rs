@@ -3,7 +3,14 @@
 
 use crate::env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::evm;
+use hex_literal::hex;
+use prover::utils::Bytes20;
 use prover::{programs::prelude::*, value::Value};
+use secp256k1::{
+    ecdsa::{RecoverableSignature, RecoveryId},
+    {Message, Secp256k1},
+};
+use sha3::{Digest, Keccak256};
 
 pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
@@ -355,4 +362,55 @@ pub(crate) fn console_tee<T: Into<Value> + Copy>(
     let env = WasmEnv::start_free(&mut env);
     env.say(value.into());
     Ok(value)
+}
+
+pub(crate) fn lib_ecrecover(
+    mut env: WasmEnvMut,
+    hash: u32,
+    v: u32,
+    r: u32,
+    s: u32,
+    result: u32,
+) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+    env.buy_gas(evm::ECRECOVER_GAS)?;
+
+    let hash = env.read_bytes32(hash)?;
+    let v = env.read_bytes32(v)?;
+    let r = env.read_bytes32(r)?;
+    let s = env.read_bytes32(s)?;
+
+    // Ensure v is 27 or 28
+    if v[0..31] != [0; 31] {
+        return Escape::logical("invalid v parameter");
+    }
+    let v = v[31] - 27;
+    let recovery_id = RecoveryId::from_i32(v.into())?;
+
+    const SECP256K1N: [u8; 32] =
+        hex!["fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"];
+
+    // Ensure r and s are both less than secp256kN
+    if r.gt(&SECP256K1N) {
+        return Escape::logical("invalid r parameter");
+    }
+    if s.gt(&SECP256K1N) {
+        return Escape::logical("invalid s parameter");
+    }
+    let sig = [r.as_slice(), s.as_slice()].concat();
+    let sig = RecoverableSignature::from_compact(&sig, recovery_id)?;
+
+    let secp = Secp256k1::new();
+    let msg = Message::from_slice(hash.as_ref())?;
+    let key = secp.recover_ecdsa(&msg, &sig)?;
+    let key = key.serialize_uncompressed();
+    let key: [u8; 64] = key[1..].try_into().expect("wrong size uncompressed key");
+    let mut hasher = Keccak256::new();
+    hasher.update(key);
+    let address: [u8; 20] = hasher.finalize()[12..]
+        .try_into()
+        .expect("wrong size public address");
+
+    env.write_bytes20(result, Bytes20(address))?;
+    Ok(())
 }

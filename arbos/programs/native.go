@@ -68,12 +68,12 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 		usize(debugMode),
 		output,
 	))
-	data := output.intoBytes()
-	result, err := status.output(data)
+	returnData := output.intoBytes()
+	result, err := status.output(returnData)
 	if err == nil {
 		db.SetCompiledWasmCode(program, result, version)
-	} else {
-		log.Debug("program failure", "err", err.Error(), "data", string(data), "program", program)
+	} else if status == userFailure {
+		log.Debug("compile user wasm failure", "program", program, "returnData", colors.Uncolor(arbutil.ToStringOrHex(returnData)))
 	}
 	return err
 }
@@ -354,7 +354,7 @@ func callUserWasm(
 	data, err := status.output(returnData)
 
 	if status == userFailure {
-		log.Debug("program failure", "err", string(data), "program", actingAddress, "returnData", colors.Uncolor(arbutil.ToStringOrHex(returnData)))
+		log.Debug("program failure", "program", actingAddress, "returnData", colors.Uncolor(arbutil.ToStringOrHex(returnData)))
 	}
 	return data, err
 }

@@ -124,6 +124,7 @@ impl NativeInstance {
                 "tx_gas_price" => func!(host::tx_gas_price),
                 "tx_ink_price" => func!(host::tx_ink_price),
                 "tx_origin" => func!(host::tx_origin),
+                "lib_ecrecover" => func!(host::lib_ecrecover),
             },
         };
         if debug_funcs {
@@ -479,6 +480,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "tx_gas_price" => stub!(|_: u32|),
             "tx_ink_price" => stub!(u64 <- ||),
             "tx_origin" => stub!(|_: u32|),
+            "lib_ecrecover" => stub!(|_: u32, _: u32, _: u32, _: u32, _: u32|),
         },
     };
     if compile.debug.debug_funcs {
