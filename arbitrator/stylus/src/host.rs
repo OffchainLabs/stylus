@@ -11,6 +11,7 @@ use secp256k1::{
     {Message, Secp256k1},
 };
 use sha3::{Digest, Keccak256};
+use std::time::Instant;
 
 pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
@@ -372,6 +373,7 @@ pub(crate) fn lib_ecrecover_callback(
     s: u32,
     result: u32,
 ) -> MaybeEscape {
+    let now = Instant::now();
     let mut env = WasmEnv::start(&mut env)?;
 
     let hash = env.read_bytes32(hash)?;
@@ -384,6 +386,9 @@ pub(crate) fn lib_ecrecover_callback(
     env.buy_gas(gas_cost)?;
 
     env.write_bytes20(result, address)?;
+
+    let elapsed = now.elapsed().as_nanos();
+    env.say(format!("ecrecover callback elapsed {elapsed}ms"));
     Ok(())
 }
 
@@ -395,6 +400,7 @@ pub(crate) fn lib_ecrecover(
     s: u32,
     result: u32,
 ) -> MaybeEscape {
+    let now = Instant::now();
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::ECRECOVER_GAS)?;
 
@@ -435,5 +441,8 @@ pub(crate) fn lib_ecrecover(
         .expect("wrong size public address");
 
     env.write_bytes20(result, Bytes20(address))?;
+
+    let elapsed = now.elapsed().as_nanos();
+    env.say(format!("ecrecover elapsed {elapsed}ms"));
     Ok(())
 }

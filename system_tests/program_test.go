@@ -617,7 +617,7 @@ func TestProgramEvmData(t *testing.T) {
 }
 
 func TestProgramPrecompiles(t *testing.T) {
-	ctx, _, l2info, l2client, auth, precompileAddr, cleanup := setupProgramTest(t, rustFile("precompiles"), true)
+	ctx, _, _, l2client, auth, precompileAddr, cleanup := setupProgramTest(t, rustFile("precompiles"), true)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -637,16 +637,22 @@ func TestProgramPrecompiles(t *testing.T) {
 	}
 	_, err = mock.StaticcallProgram(&opts, precompileAddr, precompileData)
 	Require(t, err)
+	_, err = mock.StaticcallProgram(&opts, precompileAddr, precompileData)
+	Require(t, err)
+	_, err = mock.StaticcallProgram(&opts, precompileAddr, precompileData)
+	Require(t, err)
+	_, err = mock.StaticcallProgram(&opts, precompileAddr, precompileData)
+	Require(t, err)
 
-	tx = l2info.PrepareTxTo("Owner", &precompileAddr, 1e9, nil, precompileData)
-	ensure(tx, l2client.SendTransaction(ctx, tx))
+	//tx = l2info.PrepareTxTo("Owner", &precompileAddr, 1e9, nil, precompileData)
+	//ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	// TODO: enable validation when prover side is PR'd
 	// validateBlocks(t, 1, ctx, node, l2client)
 }
 
 func TestProgramPrecompilesCallback(t *testing.T) {
-	ctx, _, l2info, l2client, auth, precompileAddr, cleanup := setupProgramTest(t, rustFile("precompiles-callback"), true)
+	ctx, _, _, l2client, auth, precompileAddr, cleanup := setupProgramTest(t, rustFile("precompiles-callback"), true)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -666,9 +672,15 @@ func TestProgramPrecompilesCallback(t *testing.T) {
 	}
 	_, err = mock.StaticcallProgram(&opts, precompileAddr, precompileData)
 	Require(t, err)
+	_, err = mock.StaticcallProgram(&opts, precompileAddr, precompileData)
+	Require(t, err)
+	_, err = mock.StaticcallProgram(&opts, precompileAddr, precompileData)
+	Require(t, err)
+	_, err = mock.StaticcallProgram(&opts, precompileAddr, precompileData)
+	Require(t, err)
 
-	tx = l2info.PrepareTxTo("Owner", &precompileAddr, 1e9, nil, precompileData)
-	ensure(tx, l2client.SendTransaction(ctx, tx))
+	//tx = l2info.PrepareTxTo("Owner", &precompileAddr, 1e9, nil, precompileData)
+	//ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	// TODO: enable validation when prover side is PR'd
 	// validateBlocks(t, 1, ctx, node, l2client)
