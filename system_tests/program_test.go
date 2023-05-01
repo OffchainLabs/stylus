@@ -617,7 +617,36 @@ func TestProgramEvmData(t *testing.T) {
 }
 
 func TestProgramPrecompiles(t *testing.T) {
-	ctx, _, l2info, l2client, auth, precompileAddr, cleanup := setupProgramTest(t, rustFile("precompile"), true)
+	ctx, _, l2info, l2client, auth, precompileAddr, cleanup := setupProgramTest(t, rustFile("precompiles"), true)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+
+	var precompileData []byte
+	opts := bind.CallOpts{
+		From: testhelpers.RandomAddress(),
+	}
+	_, err = mock.StaticcallProgram(&opts, precompileAddr, precompileData)
+	Require(t, err)
+
+	tx = l2info.PrepareTxTo("Owner", &precompileAddr, 1e9, nil, precompileData)
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+
+	// TODO: enable validation when prover side is PR'd
+	// validateBlocks(t, 1, ctx, node, l2client)
+}
+
+func TestProgramPrecompilesCallback(t *testing.T) {
+	ctx, _, l2info, l2client, auth, precompileAddr, cleanup := setupProgramTest(t, rustFile("precompiles-callback"), true)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {

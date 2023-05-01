@@ -124,6 +124,7 @@ impl NativeInstance {
         let create2 =
             Box::new(move |_code, _endowment, _salt, _gas| unimplemented!("create2 not supported"));
         let emit_log = Box::new(move |_data, _topics| Ok(()));
+        let ecrecover_callback = Box::new(move |_data| todo!("address_balance not yet supported"));
 
         self.env_mut().set_evm_api(
             address_balance,
@@ -138,6 +139,7 @@ impl NativeInstance {
             create2,
             get_return_data,
             emit_log,
+            ecrecover_callback,
         );
         storage
     }

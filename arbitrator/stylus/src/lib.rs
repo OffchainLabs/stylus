@@ -163,6 +163,8 @@ pub struct GoApi {
     ) -> GoApiStatus,
     pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
     pub emit_log: unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: usize) -> GoApiStatus,
+    pub ecrecover_callback:
+        unsafe extern "C" fn(id: usize, data: *mut RustVec, evm_cost: *mut u64) -> Bytes20,
     pub id: usize,
 }
 

@@ -364,6 +364,29 @@ pub(crate) fn console_tee<T: Into<Value> + Copy>(
     Ok(value)
 }
 
+pub(crate) fn lib_ecrecover_callback(
+    mut env: WasmEnvMut,
+    hash: u32,
+    v: u32,
+    r: u32,
+    s: u32,
+    result: u32,
+) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+
+    let hash = env.read_bytes32(hash)?;
+    let v = env.read_bytes32(v)?;
+    let r = env.read_bytes32(r)?;
+    let s = env.read_bytes32(s)?;
+
+    let data = [hash.as_slice(), v.as_slice(), r.as_slice(), s.as_slice()].concat();
+    let (address, gas_cost) = env.evm().ecrecover_callback(data);
+    env.buy_gas(gas_cost)?;
+
+    env.write_bytes20(result, address)?;
+    Ok(())
+}
+
 pub(crate) fn lib_ecrecover(
     mut env: WasmEnvMut,
     hash: u32,

@@ -27,6 +27,7 @@ GoApiStatus create1Wrap(usize api, RustVec * code, Bytes32 endowment,           
 GoApiStatus create2Wrap(usize api, RustVec * code, Bytes32 endowment, Bytes32 salt, u64 * gas, u32 * len);
 void        getReturnDataWrap(usize api, RustVec * data);
 GoApiStatus emitLogWrap(usize api, RustVec * data, usize topics);
+Bytes20     ecrecoverWrap(usize api, RustVec * data, u64 * cost);
 */
 import "C"
 import (
@@ -320,6 +321,15 @@ func callUserWasm(
 		db.AddLog(event)
 		return nil
 	}
+	ecrecoverPrecompile := vm.PrecompiledContractsBerlin[common.HexToAddress("1")]
+	ecrecover := func(data []byte) (common.Address, uint64) {
+		gasCost := ecrecoverPrecompile.RequiredGas(data)
+		result, err := ecrecoverPrecompile.Run(data)
+		if err != nil {
+			return common.Address{}, gasCost
+		}
+		return common.BytesToAddress(result), gasCost
+	}
 
 	evmData := C.EvmData{
 		block_basefee:    bigToBytes32(evm.Context.BaseFee),
@@ -344,7 +354,7 @@ func callUserWasm(
 		newAPI(
 			addressBalance, addressCodeHash, blockHash, getBytes32, setBytes32,
 			contractCall, delegateCall, staticCall, create1, create2, getReturnData,
-			emitLog,
+			emitLog, ecrecover,
 		),
 		evmData,
 		output,
@@ -495,6 +505,14 @@ func emitLogImpl(api usize, data *rustVec, topics usize) apiStatus {
 		return apiFailure
 	}
 	return apiSuccess
+}
+
+//export ecrecoverImpl
+func ecrecoverImpl(api usize, data *rustVec, cost *u64) bytes20 {
+	closure := getAPI(api)
+	value, gas := closure.ecrecover(data.read())
+	*cost = u64(gas)
+	return addressToBytes20(value)
 }
 
 func (value bytes20) toAddress() common.Address {

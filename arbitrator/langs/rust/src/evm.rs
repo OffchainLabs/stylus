@@ -53,3 +53,14 @@ pub fn gas_left() -> u64 {
 pub fn ink_left() -> u64 {
     unsafe { evm_ink_left() }
 }
+
+#[link(wasm_import_module = "forward")]
+extern "C" {
+    pub(crate) fn ecrecover(data: *const u8, result: *mut u8);
+}
+
+pub fn ecrecover_callback(data: Bytes32) -> Option<Bytes20> {
+    let mut result = [0; 20];
+    unsafe { ecrecover(data.ptr(), result.as_mut_ptr()) };
+    (result != [0; 20]).then_some(Bytes20(result))
+}

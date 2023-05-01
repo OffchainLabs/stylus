@@ -59,6 +59,13 @@ extern "C" {
         s: *const u8,
         value: *const u8,
     );
+    pub(crate) fn lib_ecrecover_callback(
+        hash: *const u8,
+        v: *const u8,
+        r: *const u8,
+        s: *const u8,
+        value: *const u8,
+    );
 }
 
 pub fn load_bytes32(key: Bytes32) -> Bytes32 {
@@ -74,5 +81,11 @@ pub fn store_bytes32(key: Bytes32, data: Bytes32) {
 pub fn ecrecover(hash: Bytes32, v: Bytes32, r: Bytes32, s: Bytes32) -> Bytes20 {
     let mut data = [0; 20];
     unsafe { lib_ecrecover(hash.ptr(), v.ptr(), r.ptr(), s.ptr(), data.as_mut_ptr()) };
+    Bytes20(data)
+}
+
+pub fn ecrecover_callback(hash: Bytes32, v: Bytes32, r: Bytes32, s: Bytes32) -> Bytes20 {
+    let mut data = [0; 20];
+    unsafe { lib_ecrecover_callback(hash.ptr(), v.ptr(), r.ptr(), s.ptr(), data.as_mut_ptr()) };
     Bytes20(data)
 }

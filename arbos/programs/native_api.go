@@ -74,6 +74,11 @@ GoApiStatus emitLogImpl(usize api, RustVec * data, usize topics);
 GoApiStatus emitLogWrap(usize api, RustVec * data, usize topics) {
     return emitLogImpl(api, data, topics);
 }
+
+Bytes20 ecrecoverImpl(usize api, RustVec * data);
+Bytes20 ecrecoverWrap(usize api, RustVec * data) {
+    return ecrecoverImpl(api, data);
+}
 */
 import "C"
 import (
@@ -115,6 +120,7 @@ type create2Type func(
 )
 type getReturnDataType func() []byte
 type emitLogType func(data []byte, topics int) error
+type ecrecoverType func(data []byte) (value common.Address, cost uint64)
 
 type apiClosure struct {
 	addressBalance  addressBalanceType
@@ -129,6 +135,7 @@ type apiClosure struct {
 	create2         create2Type
 	getReturnData   getReturnDataType
 	emitLog         emitLogType
+	ecrecover       ecrecoverType
 }
 
 func newAPI(
@@ -144,6 +151,7 @@ func newAPI(
 	create2 create2Type,
 	getReturnData getReturnDataType,
 	emitLog emitLogType,
+	ecrecover ecrecoverType,
 ) C.GoApi {
 	id := atomic.AddInt64(&apiIds, 1)
 	apiClosures.Store(id, apiClosure{
@@ -159,6 +167,7 @@ func newAPI(
 		create2:         create2,
 		getReturnData:   getReturnData,
 		emitLog:         emitLog,
+		ecrecover:       ecrecover,
 	})
 	return C.GoApi{
 		address_balance:   (*[0]byte)(C.addressBalanceWrap),
@@ -173,6 +182,7 @@ func newAPI(
 		create2:           (*[0]byte)(C.create2Wrap),
 		get_return_data:   (*[0]byte)(C.getReturnDataWrap),
 		emit_log:          (*[0]byte)(C.emitLogWrap),
+		ecrecover:         (*[0]byte)(C.ecrecoverWrap),
 		id:                u64(id),
 	}
 }

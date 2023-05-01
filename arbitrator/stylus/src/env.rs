@@ -90,6 +90,9 @@ pub type Create1 = Box<dyn Fn(Vec<u8>, Bytes32, u64) -> (eyre::Result<Bytes20>, 
 pub type Create2 =
     Box<dyn Fn(Vec<u8>, Bytes32, Bytes32, u64) -> (eyre::Result<Bytes20>, u32, u64) + Send>;
 
+/// Precompile ecrecover: (data) -> (address, gas cost)
+pub type EcrecoverCallback = Box<dyn Fn(Vec<u8>) -> (Bytes20, u64) + Send>;
+
 pub struct EvmAPI {
     address_balance: AddressBalance,
     address_code_hash: AddressCodeHash,
@@ -104,6 +107,7 @@ pub struct EvmAPI {
     get_return_data: GetReturnData,
     return_data_len: u32,
     emit_log: EmitLog,
+    ecrecover_callback: EcrecoverCallback,
 }
 
 #[repr(C)]
@@ -145,6 +149,7 @@ impl WasmEnv {
         create2: Create2,
         get_return_data: GetReturnData,
         emit_log: EmitLog,
+        ecrecover_callback: EcrecoverCallback,
     ) {
         self.evm = Some(EvmAPI {
             address_balance,
@@ -159,6 +164,7 @@ impl WasmEnv {
             create2,
             get_return_data,
             emit_log,
+            ecrecover_callback,
             return_data_len: 0,
         })
     }
@@ -419,6 +425,10 @@ impl EvmAPI {
 
     pub fn emit_log(&mut self, data: Vec<u8>, topics: usize) -> eyre::Result<()> {
         (self.emit_log)(data, topics)
+    }
+
+    pub fn ecrecover_callback(&mut self, data: Vec<u8>) -> (Bytes20, u64) {
+        (self.ecrecover_callback)(data)
     }
 }
 

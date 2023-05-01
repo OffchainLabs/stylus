@@ -125,6 +125,7 @@ impl NativeInstance {
                 "tx_ink_price" => func!(host::tx_ink_price),
                 "tx_origin" => func!(host::tx_origin),
                 "lib_ecrecover" => func!(host::lib_ecrecover),
+                "lib_ecrecover_callback" => func!(host::lib_ecrecover_callback),
             },
         };
         if debug_funcs {
@@ -209,6 +210,7 @@ impl NativeInstance {
         let create2 = api.create2;
         let get_return_data = api.get_return_data;
         let emit_log = api.emit_log;
+        let ecrecover_callback = api.ecrecover_callback;
         let id = api.id;
 
         let address_balance = Box::new(move |address| unsafe {
@@ -329,6 +331,12 @@ impl NativeInstance {
                 Failure => Err(error!(error)),
             }
         });
+        let ecrecover_callback = Box::new(move |data| unsafe {
+            let mut data = RustVec::new(data);
+            let mut cost = 0;
+            let address = ecrecover_callback(id, ptr!(data), ptr!(cost));
+            (address, cost)
+        });
 
         env.set_evm_api(
             address_balance,
@@ -343,6 +351,7 @@ impl NativeInstance {
             create2,
             get_return_data,
             emit_log,
+            ecrecover_callback,
         )
     }
 
@@ -481,6 +490,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "tx_ink_price" => stub!(u64 <- ||),
             "tx_origin" => stub!(|_: u32|),
             "lib_ecrecover" => stub!(|_: u32, _: u32, _: u32, _: u32, _: u32|),
+            "lib_ecrecover_callback" => stub!(|_: u32, _: u32, _: u32, _: u32, _: u32|),
         },
     };
     if compile.debug.debug_funcs {
