@@ -289,7 +289,10 @@ func (state *ArbosState) UpgradeArbosVersion(
 			)))
 		case 10:
 			// TODO: move to the first version that introduces stylus
-			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
+			err := programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
+			if err != nil {
+				return err
+			}
 
 			if !chainConfig.DebugMode() {
 				// This upgrade isn't finalized so we only want to support it for testing
