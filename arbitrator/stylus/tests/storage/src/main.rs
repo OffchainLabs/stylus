@@ -18,9 +18,10 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         data.0.into()
     } else {
         debug::println(format!("write {slot}"));
+        debug::println(format!("write foo {slot}"));
         let data = Bytes32::from_slice(&input[33..]).unwrap();
         store_bytes32(slot, data);
-        debug::println(format!("value {data}"));
+        debug::println(format!("value foo {data}"));
         vec![]
     })
 }

@@ -9,6 +9,7 @@ pub mod contract;
 pub mod debug;
 pub mod evm;
 pub mod msg;
+pub mod caching_storage;
 pub mod tx;
 mod util;
 

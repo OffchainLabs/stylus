@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+ahash = "0.8.3"
+alloc-no-stdlib = "2.0.4"
+hashbrown = "0.13.2"
 hex = "0.4.3"
 
 [workspace]
