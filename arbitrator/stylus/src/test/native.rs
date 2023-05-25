@@ -325,6 +325,27 @@ fn test_c() -> Result<()> {
 }
 
 #[test]
+fn test_zig() -> Result<()> {
+    let filename = "tests/zig-example/src/lib.wasm";
+    let (compile, config, ink) = test_configs();
+
+    let mut native = TestInstance::new_linked(filename, &compile, config)?;
+
+    let args = vec![0x01, 0x02, 0x03];
+    let want = vec![0x01, 0x05, 0x03];
+    let output = run_native(&mut native, &args, ink)?;
+
+    // The program will tweak the input args' second index.
+    assert_eq!(hex::encode(output), hex::encode(want.clone()));
+
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
+    let output = run_machine(&mut machine, &args, config, ink)?;
+    assert_eq!(hex::encode(output), hex::encode(want));
+
+    check_instrumentation(native, machine)
+}
+
+#[test]
 fn test_fallible() -> Result<()> {
     // in fallible.rs
     //     an input starting with 0x00 will execute an unreachable
