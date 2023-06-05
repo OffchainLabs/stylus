@@ -176,13 +176,13 @@ trait StorageSerde<T, const S: usize> {
     fn serialize(&self, dest: &mut [u8; S]);
 }
 
-struct StorageBacked<T, const S: usize, Storage: BackendStorage> {
-    storage: RefCell<CachingStorage<Storage>>,
+struct StorageBacked<'a, T, const S: usize, Backend: BackendStorage> {
+    storage: &'a RefCell<CachingStorage<Backend>>,
     sub_key: SubKey,
     phantom: PhantomData<T>,
 }
 
-impl<T: Copy+StorageSerde<T, S>, const S: usize, Storage: BackendStorage> StorageBacked<T, S, Storage> {
+impl<'a, T: Copy+StorageSerde<T, S>, const S: usize, Storage: BackendStorage> StorageBacked<'a, T, S, Storage> {
     pub fn get(&self) -> T {
         T::deserialize(self.storage.borrow_mut().get(&self.sub_key))
     }
@@ -193,6 +193,22 @@ impl<T: Copy+StorageSerde<T, S>, const S: usize, Storage: BackendStorage> Storag
 
 struct Storage<Backend: BackendStorage> {
     pub cell: RefCell<CachingStorage<Backend>>,
+}
+
+impl<Backend: BackendStorage> Storage<Backend> {
+    pub fn new(storage: CachingStorage<Backend>) -> Self {
+        Self {
+            cell: RefCell::new(storage),
+        }
+    }
+
+    pub fn new_storage_backed<T: Copy+StorageSerde<T, S>, const S: usize>(&self) -> StorageBacked<T, S, Backend> {
+        StorageBacked{
+            storage: &self.cell,
+            sub_key: self.cell.borrow_mut().new_sub_key(S),
+            phantom: PhantomData,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -269,6 +285,22 @@ mod tests {
     fn test_storagebacked() {
         let mut backend = MemoryBackendStorage::new();
         let mut cs = CachingStorage::new(backend);
-        let mut cell = RefCell::new(cs);
+        let mut storage = Storage::new(cs);
+        let mut k0 = storage.new_storage_backed::<CustomType, 16>();
+        let mut k1 = storage.new_storage_backed::<CustomType, 16>();
+        let mut s0 = k0.get();
+        let mut s1 = k1.get();
+        s0.foo = 12;
+        s0.bar = 13;
+        s1.foo = 14;
+        s1.bar = 15;
+        k0.set(s0);
+        k1.set(s1);
+        let s0 = k0.get();
+        let s1 = k1.get();
+        assert_eq!(12, s0.foo);
+        assert_eq!(13, s0.bar);
+        assert_eq!(14, s1.foo);
+        assert_eq!(15, s1.bar);
     }
 }
