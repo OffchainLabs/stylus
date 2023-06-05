@@ -171,12 +171,12 @@ impl<Backend: BackendStorage> Drop for CachingStorage<Backend> {
     }
 }
 
-trait StorageSerde<T, const S: usize> {
+pub trait StorageSerde<T, const S: usize> {
     fn deserialize(data: [u8; S]) -> T;
     fn serialize(&self, dest: &mut [u8; S]);
 }
 
-struct StorageBacked<'a, T, const S: usize, Backend: BackendStorage> {
+pub struct StorageBacked<'a, T, const S: usize, Backend: BackendStorage> {
     storage: &'a RefCell<CachingStorage<Backend>>,
     sub_key: SubKey,
     phantom: PhantomData<T>,
@@ -186,12 +186,12 @@ impl<'a, T: Copy+StorageSerde<T, S>, const S: usize, Storage: BackendStorage> St
     pub fn get(&self) -> T {
         T::deserialize(self.storage.borrow_mut().get(&self.sub_key))
     }
-    pub fn set(&self, value: T) {
+    pub fn set(&mut self, value: T) {
         self.storage.borrow_mut().set_with_callback(&self.sub_key, |dest: &mut [u8; S]| value.serialize(dest))
     }
 }
 
-struct Storage<Backend: BackendStorage> {
+pub struct Storage<Backend: BackendStorage> {
     pub cell: RefCell<CachingStorage<Backend>>,
 }
 
@@ -282,10 +282,10 @@ mod tests {
     }
 
     #[test]
-    fn test_storagebacked() {
-        let mut backend = MemoryBackendStorage::new();
-        let mut cs = CachingStorage::new(backend);
-        let mut storage = Storage::new(cs);
+    fn test_storage_backed() {
+        let backend = MemoryBackendStorage::new();
+        let cs = CachingStorage::new(backend);
+        let storage = Storage::new(cs);
         let mut k0 = storage.new_storage_backed::<CustomType, 16>();
         let mut k1 = storage.new_storage_backed::<CustomType, 16>();
         let mut s0 = k0.get();
@@ -296,11 +296,9 @@ mod tests {
         s1.bar = 15;
         k0.set(s0);
         k1.set(s1);
-        let s0 = k0.get();
-        let s1 = k1.get();
-        assert_eq!(12, s0.foo);
-        assert_eq!(13, s0.bar);
-        assert_eq!(14, s1.foo);
-        assert_eq!(15, s1.bar);
+        assert_eq!(s0.foo, k0.get().foo);
+        assert_eq!(s0.bar, k0.get().bar);
+        assert_eq!(s1.foo, k1.get().foo);
+        assert_eq!(s1.bar, k1.get().bar);
     }
 }
