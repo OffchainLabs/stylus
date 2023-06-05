@@ -261,33 +261,33 @@ mod tests {
         assert_eq!(s3, u128::from_be_bytes(cs.get(&k3)));
     }
 
-    #[derive(Clone, Copy)]
-    struct CustomType {
-        foo: u64,
-        bar: u64,
-    }
+    #[test]
+    fn test_storage_backed() {
+        #[derive(Clone, Copy)]
+        struct TestingCustomType {
+            foo: u64,
+            bar: u64,
+        }
 
-    impl StorageSerde<CustomType, 16> for CustomType {
-        fn deserialize(data: [u8; 16]) -> Self {
-            Self{
-                foo: u64::from_be_bytes(data[..8].try_into().unwrap()),
-                bar: u64::from_be_bytes(data[8..16].try_into().unwrap()),
+        impl StorageSerde<TestingCustomType, 16> for TestingCustomType {
+            fn deserialize(data: [u8; 16]) -> Self {
+                Self{
+                    foo: u64::from_be_bytes(data[..8].try_into().unwrap()),
+                    bar: u64::from_be_bytes(data[8..16].try_into().unwrap()),
+                }
+            }
+
+            fn serialize(&self, dest: &mut [u8; 16]) {
+                dest[..8].copy_from_slice(&self.foo.to_be_bytes());
+                dest[8..16].copy_from_slice(&self.bar.to_be_bytes());
             }
         }
 
-        fn serialize(&self, dest: &mut [u8; 16]) {
-            dest[..8].copy_from_slice(&self.foo.to_be_bytes());
-            dest[8..16].copy_from_slice(&self.bar.to_be_bytes());
-        }
-    }
-
-    #[test]
-    fn test_storage_backed() {
         let backend = MemoryBackendStorage::new();
         let cs = CachingStorage::new(backend);
         let storage = Storage::new(cs);
-        let mut k0 = storage.new_storage_backed::<CustomType, 16>();
-        let mut k1 = storage.new_storage_backed::<CustomType, 16>();
+        let mut k0 = storage.new_storage_backed::<TestingCustomType, 16>();
+        let mut k1 = storage.new_storage_backed::<TestingCustomType, 16>();
         let mut s0 = k0.get();
         let mut s1 = k1.get();
         s0.foo = 12;
