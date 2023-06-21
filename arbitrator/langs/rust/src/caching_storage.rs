@@ -67,9 +67,19 @@ impl BackendStorage for MemoryBackendStorage {
 
 #[derive(Clone, Debug)]
 pub struct SubKey {
-    pub key: Bytes32,
-    pub offset: usize,
-    pub size: usize,
+    key: Bytes32,
+    offset: usize,
+    size: usize,
+}
+
+impl SubKey {
+    pub fn new(key: Bytes32, offset: usize, size: usize) -> Self {
+        let offset_end = offset + size;
+        if offset_end > 32 || offset > 32 || size > 32 {
+            panic!("SubKey {key} is invalid, offset:{offset}, size:{size}")
+        }
+        Self {key, offset, size}
+    }
 }
 
 #[derive(Debug)]
@@ -232,6 +242,34 @@ mod tests {
         let s1_new = cs.get_slot(key1.into());
         assert_eq!(s0, s0_new);
         assert_eq!(s1, s1_new);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_panic_large_offset() {
+        let _ = SubKey::new(Bytes32([0; 32]), 33, 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_panic_large_size() {
+        let _ = SubKey::new(Bytes32([0; 32]), 0, 33);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_panic_overflow() {
+        let _ = SubKey::new(Bytes32([0; 32]), 1, 32);
+    }
+
+    #[test]
+    fn test_new_zero_size() {
+        let backend = MemoryBackendStorage::new();
+        let mut cs = CachingStorage::new(backend);
+        let k0 = SubKey::new(Bytes32([0; 32]), 32, 0);
+        let s0bytes = [0; 0];
+        cs.set(&k0, &s0bytes);
+        assert_eq!(s0bytes, cs.get(&k0));
     }
 
     #[test]
