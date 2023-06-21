@@ -245,19 +245,19 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "SubKey 0000000000000000000000000000000000000000000000000000000000000000 is invalid, offset:33, size:0")]
     fn test_panic_large_offset() {
         let _ = SubKey::new(Bytes32([0; 32]), 33, 0);
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "SubKey 0000000000000000000000000000000000000000000000000000000000000000 is invalid, offset:0, size:33")]
     fn test_panic_large_size() {
         let _ = SubKey::new(Bytes32([0; 32]), 0, 33);
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "SubKey 0000000000000000000000000000000000000000000000000000000000000000 is invalid, offset:1, size:32")]
     fn test_panic_overflow() {
         let _ = SubKey::new(Bytes32([0; 32]), 1, 32);
     }
