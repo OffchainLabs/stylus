@@ -20,7 +20,7 @@ pub fn record(path: &Path, period: Duration) -> Result<()> {
         .append(true)
         .open(path)?;
 
-    affinity::set_thread_affinity(&[1]).unwrap();
+    affinity::set_thread_affinity([1]).unwrap();
     let core = affinity::get_thread_affinity().unwrap();
     println!("Affinity {}: {core:?}", std::process::id());
 
@@ -91,7 +91,7 @@ fn trial(file: &mut File) -> Result<bool> {
     Ok(success)
 }
 
-fn wat(wasm: &[u8]) -> Result<String> {
-    let text = wasmprinter::print_bytes(&wasm);
+fn _wat(wasm: &[u8]) -> Result<String> {
+    let text = wasmprinter::print_bytes(wasm);
     text.map_err(|x| eyre::eyre!(x))
 }

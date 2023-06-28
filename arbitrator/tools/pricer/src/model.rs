@@ -7,12 +7,14 @@ use eyre::{bail, ErrReport, Result};
 use rand::Rng;
 use std::{
     convert::TryInto,
+    fmt::format,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Seek, Write},
     path::Path,
     str::FromStr,
 };
 
+type Groups = [usize; OP_COUNT];
 type Weights = [f64; OP_COUNT + 3];
 type Ops = [usize; OP_COUNT];
 
@@ -33,10 +35,10 @@ impl FromStr for Trial {
 
         macro_rules! parse {
             ($i:expr) => {{
-                let Some(data) = data.get($i) else {
-                                                        // happens when recording new data
-                                                        bail!("incomplete line: {s}");
-                                                    };
+                let data = match data.get($i) {
+                    Some(data) => data,
+                    None => bail!("incomplete line: {s}"), // happens when recording new data
+                };
                 match data.parse() {
                     Ok(data) => data,
                     Err(err) => bail!("{err}: {s}"),
@@ -80,13 +82,21 @@ impl Model {
         Self { weights, fitness }
     }
 
+    pub fn get(&self, op: OperatorCode) -> f64 {
+        self.weights[op.seq()]
+    }
+
     pub fn set(&mut self, op: OperatorCode, weight: f64) {
         self.weights[op.seq()] = weight;
     }
 
     /// Assign random weights
-    fn random() -> Self {
-        let mut data: Vec<f64> = util::random_vec(OP_COUNT + 3); // between 0 and 1
+    fn random(groups: &Groups) -> Self {
+        //let mut data: Vec<f64> = util::random_vec(OP_COUNT + 3); // between 0 and 1
+        let mut data = [0.; OP_COUNT + 3];
+        for i in 0..OP_COUNT {
+            data[groups[i]] = rand::random();
+        }
         for i in 0..3 {
             data[OP_COUNT + i] = rand::random::<f64>() * 1000.;
         }
@@ -94,13 +104,13 @@ impl Model {
     }
 
     /// Adjust a weight randomly
-    fn mutate(&mut self) {
+    fn mutate(&mut self, groups: &Groups) {
         let mut rng = rand::thread_rng();
         let coef = rng.gen_range(0.75..1.25);
-        let term = rng.gen_range(-0.1..0.1);
+        let term = rng.gen_range(-0.001..0.001);
 
         let point = match rand::random() {
-            true => rand::random::<usize>() % 188,
+            true => groups[rand::random::<usize>() % 188],
             false => rand::random::<usize>() % 3 + OP_COUNT,
         };
         let mut update = coef * self.weights[point];
@@ -123,13 +133,18 @@ impl Model {
         Model::new(data)
     }
 
-    pub fn eval(&self, trial: &Trial) -> f64 {
+    pub fn eval(&self, trial: &Trial, groups: &Groups) -> f64 {
         let fixed_weight = self.weights[OP_COUNT + 0];
         let success_weight = self.weights[OP_COUNT + 1];
         let failure_weight = self.weights[OP_COUNT + 2];
 
         let mut predict = fixed_weight;
         for (count, weight) in trial.ops.iter().zip(self.weights) {
+            predict += *count as f64 * weight;
+        }
+        for (index, count) in trial.ops.iter().enumerate() {
+            let op = groups[index];
+            let weight = self.weights[op];
             predict += *count as f64 * weight;
         }
         predict += match trial.status {
@@ -141,13 +156,15 @@ impl Model {
         (predict - trial.nanos as f64).abs()
     }
 
-    pub fn error(&self, trial: &Trial) -> (f64, f64) {
+    pub fn error(&self, trial: &Trial, groups: &Groups) -> (f64, f64) {
         let fixed_weight = self.weights[OP_COUNT + 0];
         let success_weight = self.weights[OP_COUNT + 1];
         let failure_weight = self.weights[OP_COUNT + 2];
 
         let mut predict = fixed_weight;
-        for (count, weight) in trial.ops.iter().zip(self.weights) {
+        for (index, count) in trial.ops.iter().enumerate() {
+            let op = groups[index];
+            let weight = self.weights[op];
             predict += *count as f64 * weight;
         }
         predict += match trial.status {
@@ -160,39 +177,43 @@ impl Model {
         (error, 100. * error / trial.nanos as f64)
     }
 
-    pub fn print(&self) {
-        println!("{}", "Model:".grey());
+    pub fn print(&self, groups: &Groups) {
+        let gas = 0.064;
+
+        let f = |x: f64| {
+            let mut s = format!("{x:.4}");
+            if let Some(small) = s.strip_prefix("0.") {
+                s = format!(".{small}");
+            }
+            s
+        };
+
         let mut col = 0;
-        for (op, nanos) in self.weights.iter().enumerate().take(OP_COUNT) {
-            let op = OperatorCode::from_seq(op);
+        for index in 0..OP_COUNT {
+            let op = OperatorCode::from_seq(index);
+            let nanos = self.weights[groups[index]];
+            let group = OperatorCode::from_seq(groups[index]);
             if util::op_used(op) {
-                let entry = format!("{:02x} {:12} {:.2} ", op.0, op, nanos);
-                let entry = format!("{entry:23}");
+                let entry = format!("{:02x} {:12} {} {}", op.0, op, f(nanos), f(nanos * gas));
+                let entry = format!("{entry:29}");
                 print!("{}", entry.color(util::op_color(op)));
 
                 col += 1;
-                if col % 5 == 0 {
+                if col % 4 == 0 {
                     println!();
                 }
             }
         }
         println!();
-        let greyln = |x: String| println!("{}", x.grey());
-        greyln(format!("Fixed {:.2}", self.weights[OP_COUNT + 0]).grey());
-        greyln(format!("Grace {:.2}", self.weights[OP_COUNT + 1]).grey());
-        greyln(format!("Traps {:.2}", self.weights[OP_COUNT + 2]).grey());
-
-        let avg = |x: usize, y| {
-            let x = OperatorCode(x).seq();
-            let y = OperatorCode(y).seq();
-            let sum: f64 = (x..=y).map(|i| self.weights[i]).sum();
-            sum / (y - x + 1) as f64
+        let grey = |name: &str, index: usize| {
+            let nanos = self.weights[OP_COUNT + index];
+            let entry = format!("-- {name} {} {}", f(nanos), f(nanos * gas));
+            print!("{}", format!("{entry:29}").grey());
         };
-
-        println!("I32 Cmp: {:.3}", avg(0x45, 0x4f));
-        println!("I64 Cmp: {:.3}", avg(0x50, 0x5a));
-        println!("I32 Fast Bin: {:.3}", avg(0x6a, 0x6b));
-        println!("I64 Fast Bin: {:.3}", avg(0x7c, 0x7d));
+        grey("Fixed", 0);
+        grey("Grace", 1);
+        grey("Traps", 2);
+        println!();
     }
 
     fn print_data(&self) -> String {
@@ -244,14 +265,14 @@ struct Pop {
 }
 
 impl Pop {
-    fn new(size: usize) -> Pop {
+    fn new(size: usize, groups: &Groups) -> Pop {
         let mut models = vec![];
         for _ in 0..size {
-            models.push(Model::random());
+            models.push(Model::random(groups));
         }
         Pop {
+            best: models[0].clone(),
             models,
-            best: Model::random(),
         }
     }
 
@@ -287,7 +308,7 @@ struct Feed {
 
 impl Feed {
     fn new(path: &Path) -> Result<Self> {
-        let file = BufReader::new(File::open(&path)?);
+        let file = BufReader::new(File::open(path)?);
         Ok(Self { file })
     }
 
@@ -313,6 +334,53 @@ impl Feed {
     }
 }
 
+pub fn default_groups() -> Groups {
+    let mut groups = [0; OP_COUNT];
+    for i in 0..OP_COUNT {
+        groups[i] = i;
+    }
+    groups
+}
+
+pub fn groups() -> Groups {
+    let mut groups = [0; OP_COUNT];
+    for i in 0..OP_COUNT {
+        groups[i] = i;
+    }
+    macro_rules! set_range {
+        ($range:expr, $i:expr) => {
+            //assert!($range.contains(&$i));
+            assert!($range.start() >= &$i);
+            for code in $range {
+                groups[OperatorCode(code).seq()] = OperatorCode($i).seq();
+            }
+        };
+    }
+
+    set_range!(0x01..=0x02, 0x01); // NOPs
+    set_range!(0x41..=0x42, 0x01); // NOPs
+
+    set_range!(0x0c..=0x0d, 0x0c); // branching
+
+    set_range!(0x46..=0x4f, 0x46); // i32 comparisons
+    set_range!(0x50..=0x5a, 0x50); // i64 comparisons
+    set_range!(0x67..=0x69, 0x67); // i32 bit counters
+    set_range!(0x79..=0x7b, 0x79); // i64 bit counters
+
+    set_range!(0x6a..=0x6b, 0x6a); // fast i32 bin ops
+    set_range!(0x71..=0x78, 0x6a); // fast i32 bin ops
+    set_range!(0x7c..=0x7d, 0x7c); // fast i64 bin ops
+    set_range!(0x83..=0x8a, 0x7c); // fast i64 bin ops
+
+    set_range!(0xc0..=0xc1, 0xc0); // i32 extensions
+    set_range!(0xc2..=0xc4, 0xac); // i64 extensions
+
+    set_range!(0x6d..=0x70, 0x6d); // i32 divisions
+    set_range!(0x7f..=0x82, 0x7f); // i64 divisions
+
+    groups
+}
+
 pub fn model(path: &Path, output: &Path) -> Result<()> {
     let mut feed = Feed::new(path)?;
     let mut save = OpenOptions::new()
@@ -321,7 +389,8 @@ pub fn model(path: &Path, output: &Path) -> Result<()> {
         .append(true)
         .open(output)?;
 
-    let mut pop = Pop::new(256);
+    let groups = groups();
+    let mut pop = Pop::new(256, &groups);
 
     for gen in 0.. {
         let trials = feed.batch(1024)?;
@@ -331,7 +400,7 @@ pub fn model(path: &Path, output: &Path) -> Result<()> {
         for model in &mut pop.models {
             let mut total = 0.;
             for trial in &trials {
-                total += model.eval(trial);
+                total += model.eval(trial, &groups);
             }
             model.fitness = Some(total as usize / trials.len());
         }
@@ -363,7 +432,7 @@ pub fn model(path: &Path, output: &Path) -> Result<()> {
             let b = pop.select();
 
             let mut child = a.cross_over(b);
-            child.mutate();
+            child.mutate(&groups);
             new_pop.push(child);
         }
 

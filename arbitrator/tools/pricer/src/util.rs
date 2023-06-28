@@ -18,7 +18,7 @@ where
     entropy
 }
 
-pub fn abs_diff(a: usize, b: usize) -> usize {
+pub fn _abs_diff(a: usize, b: usize) -> usize {
     let max = a.max(b);
     let min = a.min(b);
     max - min
