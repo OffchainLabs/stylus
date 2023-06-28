@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 	"math/rand"
@@ -181,12 +182,14 @@ func testCalls(t *testing.T, jit bool) {
 	storeAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
+	readReturnDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("read-return-data"))
 	ensure(tx, err)
 
-	colors.PrintGrey("multicall.wasm ", callsAddr)
-	colors.PrintGrey("storage.wasm   ", storeAddr)
-	colors.PrintGrey("keccak.wasm    ", keccakAddr)
-	colors.PrintGrey("mock.evm       ", mockAddr)
+	colors.PrintGrey("multicall.wasm        ", callsAddr)
+	colors.PrintGrey("storage.wasm          ", storeAddr)
+	colors.PrintGrey("keccak.wasm           ", keccakAddr)
+	colors.PrintGrey("mock.evm              ", mockAddr)
+	colors.PrintGrey("read-return-data.wasm ", readReturnDataAddr)
 
 	kinds := make(map[vm.OpCode]byte)
 	kinds[vm.CALL] = 0x00
@@ -342,6 +345,28 @@ func testCalls(t *testing.T, jit bool) {
 	if !arbmath.BigEquals(balance, value) {
 		Fail(t, balance, value)
 	}
+
+	testTx := func(offset uint64, size uint64, expectSuccess bool) {
+		callData := [16]byte{}
+		binary.BigEndian.PutUint64(callData[0:8], offset)
+		binary.BigEndian.PutUint64(callData[8:16], size)
+		tx = l2info.PrepareTxTo("Owner", &readReturnDataAddr, 1e9, nil, callData[:])
+		if expectSuccess {
+			ensure(tx, l2client.SendTransaction(ctx, tx))
+		} else {
+			err = l2client.SendTransaction(ctx, tx)
+			Require(t, err)
+			_, err := EnsureTxSucceeded(ctx, l2client, tx)
+			if err == nil {
+				Require(t, errors.New("transaction should have failed"))
+			}
+		}
+
+	}
+	testTx(0, 0, true)
+	testTx(0, 4, true)
+	//testTx(0, 5, false)
+	//testTx(5, 1, false)
 
 	blocks := []uint64{11}
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
