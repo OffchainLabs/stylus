@@ -4,6 +4,7 @@ members = [
         "prover",
         "stylus",
         "jit",
+        "langs/rust"
 ]
 exclude = [
         "stylus/tests/"

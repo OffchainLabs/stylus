@@ -8,6 +8,7 @@ pub mod block;
 pub mod contract;
 pub mod debug;
 pub mod evm;
+pub mod extractors;
 pub mod msg;
 pub mod tx;
 mod util;

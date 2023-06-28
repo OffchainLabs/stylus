@@ -1,3 +1,6 @@
+// Copyright 2022-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 // Context will contain all "global" values like
 // Tx, Msg, Block, etc. For now, just Calldata is shown
 #[derive(Debug)]
