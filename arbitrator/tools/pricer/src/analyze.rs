@@ -21,10 +21,14 @@ pub fn analyze(model: Option<PathBuf>, trials: Option<PathBuf>) -> Result<()> {
     if let Some(path) = model {
         let model = Model::from_str(&last_line(&path)?)?;
         model.print(&groups());
-    }
-    if let Some(path) = trials {
-        let trial = Trial::from_str(&last_line(&path)?)?;
-        trial.print();
+        if let Some(trials) = &trials {
+            model.full_eval(&trials, &groups())?;
+        }
+    } else {
+        if let Some(path) = trials {
+            let trial = Trial::from_str(&last_line(&path)?)?;
+            trial.print();
+        }
     }
     Ok(())
 }

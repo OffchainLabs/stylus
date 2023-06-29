@@ -129,7 +129,7 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
             ];
 
             // include the cost of executing the header
-            for op in &header {
+            for op in header[0..4].iter().chain(&header[8..]) {
                 cost = cost.saturating_add((self.costs)(op))
             }
             header[1] = I64Const { value: cost as i64 };

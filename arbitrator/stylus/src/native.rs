@@ -108,6 +108,18 @@ impl<E: EvmApi> NativeInstance<E> {
         Self::from_module(module, store, env)
     }
 
+    pub fn from_wasm_wat(
+        wasm_or_wat: &[u8],
+        evm_api: E,
+        compile: &CompileConfig,
+        config: StylusConfig,
+    ) -> Result<Self> {
+        let env = WasmEnv::new(compile.clone(), Some(config), evm_api, EvmData::default());
+        let store = env.compile.store();
+        let module = Module::new(&store, wasm_or_wat)?;
+        Self::from_module(module, store, env)
+    }
+
     fn from_module(module: Module, mut store: Store, env: WasmEnv<E>) -> Result<Self> {
         let debug_funcs = env.compile.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);

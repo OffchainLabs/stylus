@@ -6,10 +6,10 @@ use arbutil::{color::Color, operator::OperatorCode};
 use eyre::{bail, ErrReport, Result};
 use rand::Rng;
 use std::{
+    collections::VecDeque,
     convert::TryInto,
-    fmt::format,
     fs::{File, OpenOptions},
-    io::{BufRead, BufReader, Seek, Write},
+    io::{BufRead, BufReader, Write},
     path::Path,
     str::FromStr,
 };
@@ -18,12 +18,15 @@ type Groups = [usize; OP_COUNT];
 type Weights = [f64; OP_COUNT + 3];
 type Ops = [usize; OP_COUNT];
 
-pub const OP_COUNT: usize = 529;
+//pub const OP_COUNT: usize = 529;
+pub const OP_COUNT: usize = 256;
 
+#[derive(Clone)]
 pub struct Trial {
     nanos: usize,
     ops: Ops,
     status: bool,
+    bucket: usize,
 }
 
 impl FromStr for Trial {
@@ -52,7 +55,12 @@ impl FromStr for Trial {
             let op = OperatorCode(parse!(i));
             ops[op.seq()] = parse!(i + 1);
         }
-        Ok(Trial { nanos, status, ops })
+        Ok(Trial {
+            nanos,
+            status,
+            ops,
+            bucket: 0,
+        })
     }
 }
 
@@ -152,8 +160,12 @@ impl Model {
             false => failure_weight,
         };
 
-        // TODO: bias
-        (predict - trial.nanos as f64).abs()
+        // we impose a large penalty to under-predicting costs
+        let mut fitness = predict - trial.nanos as f64;
+        if fitness < 0. {
+            fitness *= -100.
+        }
+        fitness
     }
 
     pub fn error(&self, trial: &Trial, groups: &Groups) -> (f64, f64) {
@@ -175,6 +187,56 @@ impl Model {
         // TODO: bias
         let error = predict - trial.nanos as f64;
         (error, 100. * error / trial.nanos as f64)
+    }
+
+    pub fn full_eval(&self, path: &Path, groups: &Groups) -> Result<()> {
+        let file = BufReader::new(File::open(path)?);
+        self.print(groups);
+
+        let threshold = 90.;
+        let mut issues = 0;
+        let mut trail_count = 0;
+
+        let mut above = 0.;
+        let mut below = 0.;
+        let mut percent_above = 0.;
+        let mut percent_below = 0.;
+        let mut count_above = 0;
+        let mut count_below = 0;
+        let mut worst_above: f64 = 0.;
+        let mut worst_below: f64 = 0.;
+        for line in file.lines() {
+            let trial = Trial::from_str(&line?)?;
+            let (error, percent) = self.error(&trial, &groups);
+            if error > 0. {
+                above += error;
+                percent_above += percent;
+                count_above += 1;
+                worst_above = worst_above.max(percent);
+            } else {
+                below -= error;
+                percent_below -= percent;
+                count_below += 1;
+                worst_below = worst_below.max(percent.abs());
+                if -percent >= threshold {
+                    issues += 1;
+                }
+            }
+            trail_count += 1;
+        }
+        println!(
+            "Error {} {}",
+            util::format_nanos(above as usize / count_above),
+            util::format_nanos(below as usize / count_below),
+        );
+        println!(
+            "Error {:.2}% {:.2}% {:.2}% {:.2}% {issues}/{trail_count}",
+            percent_above / count_above as f64,
+            percent_below / count_below as f64,
+            worst_above,
+            worst_below,
+        );
+        Ok(())
     }
 
     pub fn print(&self, groups: &Groups) {
@@ -300,37 +362,57 @@ impl Pop {
         let i = rng.gen_range(0..self.models.len() / 2);
         &self.models[i]
     }
+
+    fn mix(&self) -> Model {
+        let mut mixed = Model::default();
+        let count = self.models.len();
+        for model in self.models.iter().take(count) {
+            for (i, weight) in model.weights.iter().enumerate() {
+                mixed.weights[i] += weight / count as f64;
+            }
+        }
+        mixed
+    }
 }
 
-struct Feed {
-    file: BufReader<File>,
+struct Feed<const N: usize> {
+    trials: [VecDeque<Trial>; N],
 }
 
-impl Feed {
+impl<const N: usize> Feed<N> {
     fn new(path: &Path) -> Result<Self> {
         let file = BufReader::new(File::open(path)?);
-        Ok(Self { file })
+        let mut all_trials = VecDeque::new();
+        for line in file.lines() {
+            all_trials.push_back(line?.parse()?);
+        }
+
+        let mut trials = [0; N].map(|_| VecDeque::new());
+        trials[0] = all_trials;
+        Ok(Self { trials })
     }
 
     fn batch(&mut self, size: usize) -> Result<Vec<Trial>> {
         let mut trials = vec![];
-        for _ in 0..size {
-            let line = self.read_line()?;
-            trials.push(Trial::from_str(&line)?);
+        let mut bucket = N - 1;
+        while trials.len() < size {
+            bucket = (bucket + 1) % N;
+            let Some(trial) = self.trials[bucket].pop_front() else {
+                continue;
+            };
+            trials.push(trial);
         }
         Ok(trials)
     }
 
-    fn read_line(&mut self) -> Result<String> {
-        let mut line = String::new();
-        if self.file.read_line(&mut line)? == 0 {
-            self.file.seek(std::io::SeekFrom::Start(0)).unwrap();
-            println!("restarting feed");
-
-            line.clear();
-            self.file.read_line(&mut line)?;
+    fn insert(&mut self, mut trial: Trial, promote: bool) {
+        let bucket = &mut trial.bucket;
+        if promote {
+            *bucket = bucket.saturating_sub(1);
+        } else {
+            *bucket = (*bucket + 1).min(N - 1);
         }
-        Ok(line)
+        self.trials[*bucket].push_back(trial);
     }
 }
 
@@ -382,7 +464,7 @@ pub fn groups() -> Groups {
 }
 
 pub fn model(path: &Path, output: &Path) -> Result<()> {
-    let mut feed = Feed::new(path)?;
+    let mut feed: Feed<2> = Feed::new(path)?;
     let mut save = OpenOptions::new()
         .create(true)
         .write(true)
@@ -393,7 +475,7 @@ pub fn model(path: &Path, output: &Path) -> Result<()> {
     let mut pop = Pop::new(256, &groups);
 
     for gen in 0.. {
-        let trials = feed.batch(1024)?;
+        let trials = feed.batch(512)?;
         let trial_time = trials.iter().map(|x| x.nanos).saturating_sum();
         let trial_time = trial_time / trials.len();
 
@@ -409,6 +491,11 @@ pub fn model(path: &Path, output: &Path) -> Result<()> {
 
         pop.sort();
 
+        for trial in trials {
+            let (error, _) = pop.models[0].error(&trial, &groups);
+            feed.insert(trial, error < 0.);
+        }
+
         let (pop_fitness, pop_best) = pop.stats();
         let percent = 100. * pop_best as f64 / trial_time as f64;
         println!(
@@ -418,12 +505,23 @@ pub fn model(path: &Path, output: &Path) -> Result<()> {
             util::format_nanos(pop_fitness)
         );
 
+        let done = feed.trials[0].is_empty();
         if pop_best < curr_best {
             pop.best = pop.models[0].clone();
         }
-        if pop_best < curr_best || gen % 100 == 0 {
+        if pop_best < curr_best || gen % 100 == 0 || done {
             writeln!(&mut save, "{}", pop.models[0].print_data())?;
             save.flush()?;
+        }
+        if (gen != 0 && gen % 500 == 0) || done {
+            pop.models[0].full_eval(path, &groups)?;
+            for (i, trials) in feed.trials.iter().enumerate() {
+                println!("{i}: {}", trials.len());
+            }
+            pop.mix().full_eval(path, &groups)?;
+        }
+        if done {
+            return Ok(())
         }
 
         let mut new_pop = vec![];
