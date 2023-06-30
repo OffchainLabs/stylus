@@ -5,12 +5,53 @@ use arbitrum::{
     extractors::{trigger, Calldata, Context},
     Bytes20, Bytes32,
 };
+use arbitrum_macros::Params;
 
 // Note: temporarily using printlns until
 // returndata is implemented, run with
 // cargo test -- --nocapture to view
 fn print_success(msg: String) {
     println!("SUCCESS: {}", msg);
+}
+
+// Testing derived extractor macro
+#[test]
+fn derived_extractor() {
+    #[derive(Params)]
+    struct BalanceOfParams {
+        account: Bytes20,
+    }
+
+    let ctx = Context {
+        calldata: Calldata(BalanceOfParams {
+            account: Bytes20::from(0u32),
+        }),
+    };
+
+    fn balance_of(BalanceOfParams { account }: &BalanceOfParams) {
+        print_success(format!(
+            "Derived BalanceOf Extractor - account: {}",
+            account
+        ));
+    }
+
+    trigger(&ctx, balance_of);
+
+    #[derive(Params)]
+    struct TransferParams(u64, u64);
+
+    let ctx = Context {
+        calldata: Calldata(TransferParams(99, 66)),
+    };
+
+    fn transfer(TransferParams(to, amount): &TransferParams) {
+        print_success(format!(
+            "Derived TransferParams Extractor - to: {}, amount: {}",
+            to, amount
+        ));
+    }
+
+    trigger(&ctx, transfer);
 }
 
 #[test]

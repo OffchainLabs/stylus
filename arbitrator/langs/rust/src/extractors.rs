@@ -1,5 +1,6 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+pub use arbitrum_macros::*;
 
 // Context will contain all "global" values like
 // Tx, Msg, Block, etc. For now, just Calldata is shown
@@ -34,7 +35,7 @@ impl<CD> FromContext<CD> for Context<CD> {
     }
 }
 
-// The Handler triat requires that a call function be defined
+// The Handler trait requires that a call function be defined
 // for a given type and context
 pub trait Handler<T, CD> {
     fn call(&self, ctx: &Context<CD>);

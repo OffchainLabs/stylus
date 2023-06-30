@@ -5,5 +5,4 @@ edition = "2021"
 
 [dependencies]
 hex = "0.4.3"
-
-
+arbitrum_macros = { path = "../rust_macros" }
