@@ -52,7 +52,6 @@ impl JsCallIntoGo for ApiCaller {
 /// Executes a wasm on a new thread
 pub(super) fn exec_wasm(
     sp: &mut GoStack,
-    //mut env: WasmEnvMut,
     env: &mut WasmEnv,
     module: Vec<u8>,
     calldata: Vec<u8>,
