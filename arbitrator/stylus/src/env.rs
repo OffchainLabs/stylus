@@ -15,8 +15,7 @@ use std::{
 };
 use thiserror::Error;
 use wasmer::{
-    FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView, Pages, StoreMut,
-    WasmPtr,
+    FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView, Pages, StoreMut, WasmPtr,
 };
 
 pub type WasmEnvMut<'a, E> = FunctionEnvMut<'a, WasmEnv<E>>;
