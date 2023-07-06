@@ -383,7 +383,7 @@ pub fn js_value_set_index(mut env: WasmEnvMut, sp: u32) {
 
 /// go side: λ(v value, method string, args []value) (value, bool)
 pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env, mut store) = GoStack::new_with_store(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
     let rng = &mut env.go_state.rng;
     let pool = &mut env.js_state.pool;
 
@@ -475,7 +475,7 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
                     );
 
                     // SAFETY: only sp is live after this
-                    unsafe { sp.resume(env, &mut store)? };
+                    unsafe { sp.resume(env)? };
                     GoValue::Null
                 }
                 _ => fail!("Go trying to call fs.write with bad args {args:?}"),

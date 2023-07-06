@@ -9,7 +9,7 @@ use eyre::Result;
 use parking_lot::Mutex;
 use std::fmt::{Debug, Display};
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
-use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
+use wasmparser::{BlockType, Operator};
 
 pub const STYLUS_INK_LEFT: &str = "stylus_ink_left";
 pub const STYLUS_INK_STATUS: &str = "stylus_ink_status";
@@ -113,7 +113,7 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
                 I64Const { value: cost as i64 },
                 I64LtU,
                 If {
-                    ty: TypeOrFuncType::Type(WpType::EmptyBlockType),
+                    blockty: BlockType::Empty,
                 },
                 I32Const { value: 1 },
                 GlobalSet {

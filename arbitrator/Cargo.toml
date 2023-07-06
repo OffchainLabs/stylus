@@ -9,5 +9,14 @@ exclude = [
         "stylus/tests/"
 ]
 
+[workspace.package]
+authors = ["Offchain Labs"]
+edition = "2021"
+homepage = "https://arbitrum.io/"
+license = "BSL"
+repository = "https://github.com/OffchainLabs/nitro.git"
+rust-version = "1.67"
+version = "4.0.0" # tracks wasmer for now
+
 [profile.release]
 debug = true

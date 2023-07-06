@@ -33,7 +33,7 @@ arbutil = { path = "../arbutil/" }
 wasmer = { path = "../tools/wasmer/lib/api/", optional = true }
 wasmer-types = { path = "../tools/wasmer/lib/types" }
 wasmer-compiler-singlepass = { path = "../tools/wasmer/lib/compiler-singlepass", optional = true, default-features = false, features = ["std", "unwind", "avx"] }
-wasmparser = "0.83"
+wasmparser = "0.95"
 
 [lib]
 name = "prover"

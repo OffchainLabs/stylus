@@ -9,73 +9,38 @@ use crate::{
     wavmio::{Bytes20, Bytes32},
 };
 use arbutil::Color;
-use ouroboros::self_referencing;
 use rand_pcg::Pcg32;
 use std::collections::{BTreeSet, BinaryHeap};
-use wasmer::{AsStoreRef, Memory, MemoryView, StoreMut, StoreRef, WasmPtr};
+use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
 
-#[self_referencing]
-struct MemoryViewContainer {
-    memory: Memory,
-    #[borrows(memory)]
-    #[covariant]
-    view: MemoryView<'this>,
-}
-
-impl MemoryViewContainer {
-    fn create(env: &WasmEnvMut<'_>) -> Self {
-        // this func exists to properly constrain the closure's type
-        fn closure<'a>(
-            store: &'a StoreRef,
-        ) -> impl (for<'b> FnOnce(&'b Memory) -> MemoryView<'b>) + 'a {
-            move |memory: &Memory| memory.view(&store)
-        }
-
-        let store = env.as_store_ref();
-        let memory = env.data().memory.clone().unwrap();
-        let view_builder = closure(&store);
-        MemoryViewContainerBuilder {
-            memory,
-            view_builder,
-        }
-        .build()
-    }
-
-    fn view(&self) -> &MemoryView {
-        self.borrow_view()
-    }
-}
-
-pub struct GoStack {
+pub struct GoStack<'s> {
     sp: u32,
     top: u32,
-    memory: MemoryViewContainer,
+    pub memory: Memory,
+    pub store: StoreMut<'s>,
 }
 
 #[allow(dead_code)]
-impl GoStack {
-    pub fn new<'a, 'b: 'a>(start: u32, env: &'a mut WasmEnvMut<'b>) -> (Self, &'a mut WasmEnv) {
-        let sp = Self::simple(start, env);
-        (sp, env.data_mut())
-    }
-
-    pub fn new_with_store<'a, 'b: 'a>(
-        start: u32,
-        env: &'a mut WasmEnvMut<'b>,
-    ) -> (Self, &'a mut WasmEnv, StoreMut<'a>) {
-        let sp = Self::simple(start, env);
-        let (env, store) = env.data_and_store_mut();
-        (sp, env, store)
-    }
-
-    pub fn simple(sp: u32, env: &WasmEnvMut<'_>) -> Self {
+impl<'s> GoStack<'s> {
+    pub fn new(sp: u32, env: &'s mut WasmEnvMut) -> (Self, &'s mut WasmEnv) {
         let top = sp + 8;
-        let memory = MemoryViewContainer::create(env);
-        Self { sp, top, memory }
+        let memory = env.data().memory.clone().unwrap();
+        let (data, store) = env.data_and_store_mut();
+        let sp = Self {
+            sp,
+            top,
+            memory,
+            store,
+        };
+        (sp, data)
     }
 
-    fn view(&self) -> &MemoryView {
-        self.memory.view()
+    pub fn simple(sp: u32, env: &'s mut WasmEnvMut) -> Self {
+        Self::new(sp, env).0
+    }
+
+    fn view(&self) -> MemoryView {
+        self.memory.view(&self.store)
     }
 
     /// Returns the memory size, in bytes.
@@ -112,22 +77,22 @@ impl GoStack {
 
     pub fn read_u8_raw(&self, ptr: u32) -> u8 {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).read().unwrap()
+        ptr.deref(&self.view()).read().unwrap()
     }
 
     pub fn read_u16_raw(&self, ptr: u32) -> u16 {
         let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).read().unwrap()
+        ptr.deref(&self.view()).read().unwrap()
     }
 
     pub fn read_u32_raw(&self, ptr: u32) -> u32 {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).read().unwrap()
+        ptr.deref(&self.view()).read().unwrap()
     }
 
     pub fn read_u64_raw(&self, ptr: u32) -> u64 {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).read().unwrap()
+        ptr.deref(&self.view()).read().unwrap()
     }
 
     pub fn read_ptr<T>(&mut self) -> *const T {
@@ -164,25 +129,25 @@ impl GoStack {
 
     pub fn write_u8_raw(&mut self, ptr: u32, x: u8) -> &mut Self {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).write(x).unwrap();
+        ptr.deref(&self.view()).write(x).unwrap();
         self
     }
 
     pub fn write_u16_raw(&mut self, ptr: u32, x: u16) -> &mut Self {
         let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).write(x).unwrap();
+        ptr.deref(&self.view()).write(x).unwrap();
         self
     }
 
     pub fn write_u32_raw(&mut self, ptr: u32, x: u32) -> &mut Self {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).write(x).unwrap();
+        ptr.deref(&self.view()).write(x).unwrap();
         self
     }
 
     pub fn write_u64_raw(&mut self, ptr: u32, x: u64) -> &mut Self {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).write(x).unwrap();
+        ptr.deref(&self.view()).write(x).unwrap();
         self
     }
 
@@ -275,7 +240,7 @@ impl GoStack {
     /// # Safety
     ///
     /// Caller must cut lifetimes before this call.
-    pub unsafe fn resume(&mut self, env: &mut WasmEnv, store: &mut StoreMut) -> MaybeEscape {
+    pub unsafe fn resume(&mut self, env: &mut WasmEnv) -> MaybeEscape {
         let Some(resume) = &env.exports.resume else {
             return Escape::failure(format!("wasmer failed to bind {}", "resume".red()))
         };
@@ -287,10 +252,10 @@ impl GoStack {
         let saved = self.top - self.sp;
 
         // recursively call into wasmer (reentrant)
-        resume.call(store)?;
+        resume.call(&mut self.store)?;
 
         // recover the stack pointer
-        let pointer = get_stack_pointer.call(store)? as u32;
+        let pointer = get_stack_pointer.call(&mut self.store)? as u32;
         self.sp = pointer;
         self.top = pointer + saved;
         Ok(())
@@ -357,9 +322,9 @@ fn test_sp() -> eyre::Result<()> {
     let mut store = CompileConfig::default().store();
     let mut env = WasmEnv::default();
     env.memory = Some(Memory::new(&mut store, MemoryType::new(0, None, false))?);
-    let env = FunctionEnv::new(&mut store, env);
+    let env = &mut FunctionEnv::new(&mut store, env).into_mut(&mut store);
 
-    let mut sp = GoStack::simple(0, &env.into_mut(&mut store));
+    let mut sp = GoStack::simple(0, env);
     assert_eq!(sp.advance(3), 8 + 0);
     assert_eq!(sp.advance(2), 8 + 3);
     assert_eq!(sp.skip_space().top, 8 + 8);

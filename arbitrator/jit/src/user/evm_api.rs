@@ -5,7 +5,7 @@
 
 use crate::{
     gostack::GoStack,
-    machine::WasmEnvMut,
+    machine::WasmEnv,
     syscall::{DynamicObject, GoValue, JsValue, STYLUS_ID},
 };
 use arbutil::{
@@ -52,7 +52,8 @@ impl JsCallIntoGo for ApiCaller {
 /// Executes a wasm on a new thread
 pub(super) fn exec_wasm(
     sp: &mut GoStack,
-    mut env: WasmEnvMut,
+    //mut env: WasmEnvMut,
+    env: &mut WasmEnv,
     module: Vec<u8>,
     calldata: Vec<u8>,
     compile: CompileConfig,
@@ -90,13 +91,12 @@ pub(super) fn exec_wasm(
     });
 
     loop {
-        let msg = match rx.recv_timeout(env.data().process.child_timeout) {
+        let msg = match rx.recv_timeout(env.process.child_timeout) {
             Ok(msg) => msg,
             Err(err) => bail!("{}", err.red()),
         };
         match msg {
             Call(func, args, respond) => {
-                let (env, mut store) = env.data_and_store_mut();
                 let js = &mut env.js_state;
 
                 let mut objects = vec![];
@@ -112,7 +112,7 @@ pub(super) fn exec_wasm(
                 };
 
                 js.set_pending_event(func, JsValue::Ref(STYLUS_ID), objects);
-                unsafe { sp.resume(env, &mut store)? };
+                unsafe { sp.resume(env)? };
 
                 let js = &mut env.js_state;
                 let Some(JsValue::Ref(output)) = js.stylus_result.take() else {

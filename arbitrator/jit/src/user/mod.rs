@@ -21,8 +21,8 @@ mod evm_api;
 
 /// Compiles and instruments user wasm.
 /// go side: λ(wasm []byte, version, debug u32, pageLimit u16) (machine *Machine, footprint u32, err *Vec<u8>)
-pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn compile_user_wasm(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     let wasm = sp.read_go_slice_owned();
     let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
     let page_limit = sp.read_u16();
@@ -56,8 +56,8 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
 /// Links and executes a user wasm.
 /// λ(mach *Machine, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData, gas *u64, root *[32]byte)
 ///     -> (status byte, out *Vec<u8>)
-pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let sp = &mut GoStack::simple(sp, &env);
+pub fn call_user_wasm(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (mut sp, data) = GoStack::new(sp, &mut env);
     use UserOutcome::*;
 
     // move inputs
@@ -76,7 +76,7 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     sp.skip_u64();
 
     let result = exec_wasm(
-        sp, env, module, calldata, compile, config, evm_api, evm_data, ink,
+        &mut sp, data, module, calldata, compile, config, evm_api, evm_data, ink,
     );
     let (outcome, ink_left) = result.map_err(Escape::Child)?;
 
@@ -93,16 +93,16 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
 /// Reads the length of a rust `Vec`
 /// go side: λ(vec *Vec<u8>) (len u32)
-pub fn read_rust_vec_len(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn read_rust_vec_len(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     let vec: &Vec<u8> = unsafe { &*sp.read_ptr() };
     sp.write_u32(vec.len() as u32);
 }
 
 /// Copies the contents of a rust `Vec` into a go slice, dropping it in the process
 /// go side: λ(vec *Vec<u8>, dest []byte)
-pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn rust_vec_into_slice(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     let vec: Vec<u8> = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
     let ptr: *mut u8 = sp.read_ptr_mut();
     sp.write_slice(ptr as u64, &vec);
@@ -111,8 +111,8 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 
 /// Creates a `StylusConfig` from its component parts.
 /// go side: λ(version, maxDepth u32, inkPrice, hostioInk u64, debugMode: u32) *(CompileConfig, StylusConfig)
-pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn rust_config_impl(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
 
     let config = StylusConfig {
         version: sp.read_u32(),
@@ -132,8 +132,8 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 ///     blockGasLimit u64, blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
 ///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte,
 ///) *EvmData
-pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn evm_data_impl(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     let evm_data = EvmData {
         block_basefee: sp.read_bytes32().into(),
         block_chainid: sp.read_bytes32().into(),

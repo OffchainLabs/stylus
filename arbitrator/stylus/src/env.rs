@@ -15,7 +15,7 @@ use std::{
 };
 use thiserror::Error;
 use wasmer::{
-    AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView, Pages, StoreMut,
+    FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView, Pages, StoreMut,
     WasmPtr,
 };
 
@@ -105,7 +105,7 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
     }
 
     pub fn view(&self) -> MemoryView {
-        self.memory.view(&self.store.as_store_ref())
+        self.memory.view(&self.store)
     }
 
     pub fn memory_size(&self) -> Pages {
