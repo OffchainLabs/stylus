@@ -184,11 +184,13 @@ func testCalls(t *testing.T, jit bool) {
 	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
+	simpleCallAddr := deployWasm(t, ctx, auth, l2client, rustFile("simple-call"))
 
-	colors.PrintGrey("multicall.wasm ", callsAddr)
-	colors.PrintGrey("storage.wasm   ", storeAddr)
-	colors.PrintGrey("keccak.wasm    ", keccakAddr)
-	colors.PrintGrey("mock.evm       ", mockAddr)
+	colors.PrintGrey("multicall.wasm  ", callsAddr)
+	colors.PrintGrey("storage.wasm    ", storeAddr)
+	colors.PrintGrey("keccak.wasm     ", keccakAddr)
+	colors.PrintGrey("mock.evm        ", mockAddr)
+	colors.PrintGrey("simple-call.evm ", simpleCallAddr)
 
 	kinds := make(map[vm.OpCode]byte)
 	kinds[vm.CALL] = 0x00
@@ -321,6 +323,10 @@ func testCalls(t *testing.T, jit bool) {
 	if !arbmath.BigEquals(balance, value) {
 		Fatal(t, balance, value)
 	}
+
+	colors.PrintBlue("Checking simple call")
+	tx = l2info.PrepareTxTo("Owner", &simpleCallAddr, 1e9, value, nil)
+	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	blocks := []uint64{11}
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
