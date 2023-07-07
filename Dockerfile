@@ -84,11 +84,10 @@ RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wa
 
 FROM rust:1.68-slim-bullseye as prover-header-builder
 WORKDIR /workspace
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y git
 RUN export DEBIAN_FRONTEND=noninteractive && \
     export CARGO_NET_GIT_FETCH_WITH_CLI=true && \
     apt-get update && \
-    apt-get install -y make wabt && \
+    apt-get install -y make wabt git && \
     cargo install --force cbindgen
 COPY arbitrator/Cargo.* arbitrator/stylus/cbindgen.toml arbitrator/stylus/
 COPY ./Makefile ./
