@@ -23,3 +23,6 @@
 [submodule "blockscout"]
 	path = blockscout
 	url = https://github.com/OffchainLabs/blockscout.git
+[submodule "arbitrator/tools/wasm-tools"]
+	path = arbitrator/tools/wasm-tools
+	url = https://github.com:OffchainLabs/wasm-tools.git

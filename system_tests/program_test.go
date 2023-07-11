@@ -894,3 +894,38 @@ func formatTime(duration time.Duration) string {
 	}
 	return fmt.Sprintf("%.2f%s", span, units[unit])
 }
+
+func TestTemp(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1(t, ctx, true)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		return EnsureTxFailed(t, ctx, l2client, tx)
+	}
+
+	auth := l2info.GetDefaultTransactOpts("Faucet", ctx)
+	auth.GasLimit = 32000000
+
+	var programTest *mocksgen.ProgramTest
+	timed(t, "deploy", func() {
+		_, _, contract, err := mocksgen.DeployProgramTest(&auth, l2client)
+		Require(t, err)
+		programTest = contract
+	})
+
+	timed(t, "ecrecover", func() {
+		receipt := ensure(programTest.FillBlockRecover(&auth))
+		println("ecrecover:", receipt.GasUsedForL2(), receipt.GasUsedForL1, receipt.GasUsed)
+	})
+
+	timed(t, "keccak", func() {
+		receipt := ensure(programTest.FillBlockHash(&auth))
+		println("keccak:", receipt.GasUsedForL2(), receipt.GasUsedForL1, receipt.GasUsed)
+	})
+}
