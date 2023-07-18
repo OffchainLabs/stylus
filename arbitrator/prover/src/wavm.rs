@@ -7,13 +7,11 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType},
 };
 use arbutil::Bytes32;
-use digest::Digest;
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use sha3::Keccak256;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 use wasmparser::{Operator, Type, TypeOrFuncType as BlockType};
 
@@ -368,25 +366,6 @@ impl Instruction {
         ret
     }
 
-    pub fn hash(&self) -> Bytes32 {
-        let dataless = self.proving_argument_data.is_none() && self.argument_data == 0;
-        if dataless {
-            if let Some(hash) = OP_HASHES.lock().get(&self.opcode) {
-                return *hash;
-            }
-        }
-
-        let mut h = Keccak256::new();
-        h.update(b"Instruction:");
-        h.update(self.opcode.repr().to_be_bytes());
-        h.update(self.get_proving_argument_data());
-        let hash: Bytes32 = h.finalize().into();
-
-        if dataless {
-            OP_HASHES.lock().insert(self.opcode, hash);
-        }
-        hash
-    }
 }
 
 /// Note: An Unreachable stack state is equal to any other stack state.

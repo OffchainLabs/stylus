@@ -73,8 +73,38 @@ pub struct Function {
     code: Vec<Instruction>,
     ty: FunctionType,
     #[serde(skip)]
-    code_merkle: Merkle,
+    opcode_merkle: Merkle,
+    #[serde(skip)]
+    argument_data_merkle: Merkle,
     local_types: Vec<ArbValueType>,
+}
+
+#[cfg(feature = "native")]
+fn code_to_opcode_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {
+    code.par_iter().map(|i| {
+        let mut b = [0u8; 32];
+        b[30..].copy_from_slice(i.opcode.repr().to_be_bytes().as_slice());
+        Bytes32(b)
+    }).collect()
+}
+
+#[cfg(not(feature = "native"))]
+fn code_to_opcode_hashes(code: &Vec<Instruction>) -> Merkle {
+    code.iter().map(|i| {
+        let mut b = [0u8; 32];
+        b[30..].copy_from_slice(i.opcode.repr().to_be_bytes().as_slice());
+        Bytes32(b)
+    }).collect()
+}
+
+#[cfg(feature = "native")]
+fn code_to_argdata_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {
+    code.par_iter().map(|i| i.get_proving_argument_data()).collect()
+}
+
+#[cfg(not(feature = "native"))]
+fn code_to_argdata_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {
+    code.iter().map(|i| i.get_proving_argument_data()).collect()
 }
 
 impl Function {
@@ -133,16 +163,14 @@ impl Function {
             "Function instruction count doesn't fit in a u32",
         );
 
-        #[cfg(feature = "native")]
-        let code_hashes = code.par_iter().map(|i| i.hash()).collect();
-
-        #[cfg(not(feature = "native"))]
-        let code_hashes = code.iter().map(|i| i.hash()).collect();
+        let argument_data_hashes = code_to_argdata_hashes(&code);
+        let opcode_hashes = code_to_opcode_hashes(&code);
 
         Function {
             code,
             ty,
-            code_merkle: Merkle::new(MerkleType::Instruction, code_hashes),
+            opcode_merkle:Merkle::new(MerkleType::Opcode, opcode_hashes),
+            argument_data_merkle: Merkle::new(MerkleType::ArgumentData, argument_data_hashes),
             local_types,
         }
     }
@@ -150,7 +178,8 @@ impl Function {
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Function:");
-        h.update(self.code_merkle.root());
+        h.update(self.opcode_merkle.root());
+        h.update(self.argument_data_merkle.root());
         h.finalize().into()
     }
 }
@@ -1427,13 +1456,11 @@ impl Machine {
             let funcs =
                 Arc::get_mut(&mut module.funcs).expect("Multiple copies of module functions");
             for func in funcs.iter_mut() {
-                #[cfg(feature = "native")]
-                let code_hashes = func.code.par_iter().map(|i| i.hash()).collect();
+                let opcode_hashes = code_to_opcode_hashes(&func.code);
+                let argdata_hashes = code_to_argdata_hashes(&func.code);
 
-                #[cfg(not(feature = "native"))]
-                let code_hashes = func.code.iter().map(|i| i.hash()).collect();
-
-                func.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
+                func.opcode_merkle = Merkle::new(MerkleType::Opcode, opcode_hashes);
+                func.argument_data_merkle = Merkle::new(MerkleType::ArgumentData, argdata_hashes);
             }
             module.funcs_merkle = Arc::new(Merkle::new(
                 MerkleType::Function,
@@ -2640,11 +2667,20 @@ impl Machine {
         // Begin next instruction proof
 
         let func = &module.funcs[self.pc.func()];
-        out!(func.code[self.pc.inst()].serialize_for_proof());
+        let mut b = [0u8; 32];
+        b[30..].copy_from_slice(func.code[self.pc.inst()].opcode.repr().to_be_bytes().as_slice());
+        out!(b);
         out!(func
-            .code_merkle
+            .opcode_merkle
             .prove(self.pc.inst())
             .expect("Failed to prove against code merkle"));
+        out!(func.code[self.pc.inst()].get_proving_argument_data());
+        out!(func
+            .argument_data_merkle
+            .prove(self.pc.inst())
+            .expect("Failed to prove against code merkle"));
+        println!("\nopcode {} argdata {}", func.code[self.pc.inst()].opcode.repr(), func.code[self.pc.inst()].get_proving_argument_data());
+        println!("opcodeMerkle {} argdataMerkle {} funcMerkle {}", func.opcode_merkle.root(), func.argument_data_merkle.root(), module.funcs_merkle.root());
         out!(module
             .funcs_merkle
             .prove(self.pc.func())
