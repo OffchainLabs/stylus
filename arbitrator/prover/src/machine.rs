@@ -39,6 +39,7 @@ use std::{
     num::Wrapping,
     path::{Path, PathBuf},
     sync::Arc,
+    cmp::min,
 };
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
@@ -79,22 +80,25 @@ pub struct Function {
     local_types: Vec<ArbValueType>,
 }
 
-#[cfg(feature = "native")]
-fn code_to_opcode_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {
-    code.par_iter().map(|i| {
-        let mut b = [0u8; 32];
-        b[30..].copy_from_slice(i.opcode.repr().to_be_bytes().as_slice());
-        Bytes32(b)
-    }).collect()
+fn code_to_opcode_hash(code: &Vec<Instruction>, opcode_idx:usize) -> Bytes32 {
+    let seg = opcode_idx/16;
+    let seg_start = seg*16;
+    let seg_end = min(seg_start + 16, code.len());
+    let mut b = [0u8; 32];
+    for i in 0..(seg_end-seg_start){
+        b[i*2..i*2+2].copy_from_slice(code[seg_start + i].opcode.repr().to_be_bytes().as_slice())
+    }
+    Bytes32(b)
 }
 
-#[cfg(not(feature = "native"))]
-fn code_to_opcode_hashes(code: &Vec<Instruction>) -> Merkle {
-    code.iter().map(|i| {
-        let mut b = [0u8; 32];
-        b[30..].copy_from_slice(i.opcode.repr().to_be_bytes().as_slice());
-        Bytes32(b)
-    }).collect()
+fn code_to_opcode_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {    
+    #[cfg(feature = "native")]
+    let iter = (0..(code.len()+15)/16).into_par_iter();
+
+    #[cfg(not(feature = "native"))]
+    let iter = (0..(code.len()+15)/16).into_iter();
+
+    iter.map(|i|code_to_opcode_hash(code, i*16)).collect()
 }
 
 #[cfg(feature = "native")]
@@ -1459,8 +1463,8 @@ impl Machine {
                 let opcode_hashes = code_to_opcode_hashes(&func.code);
                 let argdata_hashes = code_to_argdata_hashes(&func.code);
 
-                func.opcode_merkle = Merkle::new(MerkleType::Opcode, opcode_hashes);
-                func.argument_data_merkle = Merkle::new(MerkleType::ArgumentData, argdata_hashes);
+                func.opcode_merkle = Merkle::new_advanced(MerkleType::Opcode, opcode_hashes, Bytes32::default(), 2);
+                func.argument_data_merkle = Merkle::new_advanced(MerkleType::ArgumentData, argdata_hashes, Bytes32::default(), 2);
             }
             module.funcs_merkle = Arc::new(Merkle::new(
                 MerkleType::Function,
@@ -2667,20 +2671,16 @@ impl Machine {
         // Begin next instruction proof
 
         let func = &module.funcs[self.pc.func()];
-        let mut b = [0u8; 32];
-        b[30..].copy_from_slice(func.code[self.pc.inst()].opcode.repr().to_be_bytes().as_slice());
-        out!(b);
+        out!(code_to_opcode_hash(&func.code, self.pc.inst()));
         out!(func
             .opcode_merkle
-            .prove(self.pc.inst())
+            .prove(self.pc.inst()/16)
             .expect("Failed to prove against code merkle"));
         out!(func.code[self.pc.inst()].get_proving_argument_data());
         out!(func
             .argument_data_merkle
             .prove(self.pc.inst())
-            .expect("Failed to prove against code merkle"));
-        println!("\nopcode {} argdata {}", func.code[self.pc.inst()].opcode.repr(), func.code[self.pc.inst()].get_proving_argument_data());
-        println!("opcodeMerkle {} argdataMerkle {} funcMerkle {}", func.opcode_merkle.root(), func.argument_data_merkle.root(), module.funcs_merkle.root());
+            .expect("Failed to prove against argument data merkle"));
         out!(module
             .funcs_merkle
             .prove(self.pc.func())
