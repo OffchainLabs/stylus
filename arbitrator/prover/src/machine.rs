@@ -31,6 +31,7 @@ use sha3::Keccak256;
 use smallvec::SmallVec;
 use std::{
     borrow::Cow,
+    cmp::min,
     convert::{TryFrom, TryInto},
     fmt::{self, Display},
     fs::File,
@@ -39,7 +40,6 @@ use std::{
     num::Wrapping,
     path::{Path, PathBuf},
     sync::Arc,
-    cmp::min,
 };
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
@@ -80,30 +80,33 @@ pub struct Function {
     local_types: Vec<ArbValueType>,
 }
 
-fn code_to_opcode_hash(code: &Vec<Instruction>, opcode_idx:usize) -> Bytes32 {
-    let seg = opcode_idx/16;
-    let seg_start = seg*16;
+fn code_to_opcode_hash(code: &Vec<Instruction>, opcode_idx: usize) -> Bytes32 {
+    let seg = opcode_idx / 16;
+    let seg_start = seg * 16;
     let seg_end = min(seg_start + 16, code.len());
     let mut b = [0u8; 32];
-    for i in 0..(seg_end-seg_start){
-        b[i*2..i*2+2].copy_from_slice(code[seg_start + i].opcode.repr().to_be_bytes().as_slice())
+    for i in 0..(seg_end - seg_start) {
+        b[i * 2..i * 2 + 2]
+            .copy_from_slice(code[seg_start + i].opcode.repr().to_be_bytes().as_slice())
     }
     Bytes32(b)
 }
 
-fn code_to_opcode_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {    
+fn code_to_opcode_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {
     #[cfg(feature = "native")]
-    let iter = (0..(code.len()+15)/16).into_par_iter();
+    let iter = (0..(code.len() + 15) / 16).into_par_iter();
 
     #[cfg(not(feature = "native"))]
-    let iter = (0..(code.len()+15)/16).into_iter();
+    let iter = (0..(code.len() + 15) / 16).into_iter();
 
-    iter.map(|i|code_to_opcode_hash(code, i*16)).collect()
+    iter.map(|i| code_to_opcode_hash(code, i * 16)).collect()
 }
 
 #[cfg(feature = "native")]
 fn code_to_argdata_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {
-    code.par_iter().map(|i| i.get_proving_argument_data()).collect()
+    code.par_iter()
+        .map(|i| i.get_proving_argument_data())
+        .collect()
 }
 
 #[cfg(not(feature = "native"))]
@@ -173,7 +176,7 @@ impl Function {
         Function {
             code,
             ty,
-            opcode_merkle:Merkle::new(MerkleType::Opcode, opcode_hashes),
+            opcode_merkle: Merkle::new(MerkleType::Opcode, opcode_hashes),
             argument_data_merkle: Merkle::new(MerkleType::ArgumentData, argument_data_hashes),
             local_types,
         }
@@ -1463,8 +1466,14 @@ impl Machine {
                 let opcode_hashes = code_to_opcode_hashes(&func.code);
                 let argdata_hashes = code_to_argdata_hashes(&func.code);
 
-                func.opcode_merkle = Merkle::new_advanced(MerkleType::Opcode, opcode_hashes, Bytes32::default(), 2);
-                func.argument_data_merkle = Merkle::new_advanced(MerkleType::ArgumentData, argdata_hashes, Bytes32::default(), 2);
+                func.opcode_merkle =
+                    Merkle::new_advanced(MerkleType::Opcode, opcode_hashes, Bytes32::default(), 2);
+                func.argument_data_merkle = Merkle::new_advanced(
+                    MerkleType::ArgumentData,
+                    argdata_hashes,
+                    Bytes32::default(),
+                    2,
+                );
             }
             module.funcs_merkle = Arc::new(Merkle::new(
                 MerkleType::Function,
@@ -2674,7 +2683,7 @@ impl Machine {
         out!(code_to_opcode_hash(&func.code, self.pc.inst()));
         out!(func
             .opcode_merkle
-            .prove(self.pc.inst()/16)
+            .prove(self.pc.inst() / 16)
             .expect("Failed to prove against code merkle"));
         out!(func.code[self.pc.inst()].get_proving_argument_data());
         out!(func

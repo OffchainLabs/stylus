@@ -365,7 +365,6 @@ impl Instruction {
         ret[2..].copy_from_slice(&*self.get_proving_argument_data());
         ret
     }
-
 }
 
 /// Note: An Unreachable stack state is equal to any other stack state.

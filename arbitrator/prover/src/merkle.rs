@@ -95,7 +95,8 @@ impl Merkle {
                     } else {
                         hash_node(ty, left, right)
                     }
-                }).collect();
+                })
+                .collect();
             empty_layers.push(new_empty_layer);
             layers.push(new_layer);
         }
