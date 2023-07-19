@@ -358,13 +358,6 @@ impl Instruction {
             Bytes32(b)
         }
     }
-
-    pub fn serialize_for_proof(self) -> [u8; 34] {
-        let mut ret = [0u8; 34];
-        ret[..2].copy_from_slice(&self.opcode.repr().to_be_bytes());
-        ret[2..].copy_from_slice(&*self.get_proving_argument_data());
-        ret
-    }
 }
 
 /// Note: An Unreachable stack state is equal to any other stack state.
