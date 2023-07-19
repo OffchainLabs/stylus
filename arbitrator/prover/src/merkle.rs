@@ -85,10 +85,18 @@ impl Merkle {
             #[cfg(not(feature = "native"))]
             let new_layer = layers.last().unwrap().chunks(2);
 
+            let new_empty_layer = hash_node(ty, empty_layer, empty_layer);
             let new_layer = new_layer
-                .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).cloned().unwrap_or(empty_layer)))
-                .collect();
-            empty_layers.push(hash_node(ty, empty_layer, empty_layer));
+                .map(|chunk| {
+                    let left = chunk[0];
+                    let right = chunk.get(1).cloned().unwrap_or(empty_layer);
+                    if left == empty_layer && right == empty_layer {
+                        new_empty_layer
+                    } else {
+                        hash_node(ty, left, right)
+                    }
+                }).collect();
+            empty_layers.push(new_empty_layer);
             layers.push(new_layer);
         }
         Merkle {
