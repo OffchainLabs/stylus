@@ -176,8 +176,18 @@ impl Function {
         Function {
             code,
             ty,
-            opcode_merkle: Merkle::new(MerkleType::Opcode, opcode_hashes),
-            argument_data_merkle: Merkle::new(MerkleType::ArgumentData, argument_data_hashes),
+            opcode_merkle: Merkle::new_advanced(
+                MerkleType::Opcode,
+                opcode_hashes,
+                Bytes32::default(),
+                2,
+            ),
+            argument_data_merkle: Merkle::new_advanced(
+                MerkleType::ArgumentData,
+                argument_data_hashes,
+                Bytes32::default(),
+                2,
+            ),
             local_types,
         }
     }
