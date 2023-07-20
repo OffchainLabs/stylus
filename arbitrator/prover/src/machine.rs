@@ -176,18 +176,8 @@ impl Function {
         Function {
             code,
             ty,
-            opcode_merkle: Merkle::new_advanced(
-                MerkleType::Opcode,
-                opcode_hashes,
-                Bytes32::default(),
-                2,
-            ),
-            argument_data_merkle: Merkle::new_advanced(
-                MerkleType::ArgumentData,
-                argument_data_hashes,
-                Bytes32::default(),
-                2,
-            ),
+            opcode_merkle: Merkle::new(MerkleType::Opcode, opcode_hashes),
+            argument_data_merkle: Merkle::new(MerkleType::ArgumentData, argument_data_hashes),
             local_types,
         }
     }
@@ -1476,14 +1466,8 @@ impl Machine {
                 let opcode_hashes = code_to_opcode_hashes(&func.code);
                 let argdata_hashes = code_to_argdata_hashes(&func.code);
 
-                func.opcode_merkle =
-                    Merkle::new_advanced(MerkleType::Opcode, opcode_hashes, Bytes32::default(), 2);
-                func.argument_data_merkle = Merkle::new_advanced(
-                    MerkleType::ArgumentData,
-                    argdata_hashes,
-                    Bytes32::default(),
-                    2,
-                );
+                func.opcode_merkle = Merkle::new(MerkleType::Opcode, opcode_hashes);
+                func.argument_data_merkle = Merkle::new(MerkleType::ArgumentData, argdata_hashes);
             }
             module.funcs_merkle = Arc::new(Merkle::new(
                 MerkleType::Function,

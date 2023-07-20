@@ -9,8 +9,6 @@ use crate::{
 use arbutil::Bytes32;
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
-use lazy_static::lazy_static;
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 use wasmparser::{Operator, Type, TypeOrFuncType as BlockType};
@@ -324,10 +322,6 @@ pub fn pack_cross_module_call(module: u32, func: u32) -> u64 {
 
 pub fn unpack_cross_module_call(data: u64) -> (u32, u32) {
     ((data >> 32) as u32, data as u32)
-}
-
-lazy_static! {
-    static ref OP_HASHES: Mutex<HashMap<Opcode, Bytes32>> = Mutex::new(HashMap::default());
 }
 
 impl Instruction {

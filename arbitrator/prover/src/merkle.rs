@@ -1,15 +1,18 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::memory::{Memory, EMPTY_MEM_HASH};
 use arbutil::Bytes32;
 use digest::Digest;
+use lazy_static::lazy_static;
 use sha3::Keccak256;
-use std::convert::TryFrom;
+use std::collections::HashMap;
+use std::sync::RwLock;
 
 #[cfg(feature = "native")]
 use rayon::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum MerkleType {
     Empty,
     Value,
@@ -48,7 +51,6 @@ impl MerkleType {
 pub struct Merkle {
     ty: MerkleType,
     layers: Vec<Vec<Bytes32>>,
-    empty_layers: Vec<Bytes32>,
     min_depth: usize,
 }
 
@@ -60,24 +62,63 @@ fn hash_node(ty: MerkleType, a: Bytes32, b: Bytes32) -> Bytes32 {
     h.finalize().into()
 }
 
+lazy_static! {
+    static ref EMPTY_LAYERS: RwLock<HashMap<MerkleType, RwLock<Vec<Bytes32>>>> = Default::default();
+}
+
 impl Merkle {
-    pub fn new(ty: MerkleType, hashes: Vec<Bytes32>) -> Merkle {
-        Self::new_advanced(ty, hashes, Bytes32::default(), 0)
+    fn get_empty_readonly(ty: MerkleType, layer: usize) -> Option<Bytes32> {
+        match EMPTY_LAYERS.read().unwrap().get(&ty) {
+            None => None,
+            Some(rwvec) => rwvec.read().unwrap().get(layer).copied(),
+        }
     }
 
-    pub fn new_advanced(
-        ty: MerkleType,
-        hashes: Vec<Bytes32>,
-        empty_hash: Bytes32,
-        min_depth: usize,
-    ) -> Merkle {
+    pub fn get_empty(ty: MerkleType, layer: usize) -> Bytes32 {
+        let exists = Self::get_empty_readonly(ty, layer);
+        if let Some(val_exists) = exists {
+            return val_exists;
+        }
+        let new_val: Bytes32;
+        if layer == 0 {
+            new_val = match ty {
+                MerkleType::Empty => {
+                    panic!("attempted to fetch empty-layer value from empty merkle")
+                }
+                MerkleType::Memory => *EMPTY_MEM_HASH,
+                _ => Bytes32::default(),
+            }
+        } else {
+            let prev_val = Self::get_empty(ty, layer - 1);
+            new_val = hash_node(ty, prev_val, prev_val);
+        }
+        let mut layers = EMPTY_LAYERS.write().unwrap();
+        let mut typed = layers.entry(ty).or_default().write().unwrap();
+        if typed.len() > layer {
+            assert_eq!(typed[layer], new_val);
+        } else if typed.len() == layer {
+            typed.push(new_val);
+        } else {
+            panic!("trying to compute empty merkle entries out of order")
+        }
+        return typed[layer];
+    }
+
+    pub fn new(ty: MerkleType, hashes: Vec<Bytes32>) -> Merkle {
         if hashes.is_empty() {
             return Merkle::default();
         }
+        let min_depth = match ty {
+            MerkleType::Empty => panic!("attempted to fetch empty-layer value from empty merkle"),
+            MerkleType::Memory => Memory::MEMORY_LAYERS,
+            MerkleType::Opcode => 2,
+            MerkleType::ArgumentData => 2,
+            _ => 0,
+        };
         let mut layers = vec![hashes];
-        let mut empty_layers = vec![empty_hash];
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
-            let empty_layer = *empty_layers.last().unwrap();
+            let empty_layer = Self::get_empty(ty, layers.len() - 1);
+            let next_empty_layer = Self::get_empty(ty, layers.len());
 
             #[cfg(feature = "native")]
             let new_layer = layers.last().unwrap().par_chunks(2);
@@ -85,25 +126,22 @@ impl Merkle {
             #[cfg(not(feature = "native"))]
             let new_layer = layers.last().unwrap().chunks(2);
 
-            let new_empty_layer = hash_node(ty, empty_layer, empty_layer);
             let new_layer = new_layer
                 .map(|chunk| {
                     let left = chunk[0];
                     let right = chunk.get(1).cloned().unwrap_or(empty_layer);
                     if left == empty_layer && right == empty_layer {
-                        new_empty_layer
+                        next_empty_layer
                     } else {
                         hash_node(ty, left, right)
                     }
                 })
                 .collect();
-            empty_layers.push(new_empty_layer);
             layers.push(new_layer);
         }
         Merkle {
             ty,
             layers,
-            empty_layers,
             min_depth,
         }
     }
@@ -146,7 +184,7 @@ impl Merkle {
                 layer
                     .get(counterpart)
                     .cloned()
-                    .unwrap_or_else(|| self.empty_layers[layer_i]),
+                    .unwrap_or_else(|| Self::get_empty(self.ty, layer_i)),
             );
             idx >>= 1;
         }
@@ -158,8 +196,7 @@ impl Merkle {
     pub fn push_leaf(&mut self, leaf: Bytes32) {
         let mut leaves = self.layers.swap_remove(0);
         leaves.push(leaf);
-        let empty = self.empty_layers[0];
-        *self = Self::new_advanced(self.ty, leaves, empty, self.min_depth);
+        *self = Self::new(self.ty, leaves);
     }
 
     /// Removes the rightmost leaf from the merkle
@@ -167,8 +204,7 @@ impl Merkle {
     pub fn pop_leaf(&mut self) {
         let mut leaves = self.layers.swap_remove(0);
         leaves.pop();
-        let empty = self.empty_layers[0];
-        *self = Self::new_advanced(self.ty, leaves, empty, self.min_depth);
+        *self = Self::new(self.ty, leaves);
     }
 
     pub fn set(&mut self, mut idx: usize, hash: Bytes32) {
@@ -176,7 +212,6 @@ impl Merkle {
             return;
         }
         let mut next_hash = hash;
-        let empty_layers = &self.empty_layers;
         let layers_len = self.layers.len();
         for (layer_i, layer) in self.layers.iter_mut().enumerate() {
             layer[idx] = next_hash;
@@ -187,7 +222,7 @@ impl Merkle {
             let counterpart = layer
                 .get(idx ^ 1)
                 .cloned()
-                .unwrap_or_else(|| empty_layers[layer_i]);
+                .unwrap_or_else(|| Self::get_empty(self.ty, layer_i));
             if idx % 2 == 0 {
                 next_hash = hash_node(self.ty, next_hash, counterpart);
             } else {
