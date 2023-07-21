@@ -4,11 +4,14 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use alloy_primitives::U256;
 use brotli2::read::BrotliEncoder;
 use bytes::buf::Reader;
 use bytes::{Buf, Bytes};
 
-use ethers::types::{Address, H160};
+use ethers::prelude::{ContractDeploymentTx, ContractDeployer, ContractFactory};
+use ethers::types::transaction::eip2718::TypedTransaction;
+use ethers::types::{Address, H160, Eip1559TransactionRequest};
 use ethers::{
     core::{types::TransactionRequest, utils::Anvil},
     middleware::SignerMiddleware,
@@ -17,6 +20,7 @@ use ethers::{
 };
 
 use arbutil::Color;
+use eyre::bail;
 
 use crate::{constants, DeployConfig};
 
@@ -74,11 +78,58 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
     submit_signed_tx(&cfg.endpoint, wallet).await
 }
 
+async fn deploy_stylus_program(code: Vec<u8>) -> eyre::Result<()> {
+    Ok(())
+}
+
+fn contract_init_code(code: &[u8]) -> Vec<u8> {
+    let code_len: [u8; 32] = U256::from(code.len()).to_be_bytes();
+    let mut deploy: Vec<u8> = vec![];
+    deploy.push(0x60); // PUSH32
+    deploy.extend(code_len);
+    deploy.push(0x80); // DUP1
+    deploy.push(0x60); // PUSH1
+    deploy.push(0x2a); // 42 the prelude length
+    deploy.push(0x60); // PUSH1
+    deploy.push(0x00);
+    deploy.push(0x39); // CODECOPY
+    deploy.push(0x60); // PUSH1
+    deploy.push(0x00);
+    deploy.push(0xf3); // RETURN
+    deploy.extend(code);
+    deploy
+}
+
 async fn submit_signed_tx(endpoint: &str, wallet: LocalWallet) -> eyre::Result<()> {
     let provider = Provider::<Http>::try_from(endpoint)?;
     let chain_id = provider.get_chainid().await?.as_u64();
     let addr = wallet.address();
     let client = SignerMiddleware::new(provider, wallet.with_chain_id(chain_id));
+
+    let block_num = client.get_block_number().await?;
+    let block = client.get_block(block_num).await?;
+    if block.is_none() {
+        bail!("No latest block found");
+    }
+    // TODO: Check if base fee exists.
+    let base_fee = block.unwrap().base_fee_per_gas.unwrap();
+
+    let code = vec![];
+
+    // Deploy contract init code.
+    let init_code = contract_init_code(&code);
+
+    let tx = Eip1559TransactionRequest::new()
+        .from(addr)
+        .max_fee_per_gas(base_fee)
+        .data(init_code);
+
+    let estimated = client.estimate_gas(&TypedTransaction::Eip1559(tx), None).await?;
+    println!("{estimated} estimated gas");
+
+    // Get base fee, estimate gas.
+    // Create a new contract creation tx.
+    // Send the tx and create address from to and nonce.
 
     let tx = prepare_tx(addr, Bytes::default());
     let pending_tx = client.send_transaction(tx, None).await?;
