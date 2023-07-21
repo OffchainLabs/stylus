@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, Args, ValueEnum};
 
 mod check;
 mod constants;
@@ -35,16 +35,12 @@ enum Commands {
     Deploy {
         /// Does not submit a transaction, but instead estimates the gas required
         /// to complete the operation.
-        #[arg(long, default_value = "false")]
+        #[arg(long)]
         estimate_gas: bool,
-        /// Disables the onchain compilation step of the deploy process.
-        /// This flag is useful for developers who want to split up the deploy and compile steps.
-        #[arg(long, default_value = "false")]
-        only_deploy: bool,
-        /// Disables the onchain deploy step of the deploy process.
-        /// This flag is useful for developers who want to split up the deploy and compile steps.
-        #[arg(long, default_value = "false")]
-        only_compile: bool,
+        /// By default, submits a single, atomic deploy and compile transaction to Arbitrum.
+        /// Otherwise, a user could choose to split up the deploy and compile steps into individual transactions.
+        #[arg(long, value_enum)]
+        mode: Option<DeployMode>,
         /// The endpoint of the L2 node to connect to.
         #[arg(short, long, default_value = "http://localhost:8545")]
         endpoint: String,
@@ -53,13 +49,40 @@ enum Commands {
         #[arg(long)]
         // TODO: Use an alloy primitive address type for this.
         multicall_program_addr: Option<String>,
+        /// Wallet source to use with the cargo stylus plugin.
+        #[command(flatten)]
+        wallet: WalletSource,
     },
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum DeployMode {
+    DeployOnly,
+    CompileOnly,
+}
+
+#[derive(Debug, Args)]
+#[group(required = true, multiple = false)]
+struct WalletSource {
+    #[arg(long, group = "keystore")]
+    keystore_path: Option<String>,
+    #[arg(long, group = "keystore")]
+    keystore_password_path: Option<String>,
+    #[arg(long)]
+    private_key_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+#[group(required = true)]
+struct KeystoreOpts {
 }
 
 fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
     match &cli.command {
-        Commands::Check { disabled_checks, .. } => {
+        Commands::Check {
+            disabled_checks, ..
+        } => {
             let disabled = disabled_checks.as_ref().map(|f| {
                 f.into_iter()
                     .map(|s| s.as_str().into())

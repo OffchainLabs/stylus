@@ -33,6 +33,8 @@ impl From<&str> for StylusCheck {
     }
 }
 
+// TODO: separate out the business logic of cargo compilation, reading the file, etc.
+// as it will be reused by the deploy command.
 pub fn run_checks(disabled: Option<Vec<StylusCheck>>) -> eyre::Result<()> {
     // Compile the Rust program at the current working directory into WASM using
     // Cargo and then instrument the WASM code with Stylus. If any of the checks
@@ -79,7 +81,7 @@ pub fn run_checks(disabled: Option<Vec<StylusCheck>>) -> eyre::Result<()> {
             .to_string()
             .yellow(),
     );
-    
+
     let compressed_size = ByteSize::b(compressed_bytes.len() as u64);
 
     if check_compressed_size {
@@ -111,8 +113,7 @@ pub fn run_checks(disabled: Option<Vec<StylusCheck>>) -> eyre::Result<()> {
     println!("{}", success);
     println!(
         "Compiled WASM module total size: {}",
-        ByteSize::b(module.len() as u64)
-            .to_string()
+        ByteSize::b(module.len() as u64).to_string()
     );
     Ok(())
 }
