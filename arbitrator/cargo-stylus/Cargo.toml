@@ -15,4 +15,5 @@ serde = { version = "1.0.174", features = ["derive"] }
 stylus = { path = "../stylus/" }
 arbutil = { path = "../arbutil/" }
 prover = { path = "../prover/", default-features = false, features = ["native"] }
-stylus-sdk = { path = "../langs/rust/" }
+alloy-primitives = { git = "https://github.com/rachel-bousfield/alloy-core.git", branch = "native-keccak" }
+bytesize = "1.2.0"

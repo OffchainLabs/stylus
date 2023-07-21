@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 
 mod check;
+mod constants;
 mod deploy;
 
 #[derive(Parser, Debug)]
