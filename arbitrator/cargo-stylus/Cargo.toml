@@ -6,5 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+brotli2 = "0.3.2"
+bytes = "1.4.0"
 clap = { version = "4.3.17", features = [ "derive" ] }
 eyre = "0.6.8"
+hex = "0.4.3"
+serde = { version = "1.0.174", features = ["derive"] }
+stylus = { path = "../stylus/" }
+arbutil = { path = "../arbutil/" }
+prover = { path = "../prover/", default-features = false, features = ["native"] }
+stylus-sdk = { path = "../langs/rust/" }
