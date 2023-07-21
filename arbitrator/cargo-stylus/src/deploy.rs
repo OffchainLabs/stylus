@@ -18,9 +18,9 @@ use ethers::{
 
 use arbutil::Color;
 
-use crate::constants;
+use crate::{constants, DeployConfig};
 
-pub async fn deploy_and_compile_onchain() -> eyre::Result<()> {
+pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> {
     let cwd: PathBuf = current_dir().unwrap();
 
     // TODO: Configure debug or release via flags.
@@ -56,16 +56,29 @@ pub async fn deploy_and_compile_onchain() -> eyre::Result<()> {
     // Next, we prepend with the EOF bytes and prepare a compilation tx onchain. Uses ethers
     // to prepare the tx and send it over onchain to an endpoint. Will prepare a multicall data
     // tx to send to a multicall.rs rust program.
-    Ok(())
+    let wallet = if let Some(priv_key_path) = &cfg.wallet.private_key_path {
+        let priv_key_bytes = bytes::Bytes::from(
+            std::fs::read(priv_key_path).expect("Could not read private key file"),
+        );
+        LocalWallet::from_bytes(&priv_key_bytes).expect("Could not initialize wallet from priv key bytes")
+    } else {
+        let wallet = cfg.wallet.clone();
+        let keystore_password_path = wallet.keystore_password_path.expect("No keystore password file provided");
+        let keystore_path = wallet.keystore_path.expect("No keystore path provided");
+        let keystore_pass = std::fs::read_to_string(keystore_password_path).expect("Could not keystore password file");
+        LocalWallet::decrypt_keystore(
+            keystore_path,
+            keystore_pass,
+        ).expect("Could not decrypt keystore")
+    };
+    submit_signed_tx(&cfg.endpoint, wallet).await
 }
 
-async fn submit_signed_tx(endpoint: &str) -> eyre::Result<()> {
-    let anvil = Anvil::new().spawn();
-
-    let wallet: LocalWallet = anvil.keys()[0].clone().into();
-    let addr = wallet.address();
+async fn submit_signed_tx(endpoint: &str, wallet: LocalWallet) -> eyre::Result<()> {
     let provider = Provider::<Http>::try_from(endpoint)?;
-    let client = SignerMiddleware::new(provider, wallet.with_chain_id(anvil.chain_id()));
+    let chain_id = provider.get_chainid().await?.as_u64();
+    let addr = wallet.address();
+    let client = SignerMiddleware::new(provider, wallet.with_chain_id(chain_id));
 
     let tx = prepare_tx(addr, Bytes::default());
     let pending_tx = client.send_transaction(tx, None).await?;

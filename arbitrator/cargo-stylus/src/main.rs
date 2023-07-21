@@ -32,38 +32,41 @@ enum Commands {
     /// and will revert if either the program creation or onchain compilation step fails.
     /// Developers can choose to split up the deploy and compile steps via this command as desired.
     #[command(alias = "d")]
-    Deploy {
-        /// Does not submit a transaction, but instead estimates the gas required
-        /// to complete the operation.
-        #[arg(long)]
-        estimate_gas: bool,
-        /// By default, submits a single, atomic deploy and compile transaction to Arbitrum.
-        /// Otherwise, a user could choose to split up the deploy and compile steps into individual transactions.
-        #[arg(long, value_enum)]
-        mode: Option<DeployMode>,
-        /// The endpoint of the L2 node to connect to.
-        #[arg(short, long, default_value = "http://localhost:8545")]
-        endpoint: String,
-        /// Address of a multicall Stylus program on L2 to use for the atomic, onchain deploy+compile
-        /// operation. If not provided, address <INSERT_ADDRESS_HERE> will be used.
-        #[arg(long)]
-        // TODO: Use an alloy primitive address type for this.
-        multicall_program_addr: Option<String>,
-        /// Wallet source to use with the cargo stylus plugin.
-        #[command(flatten)]
-        wallet: WalletSource,
-    },
+    Deploy(DeployConfig),
 }
 
+#[derive(Debug, Args)]
+pub struct DeployConfig {
+    /// Does not submit a transaction, but instead estimates the gas required
+    /// to complete the operation.
+    #[arg(long)]
+    estimate_gas: bool,
+    /// By default, submits a single, atomic deploy and compile transaction to Arbitrum.
+    /// Otherwise, a user could choose to split up the deploy and compile steps into individual transactions.
+    #[arg(long, value_enum)]
+    mode: Option<DeployMode>,
+    /// The endpoint of the L2 node to connect to.
+    #[arg(short, long, default_value = "http://localhost:8545")]
+    endpoint: String,
+    /// Address of a multicall Stylus program on L2 to use for the atomic, onchain deploy+compile
+    /// operation. If not provided, address <INSERT_ADDRESS_HERE> will be used.
+    #[arg(long)]
+    // TODO: Use an alloy primitive address type for this.
+    multicall_program_addr: Option<String>,
+    /// Wallet source to use with the cargo stylus plugin.
+    #[command(flatten)]
+    wallet: WalletSource,
+} 
+
 #[derive(Debug, Clone, ValueEnum)]
-enum DeployMode {
+pub enum DeployMode {
     DeployOnly,
     CompileOnly,
 }
 
-#[derive(Debug, Args)]
+#[derive(Clone, Debug, Args)]
 #[group(required = true, multiple = false)]
-struct WalletSource {
+pub struct WalletSource {
     #[arg(long, group = "keystore")]
     keystore_path: Option<String>,
     #[arg(long, group = "keystore")]
@@ -72,12 +75,8 @@ struct WalletSource {
     private_key_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Args)]
-#[group(required = true)]
-struct KeystoreOpts {
-}
-
-fn main() -> eyre::Result<()> {
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
     match &cli.command {
         Commands::Check {
@@ -90,8 +89,8 @@ fn main() -> eyre::Result<()> {
             });
             check::run_checks(disabled)
         }
-        Commands::Deploy { .. } => {
-            todo!();
+        Commands::Deploy(deploy_config) => {
+            deploy::deploy_and_compile_onchain(deploy_config).await
         }
     }
 }
