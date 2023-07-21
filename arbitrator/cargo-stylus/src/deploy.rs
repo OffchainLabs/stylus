@@ -56,6 +56,10 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
     compressor.read_to_end(&mut compressed_bytes).unwrap();
 
     // TODO: Add the compression and compilation checks in here. Reuse functions from check.
+    println!(
+        "Compressed WASM size: {} bytes",
+        compressed_bytes.len().to_string().yellow()
+    );
 
     // Next, we prepend with the EOF bytes and prepare a compilation tx onchain. Uses ethers
     // to prepare the tx and send it over onchain to an endpoint. Will prepare a multicall data
@@ -75,11 +79,7 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
             keystore_pass,
         ).expect("Could not decrypt keystore")
     };
-    submit_signed_tx(&cfg.endpoint, wallet).await
-}
-
-async fn deploy_stylus_program(code: Vec<u8>) -> eyre::Result<()> {
-    Ok(())
+    submit_signed_tx(&cfg.endpoint, wallet, &compressed_bytes).await
 }
 
 fn contract_init_code(code: &[u8]) -> Vec<u8> {
@@ -100,7 +100,7 @@ fn contract_init_code(code: &[u8]) -> Vec<u8> {
     deploy
 }
 
-async fn submit_signed_tx(endpoint: &str, wallet: LocalWallet) -> eyre::Result<()> {
+async fn submit_signed_tx(endpoint: &str, wallet: LocalWallet, code: &[u8]) -> eyre::Result<()> {
     let provider = Provider::<Http>::try_from(endpoint)?;
     let chain_id = provider.get_chainid().await?.as_u64();
     let addr = wallet.address();
@@ -113,8 +113,6 @@ async fn submit_signed_tx(endpoint: &str, wallet: LocalWallet) -> eyre::Result<(
     }
     // TODO: Check if base fee exists.
     let base_fee = block.unwrap().base_fee_per_gas.unwrap();
-
-    let code = vec![];
 
     // Deploy contract init code.
     let init_code = contract_init_code(&code);
