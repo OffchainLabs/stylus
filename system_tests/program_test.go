@@ -550,6 +550,35 @@ func testEvmData(t *testing.T, jit bool) {
 	validateBlocks(t, 1, jit, ctx, node, l2client)
 }
 
+func TestStylusCargoPlugin(t *testing.T) {
+	t.Parallel()
+	ctx, node, l2info, l2client, auth, memoryAddr, cleanup := setupProgramTest(t, watFile("memory"), true)
+	_ = node
+	_ = l2info
+	_ = memoryAddr
+	defer cleanup()
+
+	// multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	// _ = multiAddr
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	ensure(arbOwner.SetWasmHostioInk(&auth, 0))
+	ensure(arbOwner.SetInkPrice(&auth, 1e4))
+	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
+
+	colors.PrintMint(fmt.Sprintf("arbwasm addr=%#x", types.ArbWasmAddress))
+	time.Sleep(time.Hour)
+}
+
 func TestProgramMemory(t *testing.T) {
 	t.Parallel()
 	testMemory(t, true)
@@ -680,6 +709,7 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	}
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	fmt.Printf("Owner priv key %#x", l2info.Accounts["Owner"].PrivateKey.D.Bytes())
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)

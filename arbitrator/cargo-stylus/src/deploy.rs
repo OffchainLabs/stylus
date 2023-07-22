@@ -9,9 +9,10 @@ use brotli2::read::BrotliEncoder;
 use bytes::buf::Reader;
 use bytes::{Buf, Bytes};
 
-use ethers::prelude::{ContractDeploymentTx, ContractDeployer, ContractFactory};
+use ethers::prelude::{ContractDeploymentTx, ContractDeployer, ContractFactory, MiddlewareBuilder};
 use ethers::types::transaction::eip2718::TypedTransaction;
 use ethers::types::{Address, H160, Eip1559TransactionRequest};
+use ethers::utils::get_contract_address;
 use ethers::{
     core::{types::TransactionRequest, utils::Anvil},
     middleware::SignerMiddleware,
@@ -60,6 +61,8 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
         "Compressed WASM size: {} bytes",
         compressed_bytes.len().to_string().yellow()
     );
+    let mut code = hex::decode(constants::EOF_PREFIX).unwrap();
+    code.extend(compressed_bytes);
 
     // Next, we prepend with the EOF bytes and prepare a compilation tx onchain. Uses ethers
     // to prepare the tx and send it over onchain to an endpoint. Will prepare a multicall data
@@ -79,7 +82,7 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
             keystore_pass,
         ).expect("Could not decrypt keystore")
     };
-    submit_signed_tx(&cfg.endpoint, wallet, &compressed_bytes).await
+    submit_signed_tx(&cfg.endpoint, wallet, &code).await
 }
 
 fn contract_init_code(code: &[u8]) -> Vec<u8> {
@@ -106,6 +109,7 @@ async fn submit_signed_tx(endpoint: &str, wallet: LocalWallet, code: &[u8]) -> e
     let addr = wallet.address();
     let client = SignerMiddleware::new(provider, wallet.with_chain_id(chain_id));
 
+    let nonce = client.get_transaction_count(addr, None).await?;
     let block_num = client.get_block_number().await?;
     let block = client.get_block(block_num).await?;
     if block.is_none() {
@@ -119,36 +123,29 @@ async fn submit_signed_tx(endpoint: &str, wallet: LocalWallet, code: &[u8]) -> e
 
     let tx = Eip1559TransactionRequest::new()
         .from(addr)
+        .to(constants::ARB_WASM_ADDRESS.parse::<Address>().unwrap())
         .max_fee_per_gas(base_fee)
         .data(init_code);
+    let tx = TypedTransaction::Eip1559(tx);
 
-    let estimated = client.estimate_gas(&TypedTransaction::Eip1559(tx), None).await?;
+    let estimated = client.estimate_gas(&tx, None).await?;
     println!("{estimated} estimated gas");
 
     // Get base fee, estimate gas.
     // Create a new contract creation tx.
     // Send the tx and create address from to and nonce.
+    let contract_addr = get_contract_address(addr, nonce);
 
-    let tx = prepare_tx(addr, Bytes::default());
     let pending_tx = client.send_transaction(tx, None).await?;
 
     let receipt = pending_tx
         .await?
-        .ok_or_else(|| eyre::format_err!("tx dropped from mempool"))?;
+        .ok_or_else(|| eyre::format_err!("Tx dropped from mempool"))?;
 
     let tx = client.get_transaction(receipt.transaction_hash).await?;
 
     println!("Sent tx: {}\n", serde_json::to_string(&tx)?);
     println!("Tx receipt: {}", serde_json::to_string(&receipt)?);
-    Ok(())
-}
-
-fn prepare_tx(address: H160, data: Bytes) -> TransactionRequest {
-    TransactionRequest::new()
-        .to(address)
-        .data(data)
-}
-
-fn prepare_compilation_tx() -> eyre::Result<()> {
+    println!("Created contract {contract_addr}");
     Ok(())
 }
