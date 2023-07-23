@@ -801,8 +801,8 @@ func deployWasm(
 	colors.PrintMint("Compressed wasm code length", len(wasm))
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
-	//return compileWasm(t, ctx, auth, l2client, programAddress)
-	return programAddress
+	return compileWasm(t, ctx, auth, l2client, programAddress)
+	//return programAddress
 }
 
 func compileWasm(
