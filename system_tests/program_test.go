@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -552,14 +553,43 @@ func testEvmData(t *testing.T, jit bool) {
 
 func TestStylusCargoPlugin(t *testing.T) {
 	t.Parallel()
-	ctx, node, l2info, l2client, auth, memoryAddr, cleanup := setupProgramTest(t, watFile("memory"), true)
-	_ = node
-	_ = l2info
-	_ = memoryAddr
+	ctx, cancel := context.WithCancel(context.Background())
+	rand.Seed(time.Now().UTC().UnixNano())
+
+	// TODO: track latest ArbOS version
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+
+	l2config := arbnode.ConfigDefaultL1Test()
+	l2config.BlockValidator.Enable = true
+	l2config.BatchPoster.Enable = true
+	l2config.L1Reader.Enable = true
+	l2config.Sequencer.MaxRevertGasReject = 0
+	l2config.L1Reader.OldHeaderTimeout = 10 * time.Minute
+	AddDefaultValNode(t, ctx, l2config, true /* jit */)
+
+	stackConf := node.DefaultConfig
+	stackConf.HTTPHost = "localhost"
+	stackConf.HTTPPort = 9999
+	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
+	stackConf.P2P.NoDiscovery = true
+	stackConf.P2P.ListenAddr = ""
+	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, &stackConf)
+
+	cleanup := func() {
+		requireClose(t, l1stack)
+		node.StopAndWait()
+		cancel()
+	}
 	defer cleanup()
 
-	// multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
-	// _ = multiAddr
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	fmt.Printf("Owner %x", crypto.FromECDSA(l2info.Accounts["Owner"].PrivateKey))
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, l2client)
+	Require(t, err)
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -569,13 +599,21 @@ func TestStylusCargoPlugin(t *testing.T) {
 		return receipt
 	}
 
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
-	Require(t, err)
-	ensure(arbOwner.SetWasmHostioInk(&auth, 0))
-	ensure(arbOwner.SetInkPrice(&auth, 1e4))
-	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
+	// Set random pricing params. Note that the ink price is measured in bips,
+	// so an ink price of 10k means that 1 evm gas buys exactly 1 ink.
+	// We choose a range on both sides of this value.
+	inkPrice := testhelpers.RandomUint64(0, 20000)     // evm to ink
+	wasmHostioInk := testhelpers.RandomUint64(0, 5000) // amount of ink
+	colors.PrintMint(fmt.Sprintf("ink price=%d, HostIO ink=%d", inkPrice, wasmHostioInk))
 
-	colors.PrintMint(fmt.Sprintf("arbwasm addr=%#x", types.ArbWasmAddress))
+	ensure(arbDebug.BecomeChainOwner(&auth))
+	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
+	ensure(arbOwner.SetWasmHostioInk(&auth, wasmHostioInk))
+
+	colors.PrintMint(fmt.Sprintf("arbwasm addr is=%#x", types.ArbWasmAddress))
+
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	t.Logf("Multicall addr %#x", multiAddr)
 	time.Sleep(time.Hour)
 }
 
@@ -745,6 +783,7 @@ func readWasmFile(t *testing.T, file string) []byte {
 
 	wasmSource, err := wasmer.Wat2Wasm(string(source))
 	Require(t, err)
+	colors.PrintMint(fmt.Sprintf("WASM source len %d, and file name %s", len(wasmSource), file))
 	wasm, err := arbcompress.CompressWell(wasmSource)
 	Require(t, err)
 
@@ -759,6 +798,7 @@ func deployWasm(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
 ) common.Address {
 	wasm := readWasmFile(t, file)
+	colors.PrintMint("Compressed wasm code length", len(wasm))
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
 	return compileWasm(t, ctx, auth, l2client, programAddress)
@@ -772,8 +812,10 @@ func compileWasm(
 	Require(t, err)
 
 	timed(t, "compile", func() {
+		fmt.Println("Getting to compile the code...")
 		tx, err := arbWasm.CompileProgram(&auth, program)
 		Require(t, err)
+		fmt.Printf("Compile tx data %#x", tx.Data())
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 	})
