@@ -158,5 +158,38 @@ async fn submit_signed_tx(endpoint: &str, wallet: LocalWallet, code: &[u8]) -> e
 
     println!("Tx receipt: {}", serde_json::to_string(&receipt)?);
     println!("Created contract {contract_addr}");
+
+    let nonce = client.get_transaction_count(addr, None).await?;
+    let block_num = client.get_block_number().await?;
+    let block = client.get_block(block_num).await?;
+    if block.is_none() {
+        bail!("No latest block found");
+    }
+    // TODO: Check if base fee exists.
+    let base_fee = block.unwrap().base_fee_per_gas.unwrap();
+
+    let mut compile_calldata = [0u8; 32];
+    let compile_method_hash = hex::decode("2e50f32b").unwrap();
+    compile_calldata[0..4].copy_from_slice(&compile_method_hash);
+    compile_calldata[12..].copy_from_slice(contract_addr.as_bytes());
+    println!("Got compile calldata {}", hex::encode(&compile_calldata));
+
+    let to = hex::decode(constants::ARB_WASM_ADDRESS).unwrap();
+    let to = H160::from_slice(&to);
+    let tx = Eip1559TransactionRequest::new()
+        .from(addr)
+        .to(to)
+        .max_priority_fee_per_gas(base_fee)
+        .data(compile_calldata);
+    let tx = TypedTransaction::Eip1559(tx);
+
+    println!("Sending compile tx");
+    let pending_tx = client.send_transaction(tx, None).await?;
+
+    let receipt = pending_tx
+        .await?
+        .ok_or_else(|| eyre::format_err!("Tx dropped from mempool"))?;
+
+    println!("Tx receipt: {}", serde_json::to_string(&receipt)?);
     Ok(())
 }
