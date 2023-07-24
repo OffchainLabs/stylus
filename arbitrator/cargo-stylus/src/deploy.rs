@@ -91,7 +91,7 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
         LocalWallet::decrypt_keystore(keystore_path, keystore_pass)
             .expect("Could not decrypt keystore")
     };
-    submit_signed_tx(&cfg.endpoint, wallet, &code).await
+    submit_multicall(&cfg.endpoint, wallet, &code).await
 }
 
 fn contract_init_code(code: &[u8]) -> Vec<u8> {
@@ -181,6 +181,47 @@ fn multicall_append(calls: &mut Vec<u8>, opcode: MulticallArg, address: H160, in
     calls[0] += 1; // add another call
     let args = args_for_multicall(opcode, address, None, inner);
     calls.extend(args[1..].iter().cloned());
+}
+
+async fn submit_multicall(endpoint: &str, wallet: LocalWallet, code: &[u8]) -> eyre::Result<()> {
+    let provider = Provider::<Http>::try_from(endpoint)?;
+    let chain_id = provider.get_chainid().await?.as_u64();
+    let addr = wallet.address();
+    let client = SignerMiddleware::new(provider, wallet.with_chain_id(chain_id));
+
+    let nonce = client.get_transaction_count(addr, None).await?;
+    let block_num = client.get_block_number().await?;
+    let block = client.get_block(block_num).await?;
+    if block.is_none() {
+        bail!("No latest block found");
+    }
+    // TODO: Check if base fee exists.
+    let base_fee = block.unwrap().base_fee_per_gas.unwrap();
+    let contract_addr = get_contract_address(addr, nonce);
+    let multicall_data = prepare_deploy_compile_multicall(&code, &contract_addr);
+
+    let to = hex::decode(constants::MULTICALL_ADDR).unwrap();
+    let tx = Eip1559TransactionRequest::new()
+        .from(addr)
+        .to(H160::from_slice(&to))
+        .max_priority_fee_per_gas(base_fee)
+        .data(multicall_data);
+    let tx = TypedTransaction::Eip1559(tx);
+
+    //let estimated = client.estimate_gas(&tx, None).await?;
+    //println!("{estimated} estimated gas");
+    println!("Sending program creation + compilation tx");
+    let pending_tx = client.send_transaction(tx, None).await?;
+
+    let receipt = pending_tx
+        .await?
+        .ok_or_else(|| eyre::format_err!("Tx dropped from mempool"))?;
+
+    let tx = client.get_transaction(receipt.transaction_hash).await?;
+
+    println!("Tx receipt: {}", serde_json::to_string(&receipt)?);
+    println!("Deployed and compiled program onchain at once {contract_addr}");
+    Ok(())
 }
 
 async fn submit_signed_tx(endpoint: &str, wallet: LocalWallet, code: &[u8]) -> eyre::Result<()> {

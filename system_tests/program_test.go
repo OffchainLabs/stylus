@@ -802,7 +802,6 @@ func deployWasm(
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
 	return compileWasm(t, ctx, auth, l2client, programAddress)
-	//return programAddress
 }
 
 func compileWasm(
