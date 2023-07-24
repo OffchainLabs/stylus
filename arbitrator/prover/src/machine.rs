@@ -158,18 +158,22 @@ impl Function {
         }
     }
 
-    fn hash(&self) -> Bytes32 {
+    fn empty_locals_hash(&self) -> Bytes32 {
         let empty_local_hashes = self.ty.inputs
             .iter()
             .cloned()
             .map(Value::default_of_type)
             .map(Value::hash)
             .collect::<Vec<_>>();
+        Merkle::new(MerkleType::Value, empty_local_hashes).root()
+    }
+
+    fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Function:");
         h.update(self.opcode_merkle.root());
         h.update(self.argument_data_merkle.root());
-        h.update(Merkle::new(MerkleType::Value, empty_local_hashes).root());
+        h.update(self.empty_locals_hash());
         h.finalize().into()
     }
 }
@@ -2681,6 +2685,7 @@ impl Machine {
             .argument_data_merkle
             .prove(self.pc.inst())
             .expect("Failed to prove against argument data merkle"));
+        out!(func.empty_locals_hash());
         out!(module
             .funcs_merkle
             .prove(self.pc.func())
