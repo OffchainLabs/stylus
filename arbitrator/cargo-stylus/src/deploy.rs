@@ -46,7 +46,7 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
         .join("target")
         .join("wasm32-unknown-unknown")
         .join("release")
-        .join(format!("{}.wasm", "multicall"));
+        .join(format!("{}.wasm", "echo"));
 
     println!("Reading compiled WASM at {}", wasm_path.display().yellow());
 
@@ -121,18 +121,18 @@ fn contract_init_code(code: &[u8]) -> Vec<u8> {
 fn prepare_deploy_compile_multicall(compressed_wasm: &[u8], expected_address: &H160) -> Vec<u8> {
     let code = contract_init_code(compressed_wasm);
     let mut multicall_args = args_for_multicall(MulticallArg::Call, H160::zero(), None, code);
-    let arbwasm_address = hex::decode(constants::ARB_WASM_ADDRESS).unwrap();
-    let mut compile_calldata = vec![];
-    let compile_method_hash = hex::decode("2e50f32b").unwrap();
-    compile_calldata.extend(compile_method_hash);
-    compile_calldata.extend(hex::decode("000000000000000000000000").unwrap());
-    compile_calldata.extend(expected_address.as_bytes());
-    multicall_append(
-        &mut multicall_args,
-        MulticallArg::Call,
-        H160::from_slice(&arbwasm_address),
-        compile_calldata,
-    );
+    // let arbwasm_address = hex::decode(constants::ARB_WASM_ADDRESS).unwrap();
+    // let mut compile_calldata = vec![];
+    // let compile_method_hash = hex::decode("2e50f32b").unwrap();
+    // compile_calldata.extend(compile_method_hash);
+    // compile_calldata.extend(hex::decode("000000000000000000000000").unwrap());
+    // compile_calldata.extend(expected_address.as_bytes());
+    // multicall_append(
+    //     &mut multicall_args,
+    //     MulticallArg::Call,
+    //     H160::from_slice(&arbwasm_address),
+    //     compile_calldata,
+    // );
     multicall_args
 }
 
@@ -174,7 +174,8 @@ fn args_for_multicall(
     }
     args.extend(address.as_bytes());
     args.extend(calldata);
-    vec![]
+    println!("Got args as {}", hex::encode(&args));
+    args
 }
 
 fn multicall_append(calls: &mut Vec<u8>, opcode: MulticallArg, address: H160, inner: Vec<u8>) {
