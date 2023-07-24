@@ -10,9 +10,11 @@ use bytes::buf::Reader;
 use bytes::{Buf, Bytes};
 
 use ethers::abi::Address;
-use ethers::prelude::{U256, ContractDeploymentTx, ContractDeployer, ContractFactory, MiddlewareBuilder};
+use ethers::prelude::{
+    ContractDeployer, ContractDeploymentTx, ContractFactory, MiddlewareBuilder, U256,
+};
 use ethers::types::transaction::eip2718::TypedTransaction;
-use ethers::types::{H160, Eip1559TransactionRequest};
+use ethers::types::{Eip1559TransactionRequest, H160};
 use ethers::utils::get_contract_address;
 use ethers::{
     core::{types::TransactionRequest, utils::Anvil},
@@ -50,7 +52,11 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
 
     let wasm_file_bytes =
         std::fs::read(&wasm_path).expect("Could not read WASM file at target path");
-    println!("Reading file {:?}, length in bytes {}", wasm_path.as_os_str(), wasm_file_bytes.len());
+    println!(
+        "Reading file {:?}, length in bytes {}",
+        wasm_path.as_os_str(),
+        wasm_file_bytes.len()
+    );
 
     let wbytes: Reader<&[u8]> = wasm_file_bytes.reader();
 
@@ -65,26 +71,25 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
     );
     let mut code = hex::decode(constants::EOF_PREFIX).unwrap();
     code.extend(compressed_bytes);
-    println!(
-        "Compressed WASM with prefix len: {}",
-        code.len(),
-    );
+    println!("Compressed WASM with prefix len: {}", code.len(),);
 
     // Next, we prepend with the EOF bytes and prepare a compilation tx onchain. Uses ethers
     // to prepare the tx and send it over onchain to an endpoint. Will prepare a multicall data
     // tx to send to a multicall.rs rust program.
     let wallet = if let Some(priv_key_path) = &cfg.wallet.private_key_path {
-        let privkey = std::fs::read_to_string(priv_key_path).expect("Could not read private key file");
+        let privkey =
+            std::fs::read_to_string(priv_key_path).expect("Could not read private key file");
         LocalWallet::from_str(privkey.as_str()).expect("Could not parse privkey")
     } else {
         let wallet = cfg.wallet.clone();
-        let keystore_password_path = wallet.keystore_password_path.expect("No keystore password file provided");
+        let keystore_password_path = wallet
+            .keystore_password_path
+            .expect("No keystore password file provided");
         let keystore_path = wallet.keystore_path.expect("No keystore path provided");
-        let keystore_pass = std::fs::read_to_string(keystore_password_path).expect("Could not keystore password file");
-        LocalWallet::decrypt_keystore(
-            keystore_path,
-            keystore_pass,
-        ).expect("Could not decrypt keystore")
+        let keystore_pass = std::fs::read_to_string(keystore_password_path)
+            .expect("Could not keystore password file");
+        LocalWallet::decrypt_keystore(keystore_path, keystore_pass)
+            .expect("Could not decrypt keystore")
     };
     submit_signed_tx(&cfg.endpoint, wallet, &code).await
 }
@@ -111,6 +116,71 @@ fn contract_init_code(code: &[u8]) -> Vec<u8> {
     println!("First 12 bytes={first_few}");
     deploy.extend(code);
     deploy
+}
+
+fn prepare_deploy_compile_multicall(compressed_wasm: &[u8], expected_address: &H160) -> Vec<u8> {
+    let code = contract_init_code(compressed_wasm);
+    let mut multicall_args = args_for_multicall(MulticallArg::Call, H160::zero(), None, code);
+    let arbwasm_address = hex::decode(constants::ARB_WASM_ADDRESS).unwrap();
+    let mut compile_calldata = vec![];
+    let compile_method_hash = hex::decode("2e50f32b").unwrap();
+    compile_calldata.extend(compile_method_hash);
+    compile_calldata.extend(hex::decode("000000000000000000000000").unwrap());
+    compile_calldata.extend(expected_address.as_bytes());
+    multicall_append(
+        &mut multicall_args,
+        MulticallArg::Call,
+        H160::from_slice(&arbwasm_address),
+        compile_calldata,
+    );
+    multicall_args
+}
+
+#[derive(Clone)]
+enum MulticallArg {
+    Call,
+    DelegateCall,
+    StaticCall,
+}
+
+impl From<MulticallArg> for u8 {
+    fn from(value: MulticallArg) -> Self {
+        match value {
+            MulticallArg::Call => 0x00,
+            MulticallArg::DelegateCall => 0x01,
+            MulticallArg::StaticCall => 0x02,
+        }
+    }
+}
+
+fn args_for_multicall(
+    opcode: MulticallArg,
+    address: H160,
+    value: Option<U256>,
+    calldata: Vec<u8>,
+) -> Vec<u8> {
+    let mut args = vec![0x01];
+    let mut length: u32 = 21 + calldata.len() as u32;
+    if matches!(opcode, MulticallArg::Call) {
+        length += 32;
+    }
+    args.extend(length.to_be_bytes());
+    args.push(opcode.clone().into());
+
+    if matches!(opcode, MulticallArg::Call) {
+        let mut val = [0u8; 32];
+        value.unwrap_or(U256::zero()).to_big_endian(&mut val);
+        args.extend(val);
+    }
+    args.extend(address.as_bytes());
+    args.extend(calldata);
+    vec![]
+}
+
+fn multicall_append(calls: &mut Vec<u8>, opcode: MulticallArg, address: H160, inner: Vec<u8>) {
+    calls[0] += 1; // add another call
+    let args = args_for_multicall(opcode, address, None, inner);
+    calls.extend(args[1..].iter().cloned());
 }
 
 async fn submit_signed_tx(endpoint: &str, wallet: LocalWallet, code: &[u8]) -> eyre::Result<()> {

@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, Args, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 mod check;
 mod constants;
@@ -56,7 +56,7 @@ pub struct DeployConfig {
     /// Wallet source to use with the cargo stylus plugin.
     #[command(flatten)]
     wallet: WalletSource,
-} 
+}
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum DeployMode {
@@ -89,8 +89,6 @@ async fn main() -> eyre::Result<()> {
             });
             check::run_checks(disabled)
         }
-        Commands::Deploy(deploy_config) => {
-            deploy::deploy_and_compile_onchain(deploy_config).await
-        }
+        Commands::Deploy(deploy_config) => deploy::deploy_and_compile_onchain(deploy_config).await,
     }
 }
