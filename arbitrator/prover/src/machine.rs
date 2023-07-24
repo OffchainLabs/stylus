@@ -116,16 +116,10 @@ impl Function {
         locals_with_params.extend(locals.iter().map(|x| x.value));
 
         let mut insts = Vec::new();
-        let empty_local_hashes = locals_with_params
-            .iter()
-            .cloned()
-            .map(Value::default_of_type)
-            .map(Value::hash)
-            .collect::<Vec<_>>();
         insts.push(Instruction {
             opcode: Opcode::InitFrame,
             argument_data: 0,
-            proving_argument_data: Some(Merkle::new(MerkleType::Value, empty_local_hashes).root()),
+            proving_argument_data: None,
         });
         // Fill in parameters
         for i in (0..func_ty.inputs.len()).rev() {
@@ -165,10 +159,17 @@ impl Function {
     }
 
     fn hash(&self) -> Bytes32 {
+        let empty_local_hashes = self.ty.inputs
+            .iter()
+            .cloned()
+            .map(Value::default_of_type)
+            .map(Value::hash)
+            .collect::<Vec<_>>();
         let mut h = Keccak256::new();
         h.update("Function:");
         h.update(self.opcode_merkle.root());
         h.update(self.argument_data_merkle.root());
+        h.update(Merkle::new(MerkleType::Value, empty_local_hashes).root());
         h.finalize().into()
     }
 }
