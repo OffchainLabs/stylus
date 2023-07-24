@@ -47,14 +47,6 @@ use wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
 #[cfg(feature = "native")]
 use rayon::prelude::*;
 
-fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
-    let mut h = Keccak256::new();
-    h.update("Call indirect:");
-    h.update((table as u64).to_be_bytes());
-    h.update(ty.hash());
-    h.finalize().into()
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum InboxIdentifier {
     Sequencer = 0,
@@ -119,7 +111,6 @@ impl Function {
         locals: &[Local],
         add_body: F,
         func_ty: FunctionType,
-        module_types: &[FunctionType],
     ) -> Result<Function> {
         let mut locals_with_params = func_ty.inputs.clone();
         locals_with_params.extend(locals.iter().map(|x| x.value));
@@ -147,15 +138,6 @@ impl Function {
 
         add_body(&mut insts)?;
         insts.push(Instruction::simple(Opcode::Return));
-
-        // Insert missing proving argument data
-        for inst in insts.iter_mut() {
-            if inst.opcode == Opcode::CallIndirect {
-                let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);
-                let ty = &module_types[usize::try_from(ty).unwrap()];
-                inst.proving_argument_data = Some(hash_call_indirect_data(table, ty));
-            }
-        }
 
         Ok(Function::new_from_wavm(insts, func_ty, locals_with_params))
     }
@@ -309,6 +291,8 @@ struct Module {
     #[serde(skip)]
     funcs_merkle: Arc<Merkle>,
     types: Arc<Vec<FunctionType>>,
+    #[serde(skip)]
+    types_merkle: Arc<Merkle>,
     internals_offset: u32,
     names: Arc<NameCustomSection>,
     host_call_hooks: Arc<Vec<Option<(String, String)>>>,
@@ -423,7 +407,6 @@ impl Module {
                     )
                 },
                 func_ty.clone(),
-                &types,
             )?);
         }
         code.extend(internals);
@@ -567,6 +550,10 @@ impl Module {
                 code.iter().map(|f| f.hash()).collect(),
             )),
             funcs: Arc::new(code),
+            types_merkle: Arc::new(Merkle::new(
+                MerkleType::FunctionType,
+                types.iter().map(FunctionType::hash).collect(),
+            )),
             types: Arc::new(types.to_owned()),
             internals_offset,
             names: Arc::new(bin.names.to_owned()),
@@ -602,6 +589,7 @@ impl Module {
         h.update(self.memory.hash());
         h.update(self.tables_merkle.root());
         h.update(self.funcs_merkle.root());
+        h.update(self.types_merkle.root());
         h.update(self.internals_offset.to_be_bytes());
         h.finalize().into()
     }
@@ -623,6 +611,7 @@ impl Module {
 
         data.extend(self.tables_merkle.root());
         data.extend(self.funcs_merkle.root());
+        data.extend(self.types_merkle.root());
 
         data.extend(self.internals_offset.to_be_bytes());
 
@@ -1361,7 +1350,6 @@ impl Machine {
                 Ok(())
             },
             FunctionType::default(),
-            &entrypoint_types,
         )?];
         let entrypoint = Module {
             globals: Vec::new(),
@@ -1373,6 +1361,10 @@ impl Machine {
                 entrypoint_funcs.iter().map(Function::hash).collect(),
             )),
             funcs: Arc::new(entrypoint_funcs),
+            types_merkle: Arc::new( Merkle::new(
+                MerkleType::FunctionType,
+                entrypoint_types.iter().map(FunctionType::hash).collect()
+            )),
             types: Arc::new(entrypoint_types),
             names: Arc::new(entrypoint_names),
             internals_offset: 0,
@@ -1473,6 +1465,10 @@ impl Machine {
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
             ));
+            module.types_merkle = Arc::new(Merkle::new(
+                MerkleType::FunctionType,
+                module.types.iter().map(FunctionType::hash).collect()
+            ))
         }
         let mut mach = Machine {
             status: MachineStatus::Running,
@@ -2768,11 +2764,14 @@ impl Machine {
                     Some(Value::I32(i)) => *i,
                     x => fail!("top of stack before call_indirect is {x:?}"),
                 };
-                let ty = &module.types[usize::try_from(ty).unwrap()];
-                out!((table as u64).to_be_bytes());
-                out!(ty.hash());
                 let table_usize = usize::try_from(table).unwrap();
+                let type_usize = usize::try_from(ty).unwrap();
                 let table = &module.tables[table_usize];
+                out!(module.types[type_usize].hash());
+                out!(module
+                    .types_merkle
+                    .prove(type_usize)
+                    .expect("failed to prove types merkle"));
                 out!(table
                     .serialize_for_proof()
                     .expect("failed to serialize table"));
