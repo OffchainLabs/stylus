@@ -6,7 +6,6 @@ use crate::{
     host::InternalFunc,
     value::{ArbValueType, FunctionType, IntegerValType},
 };
-use arbutil::Bytes32;
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
 use serde::{Deserialize, Serialize};
