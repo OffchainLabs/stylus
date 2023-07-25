@@ -1,3 +1,5 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 mod check;
@@ -43,7 +45,7 @@ pub struct DeployConfig {
     /// Does not submit a transaction, but instead estimates the gas required
     /// to complete the operation.
     #[arg(long)]
-    estimate_gas: bool,
+    estimate_gas_only: bool,
     /// By default, submits a single, atomic deploy and compile transaction to Arbitrum.
     /// Otherwise, a user could choose to split up the deploy and compile steps into individual transactions.
     #[arg(long, value_enum)]

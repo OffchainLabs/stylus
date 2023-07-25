@@ -1,23 +1,27 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 use std::convert::TryFrom;
 
 use crate::constants;
 use ethers::types::transaction::eip2718::TypedTransaction;
-use ethers::types::Eip1559TransactionRequest;
+use ethers::types::{Eip1559TransactionRequest, U256};
 use ethers::{
     middleware::SignerMiddleware,
     providers::{Http, Middleware, Provider},
     signers::{LocalWallet, Signer},
 };
 
+/// Submits a signed tx to an endpoint, given a wallet, a data payload, and a closure
+/// to get a transaction request to sign and send. If estimate_only is true, only a call to
+/// estimate gas will occur and the actual tx will not be submitted.
 pub async fn submit_signed_tx<F>(
     endpoint: &str,
     wallet: LocalWallet,
-    data: &[u8],
     estimate_only: bool,
     prep_tx: F,
 ) -> eyre::Result<(), String>
 where
-    F: FnOnce() -> Eip1559TransactionRequest,
+    F: FnOnce(U256) -> Eip1559TransactionRequest,
 {
     let provider = Provider::<Http>::try_from(endpoint)
         .map_err(|e| format!("could not initialize provider from http {}", e))?;
@@ -45,7 +49,7 @@ where
     let base_fee = block.base_fee_per_gas.expect("No base fee found for block");
 
     let to = hex::decode(constants::MULTICALL_ADDR).unwrap();
-    let tx = prep_tx();
+    let tx = prep_tx(base_fee);
     let typed = TypedTransaction::Eip1559(tx.clone());
     let estimated = client
         .estimate_gas(&typed, None)

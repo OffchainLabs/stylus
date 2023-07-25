@@ -1,3 +1,5 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 use bytesize::ByteSize;
 
 /// EOF prefix used in Stylus compressed WASMs on-chain

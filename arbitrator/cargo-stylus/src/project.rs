@@ -1,3 +1,5 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 use std::env::current_dir;
 use std::io::Read;
 use std::path::{Component, PathBuf};
@@ -10,8 +12,8 @@ use bytes::Buf;
 use crate::constants;
 use arbutil::Color;
 
-// Loads the project name from the current working directory,
-// which is assumed to be the project root.
+/// Loads the project name from the current working directory,
+/// which is assumed to be the project root.
 pub fn get_project_name(cwd: &PathBuf) -> Option<String> {
     while let Some(component) = cwd.components().into_iter().next() {
         match component {
@@ -24,8 +26,8 @@ pub fn get_project_name(cwd: &PathBuf) -> Option<String> {
     None
 }
 
-// Build a Rust project to WASM and return the path to the compiled WASM file.
-// TODO: Configure debug or release via flags.
+/// Build a Rust project to WASM and return the path to the compiled WASM file.
+/// TODO: Configure debug or release via flags.
 pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
     let cwd: PathBuf = current_dir().map_err(|e| format!("Could not get current dir {}", e))?;
     let project_name = get_project_name(&cwd).ok_or("Could not get project name from directory")?;
@@ -47,7 +49,7 @@ pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
     Ok(wasm_path)
 }
 
-// Reads a WASM file at a specified path and returns its brotli compressed bytes.
+/// Reads a WASM file at a specified path and returns its brotli compressed bytes.
 pub fn get_compressed_wasm_bytes(wasm_path: &PathBuf) -> eyre::Result<Vec<u8>, String> {
     println!("Reading WASM file at {}", wasm_path.display().yellow());
 
