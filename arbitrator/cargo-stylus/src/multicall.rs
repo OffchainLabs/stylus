@@ -17,6 +17,24 @@ impl From<MulticallArg> for u8 {
     }
 }
 
+fn prepare_deploy_compile_multicall(compressed_wasm: &[u8], expected_address: &H160) -> Vec<u8> {
+    // let code = contract_init_code(compressed_wasm);
+    // let mut multicall_args = args_for_multicall(MulticallArg::Call, H160::zero(), None, code);
+    // let arbwasm_address = hex::decode(constants::ARB_WASM_ADDRESS).unwrap();
+    // let mut compile_calldata = vec![];
+    // let compile_method_hash = hex::decode("2e50f32b").unwrap();
+    // compile_calldata.extend(compile_method_hash);
+    // compile_calldata.extend(hex::decode("000000000000000000000000").unwrap());
+    // compile_calldata.extend(expected_address.as_bytes());
+    // multicall_append(
+    //     &mut multicall_args,
+    //     MulticallArg::Call,
+    //     H160::from_slice(&arbwasm_address),
+    //     compile_calldata,
+    // );
+    vec![]
+}
+
 fn args_for_multicall(
     opcode: MulticallArg,
     address: H160,

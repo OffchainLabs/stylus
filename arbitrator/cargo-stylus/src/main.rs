@@ -4,6 +4,7 @@ mod check;
 mod constants;
 mod deploy;
 mod multicall;
+mod project;
 mod tx;
 
 #[derive(Parser, Debug)]
@@ -78,7 +79,7 @@ pub struct WalletSource {
 }
 
 #[tokio::main]
-async fn main() -> eyre::Result<()> {
+async fn main() -> eyre::Result<(), String> {
     let cli = Cli::parse();
     match &cli.command {
         Commands::Check {
@@ -86,11 +87,11 @@ async fn main() -> eyre::Result<()> {
         } => {
             let disabled = disabled_checks.as_ref().map(|f| {
                 f.into_iter()
-                    .map(|s| s.as_str().into())
+                    .map(|s| s.as_str().try_into())
                     .collect::<Vec<check::StylusCheck>>()
             });
             check::run_checks(disabled)
         }
-        Commands::Deploy(deploy_config) => deploy::deploy_and_compile_onchain(deploy_config).await,
+        Commands::Deploy(deploy_config) => Ok(()),
     }
 }
