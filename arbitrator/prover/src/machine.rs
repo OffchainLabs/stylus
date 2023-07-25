@@ -95,19 +95,25 @@ fn code_to_opcode_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {
 }
 
 fn code_to_argdata_hash(code: &Vec<Instruction>, opcode_idx: usize) -> Bytes32 {
+    let seg = opcode_idx / 4;
+    let seg_start = seg * 4;
+    let seg_end = min(seg_start + 4, code.len());
     let mut b = [0u8; 32];
-    b[24..].copy_from_slice(code[opcode_idx].argument_data.to_be_bytes().as_slice());
+    for i in 0..(seg_end - seg_start) {
+        b[i * 8..i * 8 + 8]
+            .copy_from_slice(code[seg_start + i].argument_data.to_be_bytes().as_slice())
+    }
     Bytes32(b)
 }
 
 fn code_to_argdata_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {
     #[cfg(feature = "native")]
-    let iter = (0..(code.len())).into_par_iter();
+    let iter = (0..(code.len() + 3) / 4).into_par_iter();
 
     #[cfg(not(feature = "native"))]
-    let iter = (0..(code.len())).into_iter();
+    let iter = (0..(code.len() + 3) / 4).into_iter();
 
-    iter.map(|i| code_to_argdata_hash(code, i)).collect()
+    iter.map(|i| code_to_argdata_hash(code, i * 4)).collect()
 }
 
 impl Function {
@@ -2687,7 +2693,7 @@ impl Machine {
         out!(code_to_argdata_hash(&func.code, self.pc.inst()));
         out!(func
             .argument_data_merkle
-            .prove(self.pc.inst())
+            .prove(self.pc.inst() / 4)
             .expect("Failed to prove against argument data merkle"));
         out!(func.empty_locals_hash());
         out!(module
