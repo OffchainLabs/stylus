@@ -41,23 +41,27 @@ type create2Type func(
 )
 type getReturnDataType func(offset uint32, size uint32) []byte
 type emitLogType func(data []byte, topics uint32) error
+type reportHostioType func(opcode uint32, gas uint64, cost uint64) error
+type reportHostioAdvancedType func(opcode uint32, data []byte, offset uint32, size uint32, gas uint64, cost uint64) error
 type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
 type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
 type addPagesType func(pages uint16) (cost uint64)
 
 type goClosures struct {
-	getBytes32      getBytes32Type
-	setBytes32      setBytes32Type
-	contractCall    contractCallType
-	delegateCall    delegateCallType
-	staticCall      staticCallType
-	create1         create1Type
-	create2         create2Type
-	getReturnData   getReturnDataType
-	emitLog         emitLogType
-	accountBalance  accountBalanceType
-	accountCodeHash accountCodehashType
-	addPages        addPagesType
+	getBytes32           getBytes32Type
+	setBytes32           setBytes32Type
+	contractCall         contractCallType
+	delegateCall         delegateCallType
+	staticCall           staticCallType
+	create1              create1Type
+	create2              create2Type
+	getReturnData        getReturnDataType
+	emitLog              emitLogType
+	reportHostio         reportHostioType
+	reportHostioAdvanced reportHostioAdvancedType
+	accountBalance       accountBalanceType
+	accountCodeHash      accountCodehashType
+	addPages             addPagesType
 }
 
 func newApiClosures(
@@ -235,22 +239,63 @@ func newApiClosures(
 		}
 		return data
 	}
-	emitLog := func(data []byte, topics uint32) error {
-		if readOnly {
-			return vm.ErrWriteProtection
-		}
+	extractLogData := func(data []byte, topics uint32) ([]common.Hash, []byte) {
 		hashes := make([]common.Hash, topics)
 		for i := uint32(0); i < topics; i++ {
 			hashes[i] = common.BytesToHash(data[:(i+1)*32])
 		}
+
+		logData := data[32*topics:]
+
+		return hashes, logData
+	}
+	emitLog := func(data []byte, topics uint32) error {
+		if readOnly {
+			return vm.ErrWriteProtection
+		}
+		hashes, logData := extractLogData(data, topics)
+
 		event := &types.Log{
 			Address:     actingAddress,
 			Topics:      hashes,
-			Data:        data[32*topics:],
+			Data:        logData,
 			BlockNumber: evm.Context.BlockNumber.Uint64(),
 			// Geth will set other fields
 		}
 		db.AddLog(event)
+		return nil
+	}
+	reportHostio := func(rawOpcode uint32, gas uint64, cost uint64) error {
+		opcode := vm.OpCode(rawOpcode)
+		if tracingInfo != nil {
+			switch opcode {
+			case vm.CALLDATALOAD:
+				tracingInfo.RecordCallDataLoad(gas, cost)
+			default:
+				tracingInfo.RecordWithNoFields(opcode, gas, cost)
+			}
+		}
+
+		return nil
+	}
+	reportHostioAdvanced := func(rawOpcode uint32, data []byte, offset uint32, size uint32, gas uint64, cost uint64) error {
+		opcode := vm.OpCode(rawOpcode)
+		if tracingInfo != nil {
+			switch opcode {
+			case vm.RETURNDATACOPY:
+				tracingInfo.RecordWithPartialFields(opcode, offset, size, gas, cost)
+			case vm.KECCAK256:
+				tracingInfo.RecordWithDataFields(opcode, data, gas, cost)
+			case vm.ADDRESS, vm.EXTCODEHASH:
+				tracingInfo.RecordWithAddress(opcode, common.BytesToAddress(data), gas, cost)
+			case vm.LOG0:
+				hashes, logData := extractLogData(data, size)
+				tracingInfo.RecordEmitLog(logData, hashes, gas, cost)
+			default:
+				return errors.New("trace: unrecognized opcode")
+			}
+		}
+
 		return nil
 	}
 	accountBalance := func(address common.Address) (common.Hash, uint64) {
@@ -271,17 +316,19 @@ func newApiClosures(
 	}
 
 	return &goClosures{
-		getBytes32:      getBytes32,
-		setBytes32:      setBytes32,
-		contractCall:    contractCall,
-		delegateCall:    delegateCall,
-		staticCall:      staticCall,
-		create1:         create1,
-		create2:         create2,
-		getReturnData:   getReturnData,
-		emitLog:         emitLog,
-		accountBalance:  accountBalance,
-		accountCodeHash: accountCodehash,
-		addPages:        addPages,
+		getBytes32:           getBytes32,
+		setBytes32:           setBytes32,
+		contractCall:         contractCall,
+		delegateCall:         delegateCall,
+		staticCall:           staticCall,
+		create1:              create1,
+		create2:              create2,
+		getReturnData:        getReturnData,
+		emitLog:              emitLog,
+		reportHostio:         reportHostio,
+		reportHostioAdvanced: reportHostioAdvanced,
+		accountBalance:       accountBalance,
+		accountCodeHash:      accountCodehash,
+		addPages:             addPages,
 	}
 }

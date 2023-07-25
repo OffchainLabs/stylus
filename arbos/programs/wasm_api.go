@@ -17,19 +17,21 @@ import (
 )
 
 type apiWrapper struct {
-	getBytes32      js.Func
-	setBytes32      js.Func
-	contractCall    js.Func
-	delegateCall    js.Func
-	staticCall      js.Func
-	create1         js.Func
-	create2         js.Func
-	getReturnData   js.Func
-	emitLog         js.Func
-	addressBalance  js.Func
-	addressCodeHash js.Func
-	addPages        js.Func
-	funcs           []byte
+	getBytes32           js.Func
+	setBytes32           js.Func
+	contractCall         js.Func
+	delegateCall         js.Func
+	staticCall           js.Func
+	create1              js.Func
+	create2              js.Func
+	getReturnData        js.Func
+	emitLog              js.Func
+	reportHostio         js.Func
+	reportHostioAdvanced js.Func
+	addressBalance       js.Func
+	addressCodeHash      js.Func
+	addPages             js.Func
+	funcs                []byte
 }
 
 func newApi(
@@ -190,6 +192,23 @@ func newApi(
 		err := closures.emitLog(data, topics)
 		return write(stylus, err)
 	})
+	reportHostio := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		opcode := jsU32(args[0])
+		gas := jsU64(args[1])
+		cost := jsU64(args[2])
+		err := closures.reportHostio(opcode, gas, cost)
+		return write(stylus, err)
+	})
+	reportHostioAdvanced := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		opcode := jsU32(args[0])
+		data := jsBytes(args[1])
+		offset := jsU32(args[2])
+		size := jsU32(args[3])
+		gas := jsU64(args[4])
+		cost := jsU64(args[5])
+		err := closures.reportHostioAdvanced(opcode, data, offset, size, gas, cost)
+		return write(stylus, err)
+	})
 	addressBalance := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		address := jsAddress(args[0])
 		value, cost := closures.accountBalance(address)
@@ -206,29 +225,31 @@ func newApi(
 		return write(stylus, cost)
 	})
 
-	ids := make([]byte, 0, 12*4)
+	ids := make([]byte, 0, 14*4)
 	funcs := js.Global().Get("stylus").Call("setCallbacks",
 		getBytes32, setBytes32, contractCall, delegateCall,
 		staticCall, create1, create2, getReturnData, emitLog,
-		addressBalance, addressCodeHash, addPages,
+		reportHostio, reportHostioAdvanced, addressBalance,
+		addressCodeHash, addPages,
 	)
 	for i := 0; i < funcs.Length(); i++ {
 		ids = append(ids, arbmath.Uint32ToBytes(u32(funcs.Index(i).Int()))...)
 	}
 	return &apiWrapper{
-		getBytes32:      getBytes32,
-		setBytes32:      setBytes32,
-		contractCall:    contractCall,
-		delegateCall:    delegateCall,
-		staticCall:      staticCall,
-		create1:         create1,
-		create2:         create2,
-		getReturnData:   getReturnData,
-		emitLog:         emitLog,
-		addressBalance:  addressBalance,
-		addressCodeHash: addressCodeHash,
-		addPages:        addPages,
-		funcs:           ids,
+		getBytes32:           getBytes32,
+		setBytes32:           setBytes32,
+		contractCall:         contractCall,
+		delegateCall:         delegateCall,
+		staticCall:           staticCall,
+		create1:              create1,
+		create2:              create2,
+		getReturnData:        getReturnData,
+		reportHostio:         reportHostio,
+		reportHostioAdvanced: reportHostioAdvanced,
+		addressBalance:       addressBalance,
+		addressCodeHash:      addressCodeHash,
+		addPages:             addPages,
+		funcs:                ids,
 	}
 }
 
@@ -242,6 +263,8 @@ func (api *apiWrapper) drop() {
 	api.create2.Release()
 	api.getReturnData.Release()
 	api.emitLog.Release()
+	api.reportHostio.Release()
+	api.reportHostioAdvanced.Release()
 	api.addressBalance.Release()
 	api.addressCodeHash.Release()
 	api.addPages.Release()

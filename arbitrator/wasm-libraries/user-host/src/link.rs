@@ -226,6 +226,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEv
         msg_value: read_bytes32(sp.read_go_ptr()).into(),
         tx_gas_price: read_bytes32(sp.read_go_ptr()).into(),
         tx_origin: read_bytes20(sp.read_go_ptr()).into(),
+        tracing_enabled: sp.read_u8(),
         return_data_len: 0,
     };
     sp.write_ptr(heapify(evm_data));

@@ -6,6 +6,7 @@ use arbutil::{
     evm::{
         api::{EvmApi, EvmApiStatus},
         user::UserOutcomeKind,
+        Opcode,
     },
     Bytes20, Bytes32,
 };
@@ -61,6 +62,17 @@ pub struct GoEvmApi {
     pub get_return_data:
         unsafe extern "C" fn(id: usize, output: *mut RustVec, offset: u32, size: u32),
     pub emit_log: unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: u32) -> EvmApiStatus,
+    pub report_hostio:
+        unsafe extern "C" fn(id: usize, opcode: Opcode, gas: u64, cost: u64) -> EvmApiStatus,
+    pub report_hostio_advanced: unsafe extern "C" fn(
+        id: usize,
+        opcode: Opcode,
+        data: *mut RustVec,
+        offset: u32,
+        size: u32,
+        gas: u64,
+        cost: u64,
+    ) -> EvmApiStatus,
     pub account_balance:
         unsafe extern "C" fn(id: usize, address: Bytes20, gas_cost: *mut u64) -> Bytes32, // balance
     pub account_codehash:
@@ -232,6 +244,40 @@ impl EvmApi for GoEvmApi {
         match api_status {
             EvmApiStatus::Success => Ok(()),
             EvmApiStatus::Failure => Err(error!(error)),
+        }
+    }
+
+    fn report_hostio(&mut self, opcode: Opcode, gas: u64, cost: u64) -> Result<()> {
+        let api_status = call!(self, report_hostio, opcode, gas, cost);
+        match api_status {
+            EvmApiStatus::Success => Ok(()),
+            EvmApiStatus::Failure => Err(error!([])),
+        }
+    }
+
+    fn report_hostio_advanced(
+        &mut self,
+        opcode: Opcode,
+        data: Vec<u8>,
+        offset: u32,
+        size: u32,
+        gas: u64,
+        cost: u64,
+    ) -> Result<()> {
+        let mut data = RustVec::new(data.to_vec());
+        let api_status = call!(
+            self,
+            report_hostio_advanced,
+            opcode,
+            ptr!(data),
+            offset,
+            size,
+            gas,
+            cost
+        );
+        match api_status {
+            EvmApiStatus::Success => Ok(()),
+            EvmApiStatus::Failure => Err(error!([])),
         }
     }
 

@@ -57,6 +57,7 @@ func rustEvmDataImpl(
 	msgValue *hash,
 	txGasPrice *hash,
 	txOrigin *addr,
+	tracingEnabled u8,
 ) *rustEvmData
 
 func compileUserWasm(db vm.StateDB, program addr, wasm []byte, pageLimit u16, version u32, debug bool) (u16, error) {
@@ -128,6 +129,10 @@ func (p *goParams) encode() *rustConfig {
 }
 
 func (d *evmData) encode() *rustEvmData {
+	var tracingEnabled u8
+	if d.tracingEnabled {
+		tracingEnabled = 1
+	}
 	return rustEvmDataImpl(
 		&d.blockBasefee,
 		&d.chainId,
@@ -140,5 +145,6 @@ func (d *evmData) encode() *rustEvmData {
 		&d.msgValue,
 		&d.txGasPrice,
 		&d.txOrigin,
+		tracingEnabled,
 	)
 }

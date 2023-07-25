@@ -217,6 +217,27 @@ func emitLogImpl(api usize, data *rustVec, topics u32) apiStatus {
 	return apiSuccess
 }
 
+//export reportHostioImpl
+func reportHostioImpl(api usize, opcode u32, gas u64, cost u64) apiStatus {
+	closures := getApi(api)
+	err := closures.reportHostio(uint32(opcode), uint64(gas), uint64(cost))
+	if err != nil {
+		return apiFailure
+	}
+	return apiSuccess
+}
+
+//export reportHostioAdvancedImpl
+func reportHostioAdvancedImpl(api usize, opcode u32, data *rustVec, offset u32, size u32, gas u64, cost u64) apiStatus {
+	closures := getApi(api)
+	err := closures.reportHostioAdvanced(uint32(opcode), data.read(), uint32(offset), uint32(size), uint64(gas), uint64(cost))
+	if err != nil {
+		data.setString(err.Error())
+		return apiFailure
+	}
+	return apiSuccess
+}
+
 //export accountBalanceImpl
 func accountBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
 	closures := getApi(api)
@@ -318,6 +339,10 @@ func (params *goParams) encode() C.StylusConfig {
 }
 
 func (data *evmData) encode() C.EvmData {
+	var tracingEnabled u8
+	if data.tracingEnabled {
+		tracingEnabled = 1
+	}
 	return C.EvmData{
 		block_basefee:    hashToBytes32(data.blockBasefee),
 		chainid:          hashToBytes32(data.chainId),
@@ -330,6 +355,7 @@ func (data *evmData) encode() C.EvmData {
 		msg_value:        hashToBytes32(data.msgValue),
 		tx_gas_price:     hashToBytes32(data.txGasPrice),
 		tx_origin:        addressToBytes20(data.txOrigin),
+		tracing_enabled:  tracingEnabled,
 		return_data_len:  0,
 	}
 }

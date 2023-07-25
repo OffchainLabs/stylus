@@ -146,7 +146,8 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         msg_value: sp.read_bytes32().into(),
         tx_gas_price: sp.read_bytes32().into(),
         tx_origin: sp.read_bytes20().into(),
+        tracing_enabled: sp.read_u8().into(),
         return_data_len: 0,
     };
-    sp.write_ptr(heapify(evm_data));
+    sp.skip_space().write_ptr(heapify(evm_data));
 }

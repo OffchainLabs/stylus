@@ -157,6 +157,22 @@ impl EvmApi for TestEvmApi {
         Ok(()) // pretend a log was emitted
     }
 
+    fn report_hostio(&mut self, _opcode: u32, _gas: u64, _cost: u64) -> Result<()> {
+        Ok(()) // pretend a trace was emitted
+    }
+
+    fn report_hostio_advanced(
+        &mut self,
+        _opcode: u32,
+        _data: Vec<u8>,
+        _offset: u32,
+        _size: u32,
+        _gas: u64,
+        _cost: u64,
+    ) -> Result<()> {
+        Ok(()) // pretend a trace was emitted
+    }
+
     fn account_balance(&mut self, _address: Bytes20) -> (Bytes32, u64) {
         unimplemented!()
     }
