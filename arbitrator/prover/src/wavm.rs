@@ -305,7 +305,6 @@ pub type FloatingPointImpls = HashMap<FloatInstruction, (u32, u32)>;
 pub struct Instruction {
     pub opcode: Opcode,
     pub argument_data: u64,
-    pub proving_argument_data: Option<Bytes32>,
 }
 
 fn pack_call_indirect(table: u32, ty: u32) -> u64 {
@@ -330,7 +329,6 @@ impl Instruction {
         Instruction {
             opcode,
             argument_data: 0,
-            proving_argument_data: None,
         }
     }
 
@@ -339,17 +337,6 @@ impl Instruction {
         Instruction {
             opcode,
             argument_data,
-            proving_argument_data: None,
-        }
-    }
-
-    pub fn get_proving_argument_data(self) -> Bytes32 {
-        if let Some(data) = self.proving_argument_data {
-            data
-        } else {
-            let mut b = [0u8; 32];
-            b[24..].copy_from_slice(&self.argument_data.to_be_bytes());
-            Bytes32(b)
         }
     }
 }

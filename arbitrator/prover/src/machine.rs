@@ -94,16 +94,20 @@ fn code_to_opcode_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {
     iter.map(|i| code_to_opcode_hash(code, i * 16)).collect()
 }
 
-#[cfg(feature = "native")]
-fn code_to_argdata_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {
-    code.par_iter()
-        .map(|i| i.get_proving_argument_data())
-        .collect()
+fn code_to_argdata_hash(code: &Vec<Instruction>, opcode_idx: usize) -> Bytes32 {
+    let mut b = [0u8; 32];
+    b[24..].copy_from_slice(code[opcode_idx].argument_data.to_be_bytes().as_slice());
+    Bytes32(b)
 }
 
-#[cfg(not(feature = "native"))]
 fn code_to_argdata_hashes(code: &Vec<Instruction>) -> Vec<Bytes32> {
-    code.iter().map(|i| i.get_proving_argument_data()).collect()
+    #[cfg(feature = "native")]
+    let iter = (0..(code.len())).into_par_iter();
+
+    #[cfg(not(feature = "native"))]
+    let iter = (0..(code.len())).into_iter();
+
+    iter.map(|i| code_to_argdata_hash(code, i)).collect()
 }
 
 impl Function {
@@ -119,14 +123,12 @@ impl Function {
         insts.push(Instruction {
             opcode: Opcode::InitFrame,
             argument_data: 0,
-            proving_argument_data: None,
         });
         // Fill in parameters
         for i in (0..func_ty.inputs.len()).rev() {
             insts.push(Instruction {
                 opcode: Opcode::LocalSet,
                 argument_data: i as u64,
-                proving_argument_data: None,
             });
         }
 
@@ -159,7 +161,9 @@ impl Function {
     }
 
     fn empty_locals_hash(&self) -> Bytes32 {
-        let empty_local_hashes = self.ty.inputs
+        let empty_local_hashes = self
+            .ty
+            .inputs
             .iter()
             .cloned()
             .map(Value::default_of_type)
@@ -1366,9 +1370,9 @@ impl Machine {
                 entrypoint_funcs.iter().map(Function::hash).collect(),
             )),
             funcs: Arc::new(entrypoint_funcs),
-            types_merkle: Arc::new( Merkle::new(
+            types_merkle: Arc::new(Merkle::new(
                 MerkleType::FunctionType,
-                entrypoint_types.iter().map(FunctionType::hash).collect()
+                entrypoint_types.iter().map(FunctionType::hash).collect(),
             )),
             types: Arc::new(entrypoint_types),
             names: Arc::new(entrypoint_names),
@@ -1472,7 +1476,7 @@ impl Machine {
             ));
             module.types_merkle = Arc::new(Merkle::new(
                 MerkleType::FunctionType,
-                module.types.iter().map(FunctionType::hash).collect()
+                module.types.iter().map(FunctionType::hash).collect(),
             ))
         }
         let mut mach = Machine {
@@ -2680,7 +2684,7 @@ impl Machine {
             .opcode_merkle
             .prove(self.pc.inst() / 16)
             .expect("Failed to prove against code merkle"));
-        out!(func.code[self.pc.inst()].get_proving_argument_data());
+        out!(code_to_argdata_hash(&func.code, self.pc.inst()));
         out!(func
             .argument_data_merkle
             .prove(self.pc.inst())
