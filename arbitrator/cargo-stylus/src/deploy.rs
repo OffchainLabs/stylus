@@ -28,9 +28,8 @@ use eyre::bail;
 
 use crate::{constants, DeployConfig};
 
-pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> {
+fn build_project() -> eyre::Result<PathBuf, ()> {
     let cwd: PathBuf = current_dir().unwrap();
-
     // TODO: Configure debug or release via flags.
     // TODO: Capture errors from this command.
     Command::new("cargo")
@@ -41,13 +40,16 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
         .arg("--target=wasm32-unknown-unknown")
         .output()
         .expect("Failed to execute cargo build");
-
     let wasm_path = cwd
         .join("target")
         .join("wasm32-unknown-unknown")
         .join("release")
         .join(format!("{}.wasm", "echo"));
+    Ok(wasm_path)
+}
 
+fn read_compressed_wasm() -> eyre::Result<Vec<u8>, ()> {
+    let wasm_path = build_project().expect("Could not build project");
     println!("Reading compiled WASM at {}", wasm_path.display().yellow());
 
     let wasm_file_bytes =
@@ -71,11 +73,10 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
     );
     let mut code = hex::decode(constants::EOF_PREFIX).unwrap();
     code.extend(compressed_bytes);
-    println!("Compressed WASM with prefix len: {}", code.len(),);
+    Ok(code)
+}
 
-    // Next, we prepend with the EOF bytes and prepare a compilation tx onchain. Uses ethers
-    // to prepare the tx and send it over onchain to an endpoint. Will prepare a multicall data
-    // tx to send to a multicall.rs rust program.
+fn load_wallet() -> Result<LocalWallet, eyre::Error> {
     let wallet = if let Some(priv_key_path) = &cfg.wallet.private_key_path {
         let privkey =
             std::fs::read_to_string(priv_key_path).expect("Could not read private key file");
@@ -91,10 +92,10 @@ pub async fn deploy_and_compile_onchain(cfg: &DeployConfig) -> eyre::Result<()> 
         LocalWallet::decrypt_keystore(keystore_path, keystore_pass)
             .expect("Could not decrypt keystore")
     };
-    submit_multicall(&cfg.endpoint, wallet, &code).await
+    Ok(wallet)
 }
 
-fn contract_init_code(code: &[u8]) -> Vec<u8> {
+fn program_deployment_calldata(code: &[u8]) -> Vec<u8> {
     let mut code_len = [0u8; 32];
     U256::from(code.len()).to_big_endian(&mut code_len);
     let mut deploy: Vec<u8> = vec![];
@@ -134,54 +135,6 @@ fn prepare_deploy_compile_multicall(compressed_wasm: &[u8], expected_address: &H
     //     compile_calldata,
     // );
     multicall_args
-}
-
-#[derive(Clone)]
-enum MulticallArg {
-    Call,
-    DelegateCall,
-    StaticCall,
-}
-
-impl From<MulticallArg> for u8 {
-    fn from(value: MulticallArg) -> Self {
-        match value {
-            MulticallArg::Call => 0x00,
-            MulticallArg::DelegateCall => 0x01,
-            MulticallArg::StaticCall => 0x02,
-        }
-    }
-}
-
-fn args_for_multicall(
-    opcode: MulticallArg,
-    address: H160,
-    value: Option<U256>,
-    calldata: Vec<u8>,
-) -> Vec<u8> {
-    let mut args = vec![0x01];
-    let mut length: u32 = 21 + calldata.len() as u32;
-    if matches!(opcode, MulticallArg::Call) {
-        length += 32;
-    }
-    args.extend(length.to_be_bytes());
-    args.push(opcode.clone().into());
-
-    if matches!(opcode, MulticallArg::Call) {
-        let mut val = [0u8; 32];
-        value.unwrap_or(U256::zero()).to_big_endian(&mut val);
-        args.extend(val);
-    }
-    args.extend(address.as_bytes());
-    args.extend(calldata);
-    println!("Got args as {}", hex::encode(&args));
-    args
-}
-
-fn multicall_append(calls: &mut Vec<u8>, opcode: MulticallArg, address: H160, inner: Vec<u8>) {
-    calls[0] += 1; // add another call
-    let args = args_for_multicall(opcode, address, None, inner);
-    calls.extend(args[1..].iter().cloned());
 }
 
 async fn submit_multicall(endpoint: &str, wallet: LocalWallet, code: &[u8]) -> eyre::Result<()> {

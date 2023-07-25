@@ -3,6 +3,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 mod check;
 mod constants;
 mod deploy;
+mod multicall;
+mod tx;
 
 #[derive(Parser, Debug)]
 #[command(name = "stylus")]
