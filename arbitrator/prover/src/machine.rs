@@ -70,6 +70,8 @@ pub struct Function {
     #[serde(skip)]
     argument_data_merkle: Merkle,
     local_types: Vec<ArbValueType>,
+    #[serde(skip)]
+    empty_locals_hash: Bytes32,
 }
 
 fn code_to_opcode_hash(code: &Vec<Instruction>, opcode_idx: usize) -> Bytes32 {
@@ -159,6 +161,7 @@ impl Function {
 
         Function {
             code,
+            empty_locals_hash: Self::calc_empty_locals_hash(&local_types),
             ty,
             opcode_merkle: Merkle::new(MerkleType::Opcode, opcode_hashes),
             argument_data_merkle: Merkle::new(MerkleType::ArgumentData, argument_data_hashes),
@@ -166,10 +169,8 @@ impl Function {
         }
     }
 
-    fn empty_locals_hash(&self) -> Bytes32 {
-        let empty_local_hashes = self
-            .ty
-            .inputs
+    fn calc_empty_locals_hash(locals_with_params: &Vec<ArbValueType>) -> Bytes32 {
+        let empty_local_hashes = locals_with_params
             .iter()
             .cloned()
             .map(Value::default_of_type)
@@ -183,7 +184,7 @@ impl Function {
         h.update("Function:");
         h.update(self.opcode_merkle.root());
         h.update(self.argument_data_merkle.root());
-        h.update(self.empty_locals_hash());
+        h.update(self.empty_locals_hash);
         h.finalize().into()
     }
 }
@@ -1475,6 +1476,7 @@ impl Machine {
 
                 func.opcode_merkle = Merkle::new(MerkleType::Opcode, opcode_hashes);
                 func.argument_data_merkle = Merkle::new(MerkleType::ArgumentData, argdata_hashes);
+                func.empty_locals_hash = Function::calc_empty_locals_hash(&func.local_types)
             }
             module.funcs_merkle = Arc::new(Merkle::new(
                 MerkleType::Function,
@@ -2695,7 +2697,7 @@ impl Machine {
             .argument_data_merkle
             .prove(self.pc.inst() / 4)
             .expect("Failed to prove against argument data merkle"));
-        out!(func.empty_locals_hash());
+        out!(func.empty_locals_hash);
         out!(module
             .funcs_merkle
             .prove(self.pc.func())
