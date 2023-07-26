@@ -30,6 +30,7 @@ where
         .ok_or("no base fee found for block")?;
 
     tx_request.max_fee_per_gas = Some(base_fee);
+    tx_request.max_priority_fee_per_gas = Some(base_fee);
 
     let typed = TypedTransaction::Eip1559(tx_request.clone());
     let estimated = client
@@ -60,6 +61,11 @@ where
             "Tx with hash {} reverted",
             receipt.transaction_hash
         )),
-        Some(_) => Ok(()),
+        Some(_) => {
+            let tx_hash = receipt.transaction_hash;
+            let gas_used = receipt.gas_used.unwrap();
+            println!("Confirmed tx {tx_hash:#032x}, gas used {gas_used}");
+            Ok(())
+        },
     }
 }

@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 use std::env::current_dir;
 use std::io::Read;
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use brotli2::read::BrotliEncoder;
@@ -12,22 +12,10 @@ use bytes::Buf;
 use crate::constants;
 use arbutil::Color;
 
-/// Loads the project name from the current working directory,
-/// which is assumed to be the project root.
-pub fn get_project_name(cwd: &Path) -> Option<String> {
-    while let Some(component) = cwd.components().next() {
-        if let Component::Normal(name) = component {
-            return Some(name.to_str().unwrap().to_string());
-        }
-    }
-    None
-}
-
 /// Build a Rust project to WASM and return the path to the compiled WASM file.
 /// TODO: Configure debug or release via flags.
 pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
     let cwd: PathBuf = current_dir().map_err(|e| format!("could not get current dir {}", e))?;
-    let project_name = get_project_name(&cwd).ok_or("could not get project name from directory")?;
 
     Command::new("cargo")
         .stdout(Stdio::inherit())
@@ -38,12 +26,29 @@ pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
         .output()
         .map_err(|e| format!("failed to execute cargo build {}", e))?;
 
-    let wasm_path = cwd
+    let release_path = cwd
         .join("target")
         .join("wasm32-unknown-unknown")
-        .join("release")
-        .join(format!("{}.wasm", project_name));
-    Ok(wasm_path)
+        .join("release");
+
+    // Gets the files in the release folder.
+    let release_files: Vec<PathBuf> = std::fs::read_dir(release_path)
+        .map_err(|e| format!("could not read release dir {}", e))?
+        .filter(|r| r.is_ok())
+        .map(|r| r.unwrap().path())
+        .filter(|r| r.is_file())
+        .collect();
+
+    let wasm_file_path = release_files
+        .into_iter()
+        .find(|p| {
+            if let Some(ext) = p.file_name() {
+                return ext.to_str().unwrap_or("").contains(".wasm")
+            }
+            false
+        })
+        .ok_or("could not find WASM file in release dir")?;
+    Ok(wasm_file_path)
 }
 
 /// Reads a WASM file at a specified path and returns its brotli compressed bytes.

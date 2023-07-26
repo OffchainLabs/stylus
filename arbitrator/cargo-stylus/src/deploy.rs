@@ -53,7 +53,7 @@ fn prepare_tx_request(
     match cfg.mode {
         Some(DeployMode::DeployOnly) => {
             let program_addr = get_contract_address(wallet.address(), nonce);
-            println!("Deploying program to address {}", &program_addr);
+            println!("Deploying program to address {program_addr:#032x}");
             let deployment_calldata = program_deployment_calldata(wasm_file_bytes);
             Ok(Eip1559TransactionRequest::new()
                 .from(wallet.address())
@@ -80,7 +80,7 @@ fn prepare_tx_request(
         // Default mode is to deploy and compile atomically.
         None => {
             let program_addr = get_contract_address(wallet.address(), nonce);
-            println!("Deploying program to address {}", &program_addr);
+            println!("Deploying program to address {program_addr:#032x}");
             let multicall_data =
                 multicall::prepare_deploy_compile_multicall(wasm_file_bytes, &program_addr);
 
