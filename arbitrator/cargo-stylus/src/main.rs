@@ -1,6 +1,8 @@
+use check::StylusCheck;
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use ethers::types::H160;
 
 mod check;
 mod constants;
@@ -61,6 +63,9 @@ pub struct DeployConfig {
     /// Wallet source to use with the cargo stylus plugin.
     #[command(flatten)]
     wallet: WalletSource,
+    /// If only compiling an onchain program, the address of the program to send a compilation tx for.
+    #[arg(long)]
+    compile_program_addr: Option<H160>,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -83,17 +88,25 @@ pub struct WalletSource {
 #[tokio::main]
 async fn main() -> eyre::Result<(), String> {
     let cli = Cli::parse();
-    match &cli.command {
+    match cli.command {
         Commands::Check {
             disabled_checks, ..
         } => {
-            let disabled = disabled_checks.as_ref().map(|f| {
-                f.into_iter()
+            let disabled = disabled_checks.map_or(Vec::default(), |checks| {
+                checks
+                    .into_iter()
                     .map(|s| s.as_str().try_into())
-                    .collect::<Vec<check::StylusCheck>>()
+                    .collect::<Result<Vec<StylusCheck>, String>>()
+                    .expect("Could not parse disabled Stylus checks")
             });
             check::run_checks(disabled)
         }
-        Commands::Deploy(deploy_config) => Ok(()),
+        Commands::Deploy(deploy_config) => match deploy::deploy(deploy_config).await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!(
+                "Could not perform deployment/compilation transaction {}",
+                e
+            )),
+        },
     }
 }

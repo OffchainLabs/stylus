@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 use std::env::current_dir;
 use std::io::Read;
-use std::path::{Component, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use brotli2::read::BrotliEncoder;
@@ -14,13 +14,10 @@ use arbutil::Color;
 
 /// Loads the project name from the current working directory,
 /// which is assumed to be the project root.
-pub fn get_project_name(cwd: &PathBuf) -> Option<String> {
-    while let Some(component) = cwd.components().into_iter().next() {
-        match component {
-            Component::Normal(name) => {
-                return Some(name.to_str().unwrap().to_string());
-            }
-            _ => {}
+pub fn get_project_name(cwd: &Path) -> Option<String> {
+    while let Some(component) = cwd.components().next() {
+        if let Component::Normal(name) = component {
+            return Some(name.to_str().unwrap().to_string());
         }
     }
     None
@@ -29,8 +26,8 @@ pub fn get_project_name(cwd: &PathBuf) -> Option<String> {
 /// Build a Rust project to WASM and return the path to the compiled WASM file.
 /// TODO: Configure debug or release via flags.
 pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
-    let cwd: PathBuf = current_dir().map_err(|e| format!("Could not get current dir {}", e))?;
-    let project_name = get_project_name(&cwd).ok_or("Could not get project name from directory")?;
+    let cwd: PathBuf = current_dir().map_err(|e| format!("could not get current dir {}", e))?;
+    let project_name = get_project_name(&cwd).ok_or("could not get project name from directory")?;
 
     Command::new("cargo")
         .stdout(Stdio::inherit())
@@ -39,7 +36,7 @@ pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
         .arg("--release")
         .arg("--target=wasm32-unknown-unknown")
         .output()
-        .map_err(|e| format!("Failed to execute cargo build {}", e))?;
+        .map_err(|e| format!("failed to execute cargo build {}", e))?;
 
     let wasm_path = cwd
         .join("target")
@@ -53,15 +50,15 @@ pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
 pub fn get_compressed_wasm_bytes(wasm_path: &PathBuf) -> eyre::Result<Vec<u8>, String> {
     println!("Reading WASM file at {}", wasm_path.display().yellow());
 
-    let wasm_file_bytes = std::fs::read(&wasm_path)
-        .map_err(|e| format!("Could not read WASM file at target path {}", e))?;
+    let wasm_file_bytes = std::fs::read(wasm_path)
+        .map_err(|e| format!("could not read WASM file at target path {}", e))?;
     let wbytes: Reader<&[u8]> = wasm_file_bytes.reader();
 
     let mut compressor = BrotliEncoder::new(wbytes, constants::BROTLI_COMPRESSION_LEVEL);
     let mut compressed_bytes = vec![];
     compressor
         .read_to_end(&mut compressed_bytes)
-        .map_err(|e| format!("Could not Brotli compress WASM bytes {}", e))?;
+        .map_err(|e| format!("could not Brotli compress WASM bytes {}", e))?;
 
     println!(
         "Compressed WASM size: {} bytes",

@@ -2,13 +2,18 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 use ethers::types::{H160, U256};
 
+use crate::{constants, deploy};
+
+/// Defines the different types of calls that can be made in a multicall transaction.
 #[derive(Clone)]
+#[allow(dead_code)]
 enum MulticallArg {
     Call,
     DelegateCall,
     StaticCall,
 }
 
+/// Convertes a multicall into an opcode (byte).
 impl From<MulticallArg> for u8 {
     fn from(value: MulticallArg) -> Self {
         match value {
@@ -19,24 +24,29 @@ impl From<MulticallArg> for u8 {
     }
 }
 
-fn prepare_deploy_compile_multicall(compressed_wasm: &[u8], expected_address: &H160) -> Vec<u8> {
-    // let code = contract_init_code(compressed_wasm);
-    // let mut multicall_args = args_for_multicall(MulticallArg::Call, H160::zero(), None, code);
-    // let arbwasm_address = hex::decode(constants::ARB_WASM_ADDRESS).unwrap();
-    // let mut compile_calldata = vec![];
-    // let compile_method_hash = hex::decode("2e50f32b").unwrap();
-    // compile_calldata.extend(compile_method_hash);
-    // compile_calldata.extend(hex::decode("000000000000000000000000").unwrap());
-    // compile_calldata.extend(expected_address.as_bytes());
-    // multicall_append(
-    //     &mut multicall_args,
-    //     MulticallArg::Call,
-    //     H160::from_slice(&arbwasm_address),
-    //     compile_calldata,
-    // );
-    vec![]
+/// Prepares the data for a deploy and compile multicall tx.
+pub fn prepare_deploy_compile_multicall(
+    compressed_wasm: &[u8],
+    expected_address: &H160,
+) -> Vec<u8> {
+    let code = deploy::program_deployment_calldata(compressed_wasm);
+    let mut multicall_args = args_for_multicall(MulticallArg::Call, H160::zero(), None, code);
+    let arbwasm_address = hex::decode(constants::ARB_WASM_ADDRESS).unwrap();
+    let mut compile_calldata = vec![];
+    let compile_method_hash = hex::decode(constants::ARBWASM_COMPILE_METHOD_HASH).unwrap();
+    compile_calldata.extend(compile_method_hash);
+    compile_calldata.extend(hex::decode("000000000000000000000000").unwrap());
+    compile_calldata.extend(expected_address.as_bytes());
+    multicall_append(
+        &mut multicall_args,
+        MulticallArg::Call,
+        H160::from_slice(&arbwasm_address),
+        compile_calldata,
+    );
+    multicall_args
 }
 
+/// Converts arguments into the format the multicall Rust Stylus program expects.
 fn args_for_multicall(
     opcode: MulticallArg,
     address: H160,
@@ -58,10 +68,10 @@ fn args_for_multicall(
     }
     args.extend(address.as_bytes());
     args.extend(calldata);
-    println!("Got args as {}", hex::encode(&args));
     args
 }
 
+/// Adds another call to a multicall transaction.
 fn multicall_append(calls: &mut Vec<u8>, opcode: MulticallArg, address: H160, inner: Vec<u8>) {
     calls[0] += 1; // add another call
     let args = args_for_multicall(opcode, address, None, inner);

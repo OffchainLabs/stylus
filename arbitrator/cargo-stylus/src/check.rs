@@ -30,7 +30,7 @@ impl TryFrom<&str> for StylusCheck {
 /// Runs a series of checks on the WASM program to ensure it is valid for compilation
 /// and code size before being deployed and compiled onchain. An optional list of checks
 /// to disable can be specified.
-pub fn run_checks(disabled: Option<Vec<StylusCheck>>) -> eyre::Result<(), String> {
+pub fn run_checks(disabled: Vec<StylusCheck>) -> eyre::Result<(), String> {
     let wasm_file_path = project::build_project_to_wasm()?;
     let wasm_file_bytes = project::get_compressed_wasm_bytes(&wasm_file_path)?;
     println!(
@@ -41,10 +41,7 @@ pub fn run_checks(disabled: Option<Vec<StylusCheck>>) -> eyre::Result<(), String
     );
 
     let compressed_size = ByteSize::b(wasm_file_bytes.len() as u64);
-    let check_compressed_size = disabled
-        .as_ref()
-        .map(|d: &Vec<StylusCheck>| !d.contains(&StylusCheck::CompressedSize))
-        .unwrap_or(true);
+    let check_compressed_size = disabled.contains(&StylusCheck::CompressedSize);
 
     if check_compressed_size && compressed_size > constants::MAX_PROGRAM_SIZE {
         return Err(format!(
@@ -62,14 +59,14 @@ pub fn compile_native_wasm_module(
     cfg: CompileConfig,
     wasm_file_bytes: &[u8],
 ) -> eyre::Result<Vec<u8>, String> {
-    let module = stylus::native::module(&wasm_file_bytes, cfg)
-        .map_err(|e| format!("could not compile wasm {}", e))?;
+    let module = stylus::native::module(wasm_file_bytes, cfg)
+        .map_err(|e| format!("Could not compile wasm {}", e))?;
     let success = "Stylus compilation successful!".to_string().mint();
     println!("{}", success);
 
     println!(
         "Compiled WASM module total size: {}",
-        ByteSize::b(module.len() as u64).to_string()
+        ByteSize::b(module.len() as u64),
     );
     Ok(module)
 }
