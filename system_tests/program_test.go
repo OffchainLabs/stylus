@@ -22,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -551,72 +550,6 @@ func testEvmData(t *testing.T, jit bool) {
 	validateBlocks(t, 1, jit, ctx, node, l2client)
 }
 
-func TestStylusCargoPlugin(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	rand.Seed(time.Now().UTC().UnixNano())
-
-	// TODO: track latest ArbOS version
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
-
-	l2config := arbnode.ConfigDefaultL1Test()
-	l2config.BlockValidator.Enable = true
-	l2config.BatchPoster.Enable = true
-	l2config.L1Reader.Enable = true
-	l2config.Sequencer.MaxRevertGasReject = 0
-	l2config.L1Reader.OldHeaderTimeout = 10 * time.Minute
-	AddDefaultValNode(t, ctx, l2config, true /* jit */)
-
-	stackConf := node.DefaultConfig
-	stackConf.HTTPHost = "localhost"
-	stackConf.HTTPPort = 9999
-	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
-	stackConf.P2P.NoDiscovery = true
-	stackConf.P2P.ListenAddr = ""
-	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, &stackConf)
-
-	cleanup := func() {
-		requireClose(t, l1stack)
-		node.StopAndWait()
-		cancel()
-	}
-	defer cleanup()
-
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	fmt.Printf("Owner %x", crypto.FromECDSA(l2info.Accounts["Owner"].PrivateKey))
-
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
-	Require(t, err)
-	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, l2client)
-	Require(t, err)
-
-	ensure := func(tx *types.Transaction, err error) *types.Receipt {
-		t.Helper()
-		Require(t, err)
-		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-		Require(t, err)
-		return receipt
-	}
-
-	// Set random pricing params. Note that the ink price is measured in bips,
-	// so an ink price of 10k means that 1 evm gas buys exactly 1 ink.
-	// We choose a range on both sides of this value.
-	inkPrice := testhelpers.RandomUint64(0, 20000)     // evm to ink
-	wasmHostioInk := testhelpers.RandomUint64(0, 5000) // amount of ink
-	colors.PrintMint(fmt.Sprintf("ink price=%d, HostIO ink=%d", inkPrice, wasmHostioInk))
-
-	ensure(arbDebug.BecomeChainOwner(&auth))
-	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
-	ensure(arbOwner.SetWasmHostioInk(&auth, wasmHostioInk))
-
-	colors.PrintMint(fmt.Sprintf("arbwasm addr is=%#x", types.ArbWasmAddress))
-
-	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
-	t.Logf("Multicall addr %#x", multiAddr)
-	time.Sleep(time.Hour)
-}
-
 func TestProgramMemory(t *testing.T) {
 	t.Parallel()
 	testMemory(t, true)
@@ -747,7 +680,6 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	}
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	fmt.Printf("Owner priv key %#x", l2info.Accounts["Owner"].PrivateKey.D.Bytes())
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
@@ -783,7 +715,6 @@ func readWasmFile(t *testing.T, file string) []byte {
 
 	wasmSource, err := wasmer.Wat2Wasm(string(source))
 	Require(t, err)
-	colors.PrintMint(fmt.Sprintf("WASM source len %d, and file name %s", len(wasmSource), file))
 	wasm, err := arbcompress.CompressWell(wasmSource)
 	Require(t, err)
 
@@ -798,7 +729,6 @@ func deployWasm(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
 ) common.Address {
 	wasm := readWasmFile(t, file)
-	colors.PrintMint("Compressed wasm code length", len(wasm))
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
 	return compileWasm(t, ctx, auth, l2client, programAddress)
@@ -812,10 +742,8 @@ func compileWasm(
 	Require(t, err)
 
 	timed(t, "compile", func() {
-		fmt.Println("Getting to compile the code...")
 		tx, err := arbWasm.CompileProgram(&auth, program)
 		Require(t, err)
-		fmt.Printf("Compile tx data %#x", tx.Data())
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 	})

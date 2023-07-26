@@ -918,8 +918,6 @@ func deployContractInitCode(code []byte, revert bool) []byte {
 	deploy = append(deploy, byte(vm.PUSH1))
 	deploy = append(deploy, 0)
 	deploy = append(deploy, byte(last_opcode))
-	fmt.Printf("Deployment logic prelude %#x\n", deploy)
-	fmt.Printf("First 12 bytes of code %#x\n", code[:12])
 	deploy = append(deploy, code...)
 	return deploy
 }
