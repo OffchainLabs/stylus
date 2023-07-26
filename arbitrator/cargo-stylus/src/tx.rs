@@ -4,8 +4,8 @@ use ethers::types::transaction::eip2718::TypedTransaction;
 use ethers::types::Eip1559TransactionRequest;
 use ethers::{middleware::SignerMiddleware, providers::Middleware, signers::Signer};
 
-/// Submits a signed tx to an endpoint, given a wallet, a data payload, and a closure
-/// to get a transaction request to sign and send. If estimate_only is true, only a call to
+/// Submits a tx to a client given a data payload and a
+/// transaction request to sign and send. If estimate_only is true, only a call to
 /// estimate gas will occur and the actual tx will not be submitted.
 pub async fn submit_signed_tx<M, S>(
     client: SignerMiddleware<M, S>,
