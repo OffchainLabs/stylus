@@ -3,7 +3,7 @@
 
 use crate::{native, run::RunProgram};
 use arbutil::{
-    evm::{api::EvmApi, user::UserOutcomeKind, EvmData},
+    evm::{api::EvmApi, user::UserOutcomeKind, EvmData, Opcode},
     Bytes20, Bytes32,
 };
 use eyre::Result;
@@ -157,13 +157,13 @@ impl EvmApi for TestEvmApi {
         Ok(()) // pretend a log was emitted
     }
 
-    fn report_hostio(&mut self, _opcode: u32, _gas: u64, _cost: u64) -> Result<()> {
+    fn report_hostio(&mut self, _opcode: Opcode, _gas: u64, _cost: u64) -> Result<()> {
         Ok(()) // pretend a trace was emitted
     }
 
     fn report_hostio_advanced(
         &mut self,
-        _opcode: u32,
+        _opcode: Opcode,
         _data: Vec<u8>,
         _offset: u32,
         _size: u32,
