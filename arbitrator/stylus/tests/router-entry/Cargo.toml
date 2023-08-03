@@ -1,0 +1,21 @@
+[package]
+name = "router-entry"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+stylus-sdk = { path = "../../../langs/rust/" }
+alloy-sol-types = "0.3.0"
+alloy-primitives = "0.3.0"
+hex = "0.4.3"
+
+[profile.release]
+codegen-units = 1
+strip = true
+lto = true
+panic = "abort"
+
+# uncomment to optimize for size
+#   opt-level = "z"
+
+[workspace]
