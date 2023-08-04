@@ -66,6 +66,11 @@ pub struct DeployConfig {
     /// If only compiling an onchain program, the address of the program to send a compilation tx for.
     #[arg(long)]
     compile_program_addr: Option<H160>,
+    /// If desired, it loads a WASM file from a specified path. If not provided, it will try to find
+    /// a WASM file under the current working directory's Rust target release directory and use its
+    /// contents for the deploy command.
+    #[arg(long)]
+    wasm_file_path: Option<String>,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
