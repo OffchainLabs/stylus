@@ -206,7 +206,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 /// Safety: λ(
 ///     blockBasefee, chainid *[32]byte, blockCoinbase *[20]byte, blockGasLimit u64,
 ///     blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
-///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, startPages *StartPages,
+///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, tracingEnabled u8,
 ///) *EvmData
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(

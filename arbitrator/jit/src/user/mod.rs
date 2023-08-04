@@ -130,7 +130,7 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 /// go side: λ(
 ///     blockBasefee, chainid *[32]byte, blockCoinbase *[20]byte, blockGasLimit u64,
 ///     blockNumber *[32]byte, blockTimestamp u64, contractAddress, msgSender *[20]byte,
-///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte,
+///     msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, tracingEnabled u8,
 ///) *EvmData
 pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
