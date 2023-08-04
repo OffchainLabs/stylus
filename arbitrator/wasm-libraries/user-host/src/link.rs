@@ -229,5 +229,6 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEv
         tracing_enabled: sp.read_u8(),
         return_data_len: 0,
     };
+    sp.skip_space(); // skip debugMode
     sp.write_ptr(heapify(evm_data));
 }
