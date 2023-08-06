@@ -117,11 +117,11 @@ impl<E: EvmApi> NativeInstance<E> {
             };
         }
         let mut imports = imports! {
-            "forward" => {
+            "vm_hooks" => {
                 "read_args" => func!(host::read_args),
-                "return_data" => func!(host::return_data),
-                "account_load_bytes32" => func!(host::account_load_bytes32),
-                "account_store_bytes32" => func!(host::account_store_bytes32),
+                "write_result" => func!(host::write_result),
+                "storage_load_bytes32" => func!(host::storage_load_bytes32),
+                "storage_store_bytes32" => func!(host::storage_store_bytes32),
                 "call_contract" => func!(host::call_contract),
                 "delegate_call_contract" => func!(host::delegate_call_contract),
                 "static_call_contract" => func!(host::static_call_contract),
@@ -132,13 +132,11 @@ impl<E: EvmApi> NativeInstance<E> {
                 "emit_log" => func!(host::emit_log),
                 "account_balance" => func!(host::account_balance),
                 "account_codehash" => func!(host::account_codehash),
-                "evm_blockhash" => func!(host::evm_blockhash),
                 "evm_gas_left" => func!(host::evm_gas_left),
                 "evm_ink_left" => func!(host::evm_ink_left),
                 "block_basefee" => func!(host::block_basefee),
-                "block_chainid" => func!(host::block_chainid),
+                "chainid" => func!(host::chainid),
                 "block_coinbase" => func!(host::block_coinbase),
-                "block_difficulty" => func!(host::block_difficulty),
                 "block_gas_limit" => func!(host::block_gas_limit),
                 "block_number" => func!(host::block_number),
                 "block_timestamp" => func!(host::block_timestamp),
@@ -149,6 +147,7 @@ impl<E: EvmApi> NativeInstance<E> {
                 "tx_ink_price" => func!(host::tx_ink_price),
                 "tx_origin" => func!(host::tx_origin),
                 "memory_grow" => func!(host::memory_grow),
+                "native_keccak256" => func!(host::native_keccak256),
             },
         };
         if debug_funcs {
@@ -310,28 +309,26 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
         };
     }
     let mut imports = imports! {
-        "forward" => {
+        "vm_hooks" => {
             "read_args" => stub!(|_: u32|),
-            "return_data" => stub!(|_: u32, _: u32|),
-            "account_load_bytes32" => stub!(|_: u32, _: u32|),
-            "account_store_bytes32" => stub!(|_: u32, _: u32|),
+            "write_result" => stub!(|_: u32, _: u32|),
+            "storage_load_bytes32" => stub!(|_: u32, _: u32|),
+            "storage_store_bytes32" => stub!(|_: u32, _: u32|),
             "call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u32, _: u64, _: u32|),
             "delegate_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
             "static_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
             "create1" => stub!(|_: u32, _: u32, _: u32, _: u32, _: u32|),
             "create2" => stub!(|_: u32, _: u32, _: u32, _: u32, _: u32, _: u32|),
-            "read_return_data" => stub!(|_: u32|),
+            "read_return_data" => stub!(u32 <- |_: u32, _: u32, _: u32|),
             "return_data_size" => stub!(u32 <- ||),
             "emit_log" => stub!(|_: u32, _: u32, _: u32|),
             "account_balance" => stub!(|_: u32, _: u32|),
             "account_codehash" => stub!(|_: u32, _: u32|),
-            "evm_blockhash" => stub!(|_: u32, _: u32|),
             "evm_gas_left" => stub!(u64 <- ||),
             "evm_ink_left" => stub!(u64 <- ||),
             "block_basefee" => stub!(|_: u32|),
-            "block_chainid" => stub!(|_: u32|),
+            "chainid" => stub!(|_: u32|),
             "block_coinbase" => stub!(|_: u32|),
-            "block_difficulty" => stub!(|_: u32|),
             "block_gas_limit" => stub!(u64 <- ||),
             "block_number" => stub!(|_: u32|),
             "block_timestamp" => stub!(u64 <- ||),
@@ -342,6 +339,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "tx_ink_price" => stub!(u64 <- ||),
             "tx_origin" => stub!(|_: u32|),
             "memory_grow" => stub!(|_: u16|),
+            "native_keccak256" => stub!(|_: u32, _: u32, _: u32|),
         },
     };
     if compile.debug.debug_funcs {

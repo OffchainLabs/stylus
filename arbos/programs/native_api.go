@@ -51,9 +51,9 @@ EvmApiStatus create2Wrap(usize api, RustVec * code, Bytes32 endowment, Bytes32 s
     return create2Impl(api, code, endowment, salt, gas, len);
 }
 
-void getReturnDataImpl(usize api, RustVec * data);
-void getReturnDataWrap(usize api, RustVec * data) {
-    return getReturnDataImpl(api, data);
+void getReturnDataImpl(usize api, RustVec * data, u32 offset, u32 size);
+void getReturnDataWrap(usize api, RustVec * data, u32 offset, u32 size) {
+    return getReturnDataImpl(api, data, offset, size);
 }
 
 EvmApiStatus emitLogImpl(usize api, RustVec * data, usize topics);
@@ -69,11 +69,6 @@ Bytes32 accountBalanceWrap(usize api, Bytes20 address, u64 * cost) {
 Bytes32 accountCodeHashImpl(usize api, Bytes20 address, u64 * cost);
 Bytes32 accountCodeHashWrap(usize api, Bytes20 address, u64 * cost) {
     return accountCodeHashImpl(api, address, cost);
-}
-
-Bytes32 evmBlockHashImpl(usize api, Bytes32 block);
-Bytes32 evmBlockHashWrap(usize api, Bytes32 block) {
-    return evmBlockHashImpl(api, block);
 }
 
 u64 addPagesImpl(usize api, u16 pages);
@@ -116,7 +111,6 @@ func newApi(
 		emit_log:         (*[0]byte)(C.emitLogWrap),
 		account_balance:  (*[0]byte)(C.accountBalanceWrap),
 		account_codehash: (*[0]byte)(C.accountCodeHashWrap),
-		evm_blockhash:    (*[0]byte)(C.evmBlockHashWrap),
 		add_pages:        (*[0]byte)(C.addPagesWrap),
 		id:               id,
 	}, id

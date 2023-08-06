@@ -279,8 +279,8 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
         (result, len.assert_u32(), cost.assert_u64())
     }
 
-    fn get_return_data(&mut self) -> Bytes {
-        let [data] = call!(self, 1, GetReturnData);
+    fn get_return_data(&mut self, offset: u32, size: u32) -> Bytes {
+        let [data] = call!(self, 1, GetReturnData, offset, size);
         data.assert_bytes()
     }
 
@@ -301,11 +301,6 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
     fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
         let [value, cost] = call!(self, 2, AccountCodeHash, address);
         (value.assert_bytes32(), cost.assert_u64())
-    }
-
-    fn evm_blockhash(&mut self, num: Bytes32) -> Bytes32 {
-        let [value] = call!(self, 1, EvmBlockHash, num);
-        value.assert_bytes32()
     }
 
     fn add_pages(&mut self, pages: u16) -> u64 {

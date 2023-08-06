@@ -39,11 +39,10 @@ type create2Type func(
 	code []byte, salt, endowment *big.Int, gas uint64) (
 	addr common.Address, retdata_len uint32, cost uint64, err error,
 )
-type getReturnDataType func() []byte
+type getReturnDataType func(offset uint32, size uint32) []byte
 type emitLogType func(data []byte, topics uint32) error
 type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
 type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
-type evmBlockHashType func(block common.Hash) (value common.Hash)
 type addPagesType func(pages uint16) (cost uint64)
 
 type goClosures struct {
@@ -58,7 +57,6 @@ type goClosures struct {
 	emitLog         emitLogType
 	accountBalance  accountBalanceType
 	accountCodeHash accountCodehashType
-	evmBlockHash    evmBlockHashType
 	addPages        addPagesType
 }
 
@@ -230,8 +228,8 @@ func newApiClosures(
 	create2 := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
 		return create(code, endowment, salt, gas)
 	}
-	getReturnData := func() []byte {
-		data := interpreter.GetReturnData()
+	getReturnData := func(offset uint32, size uint32) []byte {
+		data := interpreter.GetReturnData(int(offset), int(size))
 		if data == nil {
 			return []byte{}
 		}
@@ -267,9 +265,6 @@ func newApiClosures(
 		}
 		return common.Hash{}, cost
 	}
-	evmBlockHash := func(block common.Hash) common.Hash {
-		return vm.BlockHashOp(evm, block.Big())
-	}
 	addPages := func(pages uint16) uint64 {
 		open, ever := db.AddStylusPages(pages)
 		return memoryModel.GasCost(pages, open, ever)
@@ -287,7 +282,6 @@ func newApiClosures(
 		emitLog:         emitLog,
 		accountBalance:  accountBalance,
 		accountCodeHash: accountCodehash,
-		evmBlockHash:    evmBlockHash,
 		addPages:        addPages,
 	}
 }

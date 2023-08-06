@@ -257,9 +257,8 @@ func (p Programs) CallProgram(
 
 	evmData := &evmData{
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
-		blockChainId:    common.BigToHash(evm.ChainConfig().ChainID),
+		chainId:         common.BigToHash(evm.ChainConfig().ChainID),
 		blockCoinbase:   evm.Context.Coinbase,
-		blockDifficulty: common.BigToHash(evm.Context.Difficulty),
 		blockGasLimit:   evm.Context.GasLimit,
 		blockNumber:     common.BigToHash(arbmath.UintToBig(l1BlockNumber)),
 		blockTimestamp:  evm.Context.Time,
@@ -341,9 +340,8 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 
 type evmData struct {
 	blockBasefee    common.Hash
-	blockChainId    common.Hash
+	chainId         common.Hash
 	blockCoinbase   common.Address
-	blockDifficulty common.Hash
 	blockGasLimit   uint64
 	blockNumber     common.Hash
 	blockTimestamp  uint64

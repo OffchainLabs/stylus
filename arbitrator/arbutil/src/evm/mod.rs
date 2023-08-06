@@ -17,6 +17,10 @@ pub const LOG_DATA_GAS: u64 = 8;
 // params.CopyGas
 pub const COPY_WORD_GAS: u64 = 3;
 
+// params.Keccak256Gas
+pub const KECCAK_256_GAS: u64 = 30;
+pub const KECCAK_WORD_GAS: u64 = 6;
+
 // vm.GasQuickStep (see gas.go)
 pub const GAS_QUICK_STEP: u64 = 2;
 
@@ -26,17 +30,11 @@ pub const ADDRESS_GAS: u64 = GAS_QUICK_STEP;
 // vm.GasQuickStep (see eips.go)
 pub const BASEFEE_GAS: u64 = GAS_QUICK_STEP;
 
-// vm.GasExtStep (see jump_table.go)
-pub const BLOCKHASH_GAS: u64 = 20;
-
 // vm.GasQuickStep (see eips.go)
 pub const CHAINID_GAS: u64 = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
 pub const COINBASE_GAS: u64 = GAS_QUICK_STEP;
-
-// vm.GasQuickStep (see jump_table.go)
-pub const DIFFICULTY_GAS: u64 = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
 pub const GASLIMIT_GAS: u64 = GAS_QUICK_STEP;
@@ -66,9 +64,8 @@ pub const ORIGIN_GAS: u64 = GAS_QUICK_STEP;
 #[repr(C)]
 pub struct EvmData {
     pub block_basefee: Bytes32,
-    pub block_chainid: Bytes32,
+    pub chainid: Bytes32,
     pub block_coinbase: Bytes20,
-    pub block_difficulty: Bytes32,
     pub block_gas_limit: u64,
     pub block_number: Bytes32,
     pub block_timestamp: u64,
@@ -78,4 +75,12 @@ pub struct EvmData {
     pub tx_gas_price: Bytes32,
     pub tx_origin: Bytes20,
     pub return_data_len: u32,
+}
+
+/// Returns the minimum number of EVM words needed to store `bytes` bytes.
+pub fn evm_words(bytes: u64) -> u64 {
+    match bytes % 32 {
+        0 => bytes / 32,
+        _ => bytes / 32 + 1,
+    }
 }

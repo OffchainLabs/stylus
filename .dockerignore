@@ -15,12 +15,8 @@ solgen/go
 target/**/*
 brotli/buildfiles/**/*
 
-# these go to different docker images
-testnode-scripts/node_modules
-blockscout/**/*
-
 # these are used by environment outside the docker:
-test-node.bash
+nitro-testnode/**/*
 
 # Arbitrator ignores
 arbitrator/tools/module_roots
@@ -34,6 +30,8 @@ arbitrator/wasm-testsuite/target/
 arbitrator/tools/wasmer/target/
 arbitrator/tools/wasm-tools/
 arbitrator/tools/module_roots/
+arbitrator/langs/rust/target/
+arbitrator/langs/bf/target/
 
 # Compiled files
 **/*.o

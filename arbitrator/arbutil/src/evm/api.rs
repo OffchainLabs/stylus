@@ -42,7 +42,6 @@ pub enum EvmApiMethod {
     EmitLog,
     AccountBalance,
     AccountCodeHash,
-    EvmBlockHash,
     AddPages,
 }
 
@@ -113,7 +112,7 @@ pub trait EvmApi: Send + 'static {
 
     /// Returns the EVM return data.
     /// Analogous to `vm.RETURNDATASIZE`.
-    fn get_return_data(&mut self) -> Vec<u8>;
+    fn get_return_data(&mut self, offset: u32, size: u32) -> Vec<u8>;
 
     /// Emits an EVM log with the given number of topics and data, the first bytes of which should be the topic data.
     /// Returns an error message on failure.
@@ -129,10 +128,6 @@ pub trait EvmApi: Send + 'static {
     /// Returns the hash and the access cost in gas.
     /// Analogous to `vm.CODEHASH`.
     fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64);
-
-    /// Returns a cryptographically insecure, pseudo-random value that is a digest of the chain's history.
-    /// Analogous to `vm.BLOCKHASH`.
-    fn evm_blockhash(&mut self, number: Bytes32) -> Bytes32;
 
     /// Determines the cost in gas of allocating additional wasm pages.
     /// Note: has the side effect of updating Geth's memory usage tracker.
