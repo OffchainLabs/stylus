@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
-    evm::{api::EvmApi, EvmData},
+    evm::{api::EvmApi, EvmData, Opcode},
     Bytes20, Bytes32, Color,
 };
 use derivative::Derivative;
@@ -81,7 +81,16 @@ impl<E: EvmApi> WasmEnv<E> {
     pub fn start_free<'a>(env: &'a mut WasmEnvMut<'_, E>) -> HostioInfo<'a, E> {
         let (env, store) = env.data_and_store_mut();
         let memory = env.memory.clone().unwrap();
-        HostioInfo { env, memory, store }
+        let mut info = HostioInfo {
+            start_gas: None,
+            env,
+            memory,
+            store,
+        };
+        if info.env.evm_data.tracing_enabled != 0 {
+            info.start_gas = Some(info.gas_left().unwrap_or_default());
+        }
+        info
     }
 
     pub fn say<D: Display>(&self, text: D) {
@@ -93,6 +102,7 @@ pub struct HostioInfo<'a, E: EvmApi> {
     pub env: &'a mut WasmEnv<E>,
     pub memory: Memory,
     pub store: StoreMut<'a>,
+    start_gas: Option<u64>,
 }
 
 impl<'a, E: EvmApi> HostioInfo<'a, E> {
@@ -148,6 +158,46 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
 
     pub fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryAccessError> {
         self.view().write(ptr.into(), src)
+    }
+
+    pub fn report_hostio(&mut self, opcode: Opcode) -> MaybeEscape {
+        if let Some(start_gas) = self.start_gas {
+            let cost = self.cost(start_gas);
+            self.evm_api.report_hostio(opcode, start_gas, cost)?
+        }
+
+        Ok(())
+    }
+
+    pub fn report_hostio_advanced(
+        &mut self,
+        opcode: Opcode,
+        data: &[u8],
+        offset: u32,
+        size: u32,
+    ) -> MaybeEscape {
+        if let Some(start_gas) = self.start_gas {
+            let cost = self.cost(start_gas);
+            self.evm_api.report_hostio_advanced(
+                opcode,
+                data.to_vec(),
+                offset,
+                size,
+                start_gas,
+                cost,
+            )?
+        }
+
+        Ok(())
+    }
+
+    pub fn cost(&mut self, start_gas: u64) -> u64 {
+        let gas_left = self.gas_left().unwrap_or_default();
+        if start_gas <= gas_left {
+            return 0;
+        }
+
+        return start_gas - gas_left;
     }
 
     pub fn write_bytes20(&self, ptr: u32, src: Bytes20) -> eyre::Result<()> {
