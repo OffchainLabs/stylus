@@ -5,6 +5,7 @@ use crate::{
     evm::{
         api::{EvmApi, EvmApiMethod, EvmApiStatus},
         user::UserOutcomeKind,
+        Opcode,
     },
     Bytes20, Bytes32,
 };
@@ -286,6 +287,42 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
 
     fn emit_log(&mut self, data: Bytes, topics: u32) -> Result<()> {
         let [out] = call!(self, 1, EmitLog, data, topics);
+        match out {
+            ApiValueKind::Nil => Ok(()),
+            ApiValueKind::String(err) => bail!(err),
+            _ => unreachable!(),
+        }
+    }
+
+    fn report_hostio(&mut self, opcode: Opcode, gas: u64, cost: u64) -> Result<()> {
+        let [out] = call!(self, 1, ReportHostio, opcode as u32, gas, cost);
+        match out {
+            ApiValueKind::Nil => Ok(()),
+            ApiValueKind::String(err) => bail!(err),
+            _ => unreachable!(),
+        }
+    }
+
+    fn report_hostio_advanced(
+        &mut self,
+        opcode: Opcode,
+        data: Vec<u8>,
+        offset: u32,
+        size: u32,
+        gas: u64,
+        cost: u64,
+    ) -> Result<()> {
+        let [out] = call!(
+            self,
+            1,
+            ReportHostioAdvanced,
+            opcode as u32,
+            data,
+            offset,
+            size,
+            gas,
+            cost
+        );
         match out {
             ApiValueKind::Nil => Ok(()),
             ApiValueKind::String(err) => bail!(err),

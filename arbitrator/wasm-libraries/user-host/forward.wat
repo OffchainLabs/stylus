@@ -17,6 +17,9 @@
     (import "user_host" "arbitrator_forward__read_return_data" (func $read_return_data (param i32 i32 i32) (result i32)))
     (import "user_host" "arbitrator_forward__return_data_size" (func $return_data_size (result i32)))
     (import "user_host" "arbitrator_forward__emit_log"         (func $emit_log         (param i32 i32 i32)))
+    (import "user_host" "arbitrator_forward__report_hostio"    (func $report_hostio    (param i32 i64 i64)))
+    (import "user_host" "arbitrator_forward__report_hostio_advanced"
+            (func $report_hostio_advanced (param i32 i32 i32 i32 i32 i64 i64)))
     (import "user_host" "arbitrator_forward__account_balance"  (func $account_balance  (param i32 i32)))
     (import "user_host" "arbitrator_forward__account_codehash" (func $account_codehash (param i32 i32)))
     (import "user_host" "arbitrator_forward__evm_gas_left"     (func $evm_gas_left     (result i64)))
@@ -47,6 +50,8 @@
     (export "vm_hooks__read_return_data"       (func $read_return_data))
     (export "vm_hooks__return_data_size"       (func $return_data_size))
     (export "vm_hooks__emit_log"               (func $emit_log))
+    (export "vm_hooks__report_hostio"          (func $report_hostio))
+    (export "vm_hooks__report_hostio_advanced" (func $report_hostio_advanced))
     (export "vm_hooks__account_balance"        (func $account_balance))
     (export "vm_hooks__account_codehash"       (func $account_codehash))
     (export "vm_hooks__evm_gas_left"           (func $evm_gas_left))

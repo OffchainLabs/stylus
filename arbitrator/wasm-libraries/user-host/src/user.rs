@@ -4,7 +4,7 @@
 use crate::{evm_api::ApiCaller, Program};
 use arbutil::{
     crypto,
-    evm::{self, api::EvmApi, js::JsEvmApi, user::UserOutcomeKind},
+    evm::{self, api::EvmApi, js::JsEvmApi, user::UserOutcomeKind, Opcode},
     wavm, Bytes20, Bytes32,
 };
 use prover::programs::meter::{GasMeteredMachine, MeteredMachine};
@@ -195,6 +195,21 @@ pub unsafe extern "C" fn user_host__emit_log(data: usize, len: u32, topics: u32)
 
     let data = wavm::read_slice_usize(data, len as usize);
     program.evm_api.emit_log(data, topics).unwrap();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__report_hostio(opcode: Opcode, gas: u64, cost: u64) {
+    let program = Program::start();
+
+    program.evm_api.report_hostio(opcode, gas, cost).unwrap();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__report_hostio_advanced(opcode: Opcode, data: usize, len: u32, offset: u32, size: u32, gas: u64, cost: u64) {
+    let program = Program::start();
+
+    let data = wavm::read_slice_usize(data, len as usize);
+    program.evm_api.report_hostio_advanced(opcode, data, offset, size, gas, cost).unwrap();
 }
 
 #[no_mangle]

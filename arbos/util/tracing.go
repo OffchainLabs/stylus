@@ -75,6 +75,95 @@ func (info *TracingInfo) RecordStorageSet(key, value common.Hash) {
 	}
 }
 
+func (info *TracingInfo) RecordCallDataLoad(gas uint64, cost uint64) {
+	tracer := info.Tracer
+	if info.Scenario == TracingDuringEVM {
+		scope := &vm.ScopeContext{
+			Memory: vm.NewMemory(),
+			Stack: TracingStackFromArgs(
+				*uint256.NewInt(0), // offset
+			),
+			Contract: info.Contract,
+		}
+		tracer.CaptureState(0, vm.CALLDATALOAD, gas, cost, scope, []byte{}, info.Depth, nil)
+	}
+}
+
+func (info *TracingInfo) RecordEmitLog(data []byte, topics []common.Hash, gas uint64, cost uint64) {
+	tracer := info.Tracer
+	if info.Scenario == TracingDuringEVM {
+		args := make([]uint256.Int, 0, 2+len(topics))
+		args = append(args, *uint256.NewInt(0))                 // offset
+		args = append(args, *uint256.NewInt(uint64(len(data)))) // size
+		for _, topic := range topics {
+			args = append(args, HashToUint256(topic)) // topic
+		}
+		scope := &vm.ScopeContext{
+			Memory:   TracingMemoryFromBytes(data),
+			Stack:    TracingStackFromArgs(args...),
+			Contract: info.Contract,
+		}
+		tracer.CaptureState(0, vm.OpCode(int(vm.LOG0)+len(topics)), gas, cost, scope, []byte{}, info.Depth, nil)
+	}
+}
+
+func (info *TracingInfo) RecordWithAddress(opcode vm.OpCode, address common.Address, gas uint64, cost uint64) {
+	tracer := info.Tracer
+	if info.Scenario == TracingDuringEVM {
+		scope := &vm.ScopeContext{
+			Memory: vm.NewMemory(),
+			Stack: TracingStackFromArgs(
+				AddressToUint256(address),
+			),
+			Contract: info.Contract,
+		}
+		tracer.CaptureState(0, opcode, gas, cost, scope, []byte{}, info.Depth, nil)
+	}
+}
+
+func (info *TracingInfo) RecordWithNoFields(opCode vm.OpCode, gas uint64, cost uint64) {
+	tracer := info.Tracer
+	if info.Scenario == TracingDuringEVM {
+		scope := &vm.ScopeContext{
+			Memory:   vm.NewMemory(),
+			Stack:    TracingStackFromArgs(),
+			Contract: info.Contract,
+		}
+		tracer.CaptureState(0, opCode, gas, cost, scope, []byte{}, info.Depth, nil)
+	}
+}
+
+func (info *TracingInfo) RecordWithDataFields(opCode vm.OpCode, data []byte, gas uint64, cost uint64) {
+	tracer := info.Tracer
+	if info.Scenario == TracingDuringEVM {
+		scope := &vm.ScopeContext{
+			Memory: TracingMemoryFromBytes(data),
+			Stack: TracingStackFromArgs(
+				*uint256.NewInt(0),                 // offset
+				*uint256.NewInt(uint64(len(data))), // size
+			),
+			Contract: info.Contract,
+		}
+		tracer.CaptureState(0, opCode, gas, cost, scope, []byte{}, info.Depth, nil)
+	}
+}
+
+func (info *TracingInfo) RecordWithPartialFields(opCode vm.OpCode, offset uint32, size uint32, gas uint64, cost uint64) {
+	tracer := info.Tracer
+	if info.Scenario == TracingDuringEVM {
+		scope := &vm.ScopeContext{
+			Memory: vm.NewMemory(),
+			Stack: TracingStackFromArgs(
+				*uint256.NewInt(0),              // destOffset
+				*uint256.NewInt(uint64(offset)), // offset
+				*uint256.NewInt(uint64(size)),   // size
+			),
+			Contract: info.Contract,
+		}
+		tracer.CaptureState(0, opCode, gas, cost, scope, []byte{}, info.Depth, nil)
+	}
+}
+
 func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Address, amount *big.Int) {
 	tracer := info.Tracer
 	depth := info.Depth
@@ -116,6 +205,12 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 		Contract: contract,
 	}
 	tracer.CaptureState(0, vm.POP, 0, 0, popScope, []byte{}, depth, nil)
+}
+
+func AddressToUint256(address common.Address) uint256.Int {
+	value := uint256.Int{}
+	value.SetBytes(address.Bytes())
+	return value
 }
 
 func HashToUint256(hash common.Hash) uint256.Int {

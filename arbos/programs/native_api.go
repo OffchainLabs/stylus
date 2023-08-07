@@ -61,6 +61,16 @@ EvmApiStatus emitLogWrap(usize api, RustVec * data, usize topics) {
     return emitLogImpl(api, data, topics);
 }
 
+EvmApiStatus reportHostioImpl(usize api, u32 opcode, u32 gas, u32 cost);
+EvmApiStatus reportHostioWrap(usize api, u32 opcode, u32 gas, u32 cost) {
+    return reportHostioImpl(api, opcode, gas, cost);
+}
+
+EvmApiStatus reportHostioAdvancedImpl(usize api, u32 opcode, RustVec * data, u32 offset, u32 size, u32 gas, u32 cost);
+EvmApiStatus reportHostioAdvancedWrap(usize api, u32 opcode, RustVec * data, u32 offset, u32 size, u32 gas, u32 cost) {
+    return reportHostioAdvancedImpl(api, opcode, data, offset, size, gas, cost);
+}
+
 Bytes32 accountBalanceImpl(usize api, Bytes20 address, u64 * cost);
 Bytes32 accountBalanceWrap(usize api, Bytes20 address, u64 * cost) {
     return accountBalanceImpl(api, address, cost);
@@ -100,19 +110,21 @@ func newApi(
 	apiClosures.Store(apiId, closures)
 	id := usize(apiId)
 	return C.GoEvmApi{
-		get_bytes32:      (*[0]byte)(C.getBytes32Wrap),
-		set_bytes32:      (*[0]byte)(C.setBytes32Wrap),
-		contract_call:    (*[0]byte)(C.contractCallWrap),
-		delegate_call:    (*[0]byte)(C.delegateCallWrap),
-		static_call:      (*[0]byte)(C.staticCallWrap),
-		create1:          (*[0]byte)(C.create1Wrap),
-		create2:          (*[0]byte)(C.create2Wrap),
-		get_return_data:  (*[0]byte)(C.getReturnDataWrap),
-		emit_log:         (*[0]byte)(C.emitLogWrap),
-		account_balance:  (*[0]byte)(C.accountBalanceWrap),
-		account_codehash: (*[0]byte)(C.accountCodeHashWrap),
-		add_pages:        (*[0]byte)(C.addPagesWrap),
-		id:               id,
+		get_bytes32:            (*[0]byte)(C.getBytes32Wrap),
+		set_bytes32:            (*[0]byte)(C.setBytes32Wrap),
+		contract_call:          (*[0]byte)(C.contractCallWrap),
+		delegate_call:          (*[0]byte)(C.delegateCallWrap),
+		static_call:            (*[0]byte)(C.staticCallWrap),
+		create1:                (*[0]byte)(C.create1Wrap),
+		create2:                (*[0]byte)(C.create2Wrap),
+		get_return_data:        (*[0]byte)(C.getReturnDataWrap),
+		emit_log:               (*[0]byte)(C.emitLogWrap),
+		report_hostio:          (*[0]byte)(C.reportHostioWrap),
+		report_hostio_advanced: (*[0]byte)(C.reportHostioAdvancedWrap),
+		account_balance:        (*[0]byte)(C.accountBalanceWrap),
+		account_codehash:       (*[0]byte)(C.accountCodeHashWrap),
+		add_pages:              (*[0]byte)(C.addPagesWrap),
+		id:                     id,
 	}, id
 }
 
