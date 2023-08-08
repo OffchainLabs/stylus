@@ -937,7 +937,6 @@ func deployContract(
 		Data:      deploy,
 	})
 	Require(t, err)
-	t.Logf("Data for creation %#x", deploy)
 	tx := types.NewContractCreation(nonce, big.NewInt(0), gas, basefee, deploy)
 	tx, err = auth.Signer(auth.From, tx)
 	Require(t, err)
