@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+use std::str::FromStr;
+
 use check::StylusCheck;
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
@@ -100,7 +103,12 @@ async fn main() -> eyre::Result<(), String> {
                     .collect::<Result<Vec<StylusCheck>, String>>()
                     .expect("Could not parse disabled Stylus checks")
             });
-            check::run_checks(wasm_file_path, disabled)
+            let wasm_file_path: PathBuf = match wasm_file_path {
+                Some(path) => PathBuf::from_str(&path).unwrap(),
+                None => project::build_project_to_wasm()?,
+            };
+            let wasm_file_bytes = project::get_compressed_wasm_bytes(&wasm_file_path)?;
+            check::run_checks(&wasm_file_bytes, disabled)
         }
         Commands::Deploy(deploy_config) => match deploy::deploy(deploy_config).await {
             Ok(_) => Ok(()),

@@ -12,3 +12,5 @@ pub const ARB_WASM_ADDRESS: &str = "0000000000000000000000000000000000000071";
 pub const MAX_PROGRAM_SIZE: ByteSize = ByteSize::kb(24);
 /// 4 bytes method selector for the compile method of ArbWasm.
 pub const ARBWASM_COMPILE_METHOD_HASH: &str = "2e50f32b";
+/// Target for compiled WASM folder in a Rust project
+pub const RUST_TARGET: &str = "wasm32-unknown-unknown";

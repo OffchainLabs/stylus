@@ -1,6 +1,3 @@
-use std::path::PathBuf;
-use std::str::FromStr;
-
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 use bytesize::ByteSize;
@@ -9,7 +6,6 @@ use arbutil::Color;
 use prover::programs::prelude::*;
 
 use crate::constants;
-use crate::project;
 
 /// Defines the stylus checks that occur during the compilation of a WASM program
 /// into a module. Checks can be disabled during the compilation process for debugging purposes.
@@ -33,15 +29,7 @@ impl TryFrom<&str> for StylusCheck {
 /// Runs a series of checks on the WASM program to ensure it is valid for compilation
 /// and code size before being deployed and compiled onchain. An optional list of checks
 /// to disable can be specified.
-pub fn run_checks(
-    wasm_file_path: Option<String>,
-    disabled: Vec<StylusCheck>,
-) -> eyre::Result<(), String> {
-    let wasm_file_path: PathBuf = match wasm_file_path {
-        Some(path) => PathBuf::from_str(&path).unwrap(),
-        None => project::build_project_to_wasm()?,
-    };
-    let wasm_file_bytes = project::get_compressed_wasm_bytes(&wasm_file_path)?;
+pub fn run_checks(wasm_file_bytes: &[u8], disabled: Vec<StylusCheck>) -> eyre::Result<(), String> {
     println!(
         "Compressed WASM size: {}",
         ByteSize::b(wasm_file_bytes.len() as u64)
@@ -78,4 +66,24 @@ pub fn compile_native_wasm_module(
         ByteSize::b(module.len() as u64),
     );
     Ok(module)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use wasmer::wat2wasm;
+    #[test]
+    fn test_run_checks() {
+        let wat = r#"
+        (module
+            (func $foo (export "foo") (result v128)
+                v128.const i32x4 1 2 3 4))
+        "#;
+        let wasm_bytes = wat2wasm(wat.as_bytes()).unwrap();
+        let disabled = vec![];
+        match run_checks(&wasm_bytes, disabled) {
+            Ok(_) => panic!("Expected error"),
+            Err(e) => assert!(e.contains("128-bit types are not supported")),
+        }
+    }
 }

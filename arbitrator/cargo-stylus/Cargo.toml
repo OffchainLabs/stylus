@@ -19,3 +19,5 @@ bytesize = "1.2.0"
 ethers = "2.0.8"
 serde_json = "1.0.103"
 tokio = { version = "1.29.1", features = ["macros", "rt-multi-thread" ] }
+wasmer = { path = "../tools/wasmer/lib/api/" }
+tempfile = "3.7.1"

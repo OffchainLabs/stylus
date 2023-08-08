@@ -9,11 +9,10 @@ use brotli2::read::BrotliEncoder;
 use bytes::buf::Reader;
 use bytes::Buf;
 
-use crate::constants;
+use crate::constants::{BROTLI_COMPRESSION_LEVEL, EOF_PREFIX, RUST_TARGET};
 use arbutil::Color;
 
 /// Build a Rust project to WASM and return the path to the compiled WASM file.
-/// TODO: Configure debug or release via flags.
 pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
     let cwd: PathBuf = current_dir().map_err(|e| format!("could not get current dir {}", e))?;
 
@@ -22,14 +21,11 @@ pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
         .stderr(Stdio::inherit())
         .arg("build")
         .arg("--release")
-        .arg("--target=wasm32-unknown-unknown")
+        .arg(format!("--target={}", RUST_TARGET))
         .output()
         .map_err(|e| format!("failed to execute cargo build {}", e))?;
 
-    let release_path = cwd
-        .join("target")
-        .join("wasm32-unknown-unknown")
-        .join("release");
+    let release_path = cwd.join("target").join(RUST_TARGET).join("release");
 
     // Gets the files in the release folder.
     let release_files: Vec<PathBuf> = std::fs::read_dir(release_path)
@@ -43,7 +39,7 @@ pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
         .into_iter()
         .find(|p| {
             if let Some(ext) = p.file_name() {
-                return ext.to_str().unwrap_or("").contains(".wasm")
+                return ext.to_str().unwrap_or("").contains(".wasm");
             }
             false
         })
@@ -59,7 +55,7 @@ pub fn get_compressed_wasm_bytes(wasm_path: &PathBuf) -> eyre::Result<Vec<u8>, S
         .map_err(|e| format!("could not read WASM file at target path {}", e))?;
     let wbytes: Reader<&[u8]> = wasm_file_bytes.reader();
 
-    let mut compressor = BrotliEncoder::new(wbytes, constants::BROTLI_COMPRESSION_LEVEL);
+    let mut compressor = BrotliEncoder::new(wbytes, BROTLI_COMPRESSION_LEVEL);
     let mut compressed_bytes = vec![];
     compressor
         .read_to_end(&mut compressed_bytes)
@@ -69,7 +65,7 @@ pub fn get_compressed_wasm_bytes(wasm_path: &PathBuf) -> eyre::Result<Vec<u8>, S
         "Compressed WASM size: {} bytes",
         compressed_bytes.len().to_string().yellow()
     );
-    let mut code = hex::decode(constants::EOF_PREFIX).unwrap();
+    let mut code = hex::decode(EOF_PREFIX).unwrap();
     code.extend(compressed_bytes);
     Ok(code)
 }
