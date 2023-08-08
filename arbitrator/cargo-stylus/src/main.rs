@@ -28,7 +28,7 @@ struct Cli {
 enum Commands {
     /// Instrument a Rust project using Stylus.
     /// This command runs compiled WASM code through
-    /// Stylus instrumentation checks and reports any failures. Allows for disabling specific.
+    /// Stylus instrumentation checks and reports any failures. Allows for disabling specific
     /// checks via the `--disabled-checks` flag.
     #[command(alias = "c")]
     Check {
