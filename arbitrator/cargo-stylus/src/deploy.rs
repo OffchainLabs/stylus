@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 use std::str::FromStr;
@@ -17,7 +18,10 @@ use crate::{constants, multicall, project, tx, DeployConfig, DeployMode, WalletS
 /// CompileOnly: Sends a signed tx to compile a Stylus program at a specified address.
 /// DeployAndCompile (default): Sends a signed, multicall tx to both deploy and compile a Stylus program atomically.
 pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
-    let wasm_file_path = project::build_project_to_wasm()?;
+    let wasm_file_path: PathBuf = match &cfg.wasm_file_path {
+        Some(path) => PathBuf::from_str(&path).unwrap(),
+        None => project::build_project_to_wasm()?,
+    };
     let wasm_file_bytes = project::get_compressed_wasm_bytes(&wasm_file_path)?;
     let wallet = load_wallet(&cfg.wallet)?;
 
@@ -77,7 +81,7 @@ fn prepare_tx_request(
                 .to(to)
                 .data(compile_calldata))
         }
-        // Default mode is to deploy and compile atomically.
+        // Default mode is to deploy and compile atomically via a multicall Stylus program.
         None => {
             let program_addr = get_contract_address(wallet.address(), nonce);
             println!("Deploying program to address {program_addr:#032x}");

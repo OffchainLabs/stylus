@@ -43,6 +43,7 @@ pub fn prepare_deploy_compile_multicall(
         H160::from_slice(&arbwasm_address),
         compile_calldata,
     );
+    println!("{}", hex::encode(&multicall_args));
     multicall_args
 }
 

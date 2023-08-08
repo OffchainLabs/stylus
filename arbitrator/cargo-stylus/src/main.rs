@@ -30,8 +30,10 @@ enum Commands {
     /// checks via the `--disabled-checks` flag.
     #[command(alias = "c")]
     Check {
+        #[arg(long)]
         disabled_checks: Option<Vec<String>>,
-        output_file: Option<String>,
+        #[arg(long)]
+        wasm_file_path: Option<String>,
     },
     /// Instruments a Rust project using Stylus and by outputting its brotli-compressed WASM code.
     /// Then, it submits a single, multicall transaction that both deploys the WASM
@@ -95,7 +97,8 @@ async fn main() -> eyre::Result<(), String> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Check {
-            disabled_checks, ..
+            disabled_checks,
+            wasm_file_path,
         } => {
             let disabled = disabled_checks.map_or(Vec::default(), |checks| {
                 checks
@@ -104,7 +107,7 @@ async fn main() -> eyre::Result<(), String> {
                     .collect::<Result<Vec<StylusCheck>, String>>()
                     .expect("Could not parse disabled Stylus checks")
             });
-            check::run_checks(disabled)
+            check::run_checks(wasm_file_path, disabled)
         }
         Commands::Deploy(deploy_config) => match deploy::deploy(deploy_config).await {
             Ok(_) => Ok(()),
