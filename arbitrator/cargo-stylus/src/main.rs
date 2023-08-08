@@ -26,8 +26,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Instrument a Rust project using Stylus,
-    /// . This command runs compiled WASM code through
+    /// Instrument a Rust project using Stylus.
+    /// This command runs compiled WASM code through
     /// Stylus instrumentation checks and reports any failures. Allows for disabling specific.
     /// checks via the `--disabled-checks` flag.
     #[command(alias = "c")]
@@ -37,6 +37,9 @@ enum Commands {
         /// is within the 24Kb contract limit.
         #[arg(long)]
         disabled_checks: Option<Vec<String>>,
+        /// If desired, it loads a WASM file from a specified path. If not provided, it will try to find
+        /// a WASM file under the current working directory's Rust target release directory and use its
+        /// contents for the deploy command.
         #[arg(long)]
         wasm_file_path: Option<String>,
     },
@@ -54,7 +57,7 @@ pub struct DeployConfig {
     /// to complete the operation.
     #[arg(long)]
     estimate_gas_only: bool,
-    /// By default, submits a single, atomic deploy and compile transaction to Arbitrum.
+    /// By default, submits two transactions to deploy and compile the program to Arbitrum.
     /// Otherwise, a user could choose to split up the deploy and compile steps into individual transactions.
     #[arg(long, value_enum)]
     mode: Option<DeployMode>,
