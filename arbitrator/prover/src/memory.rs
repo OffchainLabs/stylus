@@ -8,6 +8,7 @@ use crate::{
 use arbutil::Bytes32;
 use digest::Digest;
 use eyre::{bail, ErrReport, Result};
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::{borrow::Cow, convert::TryFrom};
@@ -59,6 +60,10 @@ fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
     h.finalize().into()
 }
 
+lazy_static! {
+    pub static ref EMPTY_MEM_HASH: Bytes32 = hash_leaf([0u8; 32]);
+}
+
 fn round_up_to_power_of_two(mut input: usize) -> usize {
     if input == 0 {
         return 1;
@@ -84,7 +89,7 @@ impl Memory {
     pub const PAGE_SIZE: u64 = 65536;
     /// The number of layers in the memory merkle tree
     /// 1 + log2(2^32 / LEAF_SIZE) = 1 + log2(2^(32 - log2(LEAF_SIZE))) = 1 + 32 - 5
-    const MEMORY_LAYERS: usize = 1 + 32 - 5;
+    pub const MEMORY_LAYERS: usize = 1 + 32 - 5;
 
     pub fn new(size: usize, max_size: u64) -> Memory {
         Memory {
@@ -119,15 +124,10 @@ impl Memory {
             })
             .collect();
         if leaf_hashes.len() < leaves {
-            let empty_hash = hash_leaf([0u8; 32]);
+            let empty_hash = *EMPTY_MEM_HASH;
             leaf_hashes.resize(leaves, empty_hash);
         }
-        Cow::Owned(Merkle::new_advanced(
-            MerkleType::Memory,
-            leaf_hashes,
-            hash_leaf([0u8; 32]),
-            Self::MEMORY_LAYERS,
-        ))
+        Cow::Owned(Merkle::new(MerkleType::Memory, leaf_hashes))
     }
 
     pub fn get_leaf_data(&self, leaf_idx: usize) -> [u8; Self::LEAF_SIZE] {

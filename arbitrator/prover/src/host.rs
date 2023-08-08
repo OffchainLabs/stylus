@@ -358,7 +358,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
     };
 
     let debug = module == "console";
-    Function::new(&[], append, hostio.ty(), &[]).map(|x| (x, debug))
+    Function::new(&[], append, hostio.ty()).map(|x| (x, debug))
 }
 
 /// Adds internal functions to a module.
@@ -458,7 +458,6 @@ lazy_static! {
                     0,                  // impls don't use other internals
                 ),
                 ty.clone(),
-                &[] // impls don't make calls
             );
             func.expect("failed to create bulk memory func")
         })
