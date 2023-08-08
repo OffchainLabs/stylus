@@ -62,6 +62,11 @@ func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
 	return c.State.Programs().PageLimit()
 }
 
+// Gets the call overhead priced per half of a kb of compressed wasm
+func (con ArbWasm) WasmCallScalar(c ctx, _ mech) (uint16, error) {
+	return c.State.Programs().WasmCallScalar()
+}
+
 // Gets the current program version
 func (con ArbWasm) ProgramVersion(c ctx, _ mech, program addr) (uint32, error) {
 	return c.State.Programs().ProgramVersion(program)

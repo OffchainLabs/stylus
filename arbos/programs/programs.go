@@ -33,7 +33,7 @@ type Programs struct {
 }
 
 type Program struct {
-	compressedSize uint16 // Unit is 104857 bytes, or 0.1 kilobyte
+	compressedSize uint16 // Unit is half of a kb
 	footprint      uint16
 	version        uint32
 	address        common.Address // not saved in state
@@ -62,9 +62,8 @@ const initialFreePages = 2
 const initialPageGas = 1000
 const initialPageRamp = 620674314     // targets 8MB costing 32 million gas, minus the linear term
 const initialPageLimit = 128          // reject wasms with memories larger than 8MB
-const initialWasmCallScalar = 1000    // wasm 64kb after compression costs 1,000 gas to call, scales linearly
-const wasmCallScalarUnitKB = 64       // WasmCallScalar is price of 64kb of compressed wasm
-const compressedWasmSizeFactorKB = 10 // compressed size is stored with units of 0.1kb
+const initialWasmCallScalar = 8       // call cost per half of a kb, as an example 64kb costs 1024 gas
+const compressedWasmSizeDivisor = 512 // compressed size unit is half of a kb
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
@@ -193,7 +192,7 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 		return 0, false, ProgramUpToDateError()
 	}
 
-	wasm, compressedSize, err := getWasm(statedb, program)
+	wasm, fullCompressedSize, err := getWasm(statedb, program)
 	if err != nil {
 		return 0, false, err
 	}
@@ -214,8 +213,12 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	// note: the actual payment for the expansion happens in Rust
 	statedb.AddStylusPagesEver(footprint)
 
+	// compressedSize is stored as half kb units, rounding up
+	sizeNumerator := arbmath.SaturatingAdd(fullCompressedSize, compressedWasmSizeDivisor)
+	compressedSize := uint16(sizeNumerator / compressedWasmSizeDivisor)
+
 	programData := Program{
-		compressedSize: uint16(compressedSize / int(compressedWasmSizeFactorKB*1024)),
+		compressedSize: compressedSize,
 		footprint:      footprint,
 		version:        version,
 		address:        program,
@@ -271,7 +274,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	callCost := (uint64(program.compressedSize) * compressedWasmSizeFactorKB * uint64(wasmCallScalar)) / uint64(wasmCallScalarUnitKB)
+	callCost := uint64(program.compressedSize) * uint64(wasmCallScalar)
 	cost := common.SaturatingUAdd(memoryCost, callCost)
 	if err := contract.BurnGas(cost); err != nil {
 		return nil, err

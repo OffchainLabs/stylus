@@ -28,7 +28,7 @@ pub struct StylusConfig {
     pub max_depth: u32,
     /// Pricing parameters supplied at runtime
     pub pricing: PricingParams,
-    /// Overhead cost for calling a 64kb wasm after compression, linearly scales with size
+    /// Call overhead priced per half of a kb of compressed wasm
     pub call_scalar: u16,
 }
 
