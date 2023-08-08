@@ -26,12 +26,15 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Instrument a Rust project using Stylus, optionally outputting the brotli-compressed,
-    /// compiled WASM code to deploy on-chain. This command runs compiled WASM code through
-    /// Stylus instrumentation checks and reports any failures. Allows for disabling specific .
+    /// Instrument a Rust project using Stylus,
+    /// . This command runs compiled WASM code through
+    /// Stylus instrumentation checks and reports any failures. Allows for disabling specific.
     /// checks via the `--disabled-checks` flag.
     #[command(alias = "c")]
     Check {
+        /// Disables specific compilation checks. At the moment, `compressed-size` is the only
+        /// option available to disable. Disabling it skips checking the compressed program
+        /// is within the 24Kb contract limit.
         #[arg(long)]
         disabled_checks: Option<Vec<String>>,
         #[arg(long)]

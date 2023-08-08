@@ -479,7 +479,6 @@ dependencies = [
  "serde",
  "serde_json",
  "stylus",
- "tempfile",
  "tokio",
  "wasmer",
 ]
