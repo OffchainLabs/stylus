@@ -11,18 +11,13 @@ use ethers::{
     signers::{LocalWallet, Signer},
 };
 
-use crate::{constants, multicall, project, tx, DeployConfig, DeployMode, WalletSource};
+use crate::{constants, project, tx, DeployConfig, DeployMode, WalletSource};
 
 /// Performs one of three different modes for a Stylus program:
 /// DeployOnly: Sends a signed tx to deploy a Stylus program to a new address.
 /// CompileOnly: Sends a signed tx to compile a Stylus program at a specified address.
-/// DeployAndCompile (default): Sends a signed, multicall tx to both deploy and compile a Stylus program atomically.
+/// DeployAndCompile (default): Sends both transactions above.
 pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
-    let wasm_file_path: PathBuf = match &cfg.wasm_file_path {
-        Some(path) => PathBuf::from_str(&path).unwrap(),
-        None => project::build_project_to_wasm()?,
-    };
-    let wasm_file_bytes = project::get_compressed_wasm_bytes(&wasm_file_path)?;
     let wallet = load_wallet(&cfg.wallet)?;
 
     let provider = Provider::<Http>::try_from(&cfg.endpoint)
@@ -40,62 +35,49 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
         .await
         .map_err(|e| format!("could not get nonce {} {}", addr, e))?;
 
-    let mut tx_request = prepare_tx_request(&cfg, &wasm_file_bytes, &wallet, nonce)?;
+    let expected_program_addr = get_contract_address(wallet.address(), nonce);
 
-    tx::submit_signed_tx(client, cfg.estimate_gas_only, &mut tx_request).await
-}
+    let (deploy, compile) = match cfg.mode {
+        Some(DeployMode::DeployOnly) => (true, false),
+        Some(DeployMode::CompileOnly) => (false, true),
+        // Default mode is to deploy and compile
+        None => (true, true),
+    };
 
-/// Prepares a tx request for the given deploy config. For deploying a program only, it
-/// prepares a contract creation transaction. For compiling only, it prepares a compilation tx,
-/// and for both deploying and atomically compiling, prepares a multicall tx.
-fn prepare_tx_request(
-    cfg: &DeployConfig,
-    wasm_file_bytes: &[u8],
-    wallet: &LocalWallet,
-    nonce: U256,
-) -> eyre::Result<Eip1559TransactionRequest, String> {
-    match cfg.mode {
-        Some(DeployMode::DeployOnly) => {
-            let program_addr = get_contract_address(wallet.address(), nonce);
-            println!("Deploying program to address {program_addr:#032x}");
-            let deployment_calldata = program_deployment_calldata(wasm_file_bytes);
-            Ok(Eip1559TransactionRequest::new()
-                .from(wallet.address())
-                .data(deployment_calldata))
-        }
-        Some(DeployMode::CompileOnly) => {
-            let program_addr = cfg
-                .compile_program_addr
-                .ok_or("No --compile-program-addr provided")?;
-            let mut compile_calldata = vec![];
-            let compile_method_hash = hex::decode(constants::ARBWASM_COMPILE_METHOD_HASH).unwrap();
-            compile_calldata.extend(compile_method_hash);
-            compile_calldata.extend(hex::decode("000000000000000000000000").unwrap());
-            compile_calldata.extend(program_addr.as_bytes());
-
-            let to = hex::decode(constants::ARB_WASM_ADDRESS).unwrap();
-            let to = H160::from_slice(&to);
-
-            Ok(Eip1559TransactionRequest::new()
-                .from(wallet.address())
-                .to(to)
-                .data(compile_calldata))
-        }
-        // Default mode is to deploy and compile atomically via a multicall Stylus program.
-        None => {
-            let program_addr = get_contract_address(wallet.address(), nonce);
-            println!("Deploying program to address {program_addr:#032x}");
-            let multicall_data =
-                multicall::prepare_deploy_compile_multicall(wasm_file_bytes, &program_addr);
-
-            let to = hex::decode(constants::MULTICALL_ADDR).unwrap();
-            let to = H160::from_slice(&to);
-            Ok(Eip1559TransactionRequest::new()
-                .to(to)
-                .from(wallet.address())
-                .data(multicall_data))
-        }
+    if deploy {
+        let wasm_file_path: PathBuf = match &cfg.wasm_file_path {
+            Some(path) => PathBuf::from_str(&path).unwrap(),
+            None => project::build_project_to_wasm()?,
+        };
+        let wasm_file_bytes = project::get_compressed_wasm_bytes(&wasm_file_path)?;
+        println!("Deploying program to address {expected_program_addr:#032x}");
+        let deployment_calldata = program_deployment_calldata(&wasm_file_bytes);
+        let mut tx_request = Eip1559TransactionRequest::new()
+            .from(wallet.address())
+            .data(deployment_calldata);
+        tx::submit_signed_tx(&client, cfg.estimate_gas_only, &mut tx_request).await?;
     }
+    if compile {
+        let program_addr = cfg.compile_program_address.unwrap_or(expected_program_addr);
+        println!("Compiling program at address {program_addr:#032x}");
+        let mut compile_calldata = vec![];
+        let compile_method_hash = hex::decode(constants::ARBWASM_COMPILE_METHOD_HASH).unwrap();
+        compile_calldata.extend(compile_method_hash);
+        let mut extension = [0u8; 32];
+        // Next, we add the address to the last 20 bytes of extension
+        extension[12..32].copy_from_slice(program_addr.as_bytes());
+        compile_calldata.extend(extension);
+
+        let to = hex::decode(constants::ARB_WASM_ADDRESS).unwrap();
+        let to = H160::from_slice(&to);
+
+        let mut tx_request = Eip1559TransactionRequest::new()
+            .from(wallet.address())
+            .to(to)
+            .data(compile_calldata);
+        tx::submit_signed_tx(&client, cfg.estimate_gas_only, &mut tx_request).await?;
+    }
+    Ok(())
 }
 
 /// Loads a wallet for signing transactions either from a private key file path.

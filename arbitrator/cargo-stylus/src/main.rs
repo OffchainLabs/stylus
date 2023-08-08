@@ -7,7 +7,6 @@ use ethers::types::H160;
 mod check;
 mod constants;
 mod deploy;
-mod multicall;
 mod project;
 mod tx;
 
@@ -36,9 +35,8 @@ enum Commands {
         wasm_file_path: Option<String>,
     },
     /// Instruments a Rust project using Stylus and by outputting its brotli-compressed WASM code.
-    /// Then, it submits a single, multicall transaction that both deploys the WASM
-    /// program to an address and triggers a compilation onchain by default. This transaction is atomic,
-    /// and will revert if either the program creation or onchain compilation step fails.
+    /// Then, it submits two transactions: the first deploys the WASM
+    /// program to an address and the second triggers a compilation onchain
     /// Developers can choose to split up the deploy and compile steps via this command as desired.
     #[command(alias = "d")]
     Deploy(DeployConfig),
@@ -57,17 +55,12 @@ pub struct DeployConfig {
     /// The endpoint of the L2 node to connect to.
     #[arg(short, long, default_value = "http://localhost:8545")]
     endpoint: String,
-    /// Address of a multicall Stylus program on L2 to use for the atomic, onchain deploy+compile
-    /// operation. If not provided, address <INSERT_ADDRESS_HERE> will be used.
-    #[arg(long)]
-    // TODO: Use an alloy primitive address type for this.
-    multicall_program_addr: Option<String>,
     /// Wallet source to use with the cargo stylus plugin.
     #[command(flatten)]
     wallet: WalletSource,
     /// If only compiling an onchain program, the address of the program to send a compilation tx for.
     #[arg(long)]
-    compile_program_addr: Option<H160>,
+    compile_program_address: Option<H160>,
     /// If desired, it loads a WASM file from a specified path. If not provided, it will try to find
     /// a WASM file under the current working directory's Rust target release directory and use its
     /// contents for the deploy command.

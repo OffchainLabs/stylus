@@ -8,8 +8,6 @@ pub const EOF_PREFIX: &str = "EF000000";
 pub const BROTLI_COMPRESSION_LEVEL: u32 = 11;
 /// Address of the Arbitrum WASM precompile on L2.
 pub const ARB_WASM_ADDRESS: &str = "0000000000000000000000000000000000000071";
-/// Address a multicall.rs Stylus program on L2.
-pub const MULTICALL_ADDR: &str = "Eba70C09bA17508c75227cCACf376975490172c3";
 /// Maximum allowed size of a program on Arbitrum (and Ethereum).
 pub const MAX_PROGRAM_SIZE: ByteSize = ByteSize::kb(24);
 /// 4 bytes method selector for the compile method of ArbWasm.

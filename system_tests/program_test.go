@@ -387,48 +387,6 @@ func TestStylusCargoPlugin(t *testing.T) {
 	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
 	ensure(arbOwner.SetWasmHostioInk(&auth, wasmHostioInk))
 
-	colors.PrintMint(fmt.Sprintf("arbwasm addr is=%#x", types.ArbWasmAddress))
-
-	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
-	t.Logf("Multicall addr %#x", multiAddr)
-
-	wasm := readWasmFile(t, rustFile("keccak"))
-	programCreationData := deployContractInitCode(wasm, false /* no revert */)
-	args := argsForMulticall(
-		vm.CALL,
-		common.Address{},
-		nil,
-		programCreationData,
-	)
-
-	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
-	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		Fatal(t, "not OK receipt")
-	}
-	// }
-
-	// arbWasmABI, err := precompilesgen.ArbWasmMetaData.GetAbi()
-	// Require(t, err)
-	// compileMethod, ok := arbWasmABI.Methods["compileProgram"]
-	// if !ok {
-	// 	Fatal(t, "Cannot find compileProgram method in ArbWasm ABI")
-	// }
-	// compileProgramData := compileMethod.ID
-	// programArg := make([]byte, 32)
-	// expectedAddr := common.HexToAddress("0x921bd9fa0f3295c0351164a28ba7c23c343b786d")
-	// copy(programArg[12:], expectedAddr[:])
-	// compileProgramData = append(compileProgramData, programArg...)
-
-	// args = argsForMulticall(vm.CALL, types.ArbWasmAddress, nil, compileProgramData)
-
-	// tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
-	// receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
-	// if receipt.Status != types.ReceiptStatusSuccessful {
-	// 	Fatal(t, "not OK receipt")
-	// }
-
-	// t.Log("Submitted both txs")
 	time.Sleep(time.Hour)
 }
 
