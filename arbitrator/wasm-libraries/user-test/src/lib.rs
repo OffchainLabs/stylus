@@ -33,8 +33,9 @@ pub unsafe extern "C" fn user_test__prepare(
     max_depth: u32,
     ink_price: u64,
     hostio_ink: u64,
+    call_scalar: u16,
 ) -> *const u8 {
-    let config = StylusConfig::new(version, max_depth, ink_price, hostio_ink);
+    let config = StylusConfig::new(version, max_depth, ink_price, hostio_ink, call_scalar);
     CONFIG = Some(config);
     ARGS = vec![0; len];
     ARGS.as_ptr()
