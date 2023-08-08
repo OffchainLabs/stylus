@@ -22,13 +22,13 @@ type Programs struct {
 	backingStorage *storage.Storage
 	programs       *storage.Storage
 	inkPrice       storage.StorageBackedUBips
-	wasmMaxDepth   storage.StorageBackedUint32
-	wasmHostioInk  storage.StorageBackedUint64
+	maxStackDepth  storage.StorageBackedUint32
+	hostioInk      storage.StorageBackedUint64
 	freePages      storage.StorageBackedUint16
 	pageGas        storage.StorageBackedUint32
 	pageRamp       storage.StorageBackedUint64
 	pageLimit      storage.StorageBackedUint16
-	wasmCallScalar storage.StorageBackedUint16
+	callScalar     storage.StorageBackedUint16
 	version        storage.StorageBackedUint32
 }
 
@@ -44,13 +44,13 @@ var machineVersionsKey = []byte{0}
 const (
 	versionOffset uint64 = iota
 	inkPriceOffset
-	wasmMaxDepthOffset
-	wasmHostioInkOffset
+	maxStackDepthOffset
+	hostioInkOffset
 	freePagesOffset
 	pageGasOffset
 	pageRampOffset
 	pageLimitOffset
-	wasmCallScalarOffset
+	callScalarOffset
 )
 
 var ProgramNotCompiledError func() error
@@ -62,27 +62,27 @@ const initialFreePages = 2
 const initialPageGas = 1000
 const initialPageRamp = 620674314     // targets 8MB costing 32 million gas, minus the linear term
 const initialPageLimit = 128          // reject wasms with memories larger than 8MB
-const initialWasmCallScalar = 8       // call cost per half of a kb, as an example 64kb costs 1024 gas
+const initialCallScalar = 8           // call cost per half of a kb, as an example 64kb costs 1024 gas
 const compressedWasmSizeDivisor = 512 // compressed size unit is half of a kb
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
-	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
-	wasmHostioInk := sto.OpenStorageBackedUint32(wasmHostioInkOffset)
+	maxStackDepth := sto.OpenStorageBackedUint32(maxStackDepthOffset)
+	hostioInk := sto.OpenStorageBackedUint32(hostioInkOffset)
 	freePages := sto.OpenStorageBackedUint16(freePagesOffset)
 	pageGas := sto.OpenStorageBackedUint32(pageGasOffset)
 	pageRamp := sto.OpenStorageBackedUint64(pageRampOffset)
 	pageLimit := sto.OpenStorageBackedUint16(pageLimitOffset)
-	wasmCallScalar := sto.OpenStorageBackedUint16(wasmCallScalarOffset)
+	callScalar := sto.OpenStorageBackedUint16(callScalarOffset)
 	version := sto.OpenStorageBackedUint64(versionOffset)
 	_ = inkPrice.Set(1)
-	_ = wasmMaxDepth.Set(math.MaxUint32)
-	_ = wasmHostioInk.Set(0)
+	_ = maxStackDepth.Set(math.MaxUint32)
+	_ = hostioInk.Set(0)
 	_ = freePages.Set(initialFreePages)
 	_ = pageGas.Set(initialPageGas)
 	_ = pageRamp.Set(initialPageRamp)
 	_ = pageLimit.Set(initialPageLimit)
-	_ = wasmCallScalar.Set(initialWasmCallScalar)
+	_ = callScalar.Set(initialCallScalar)
 	_ = version.Set(1)
 }
 
@@ -91,13 +91,13 @@ func Open(sto *storage.Storage) *Programs {
 		backingStorage: sto,
 		programs:       sto.OpenSubStorage(machineVersionsKey),
 		inkPrice:       sto.OpenStorageBackedUBips(inkPriceOffset),
-		wasmMaxDepth:   sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
-		wasmHostioInk:  sto.OpenStorageBackedUint64(wasmHostioInkOffset),
+		maxStackDepth:  sto.OpenStorageBackedUint32(maxStackDepthOffset),
+		hostioInk:      sto.OpenStorageBackedUint64(hostioInkOffset),
 		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
 		pageGas:        sto.OpenStorageBackedUint32(pageGasOffset),
 		pageRamp:       sto.OpenStorageBackedUint64(pageRampOffset),
 		pageLimit:      sto.OpenStorageBackedUint16(pageLimitOffset),
-		wasmCallScalar: sto.OpenStorageBackedUint16(wasmCallScalarOffset),
+		callScalar:     sto.OpenStorageBackedUint16(callScalarOffset),
 		version:        sto.OpenStorageBackedUint32(versionOffset),
 	}
 }
@@ -117,20 +117,20 @@ func (p Programs) SetInkPrice(price arbmath.UBips) error {
 	return p.inkPrice.Set(price)
 }
 
-func (p Programs) WasmMaxDepth() (uint32, error) {
-	return p.wasmMaxDepth.Get()
+func (p Programs) MaxStackDepth() (uint32, error) {
+	return p.maxStackDepth.Get()
 }
 
-func (p Programs) SetWasmMaxDepth(depth uint32) error {
-	return p.wasmMaxDepth.Set(depth)
+func (p Programs) SetMaxStackDepth(depth uint32) error {
+	return p.maxStackDepth.Set(depth)
 }
 
-func (p Programs) WasmHostioInk() (uint64, error) {
-	return p.wasmHostioInk.Get()
+func (p Programs) HostioInk() (uint64, error) {
+	return p.hostioInk.Get()
 }
 
-func (p Programs) SetWasmHostioInk(ink uint64) error {
-	return p.wasmHostioInk.Set(ink)
+func (p Programs) SetHostioInk(ink uint64) error {
+	return p.hostioInk.Set(ink)
 }
 
 func (p Programs) FreePages() (uint16, error) {
@@ -165,12 +165,12 @@ func (p Programs) SetPageLimit(limit uint16) error {
 	return p.pageLimit.Set(limit)
 }
 
-func (p Programs) WasmCallScalar() (uint16, error) {
-	return p.wasmCallScalar.Get()
+func (p Programs) CallScalar() (uint16, error) {
+	return p.callScalar.Get()
 }
 
-func (p Programs) SetWasmCallScalar(gas uint16) error {
-	return p.wasmCallScalar.Set(gas)
+func (p Programs) SetCallScalar(gas uint16) error {
+	return p.callScalar.Set(gas)
 }
 
 func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
@@ -270,11 +270,11 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 	memoryCost := model.GasCost(program.footprint, open, ever)
-	wasmCallScalar, err := p.WasmCallScalar()
+	callScalar, err := p.CallScalar()
 	if err != nil {
 		return nil, err
 	}
-	callCost := uint64(program.compressedSize) * uint64(wasmCallScalar)
+	callCost := uint64(program.compressedSize) * uint64(callScalar)
 	cost := common.SaturatingUAdd(memoryCost, callCost)
 	if err := contract.BurnGas(cost); err != nil {
 		return nil, err
@@ -344,7 +344,7 @@ type goParams struct {
 }
 
 func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
-	maxDepth, err := p.WasmMaxDepth()
+	maxDepth, err := p.MaxStackDepth()
 	if err != nil {
 		return nil, err
 	}
@@ -352,11 +352,11 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 	if err != nil {
 		return nil, err
 	}
-	hostioInk, err := p.WasmHostioInk()
+	hostioInk, err := p.HostioInk()
 	if err != nil {
 		return nil, err
 	}
-	callScalar, err := p.WasmCallScalar()
+	callScalar, err := p.CallScalar()
 	if err != nil {
 		return nil, err
 	}
