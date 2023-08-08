@@ -19,6 +19,7 @@ typedef size_t usize;
 */
 import "C"
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -98,6 +99,7 @@ func callUserWasm(
 
 	if status == userFailure {
 		str := arbutil.ToStringOrHex(returnData)
+		fmt.Println(string(data))
 		log.Debug("program failure", "err", string(data), "program", program.address, "returnData", str)
 	}
 	return data, err

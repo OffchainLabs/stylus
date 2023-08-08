@@ -162,34 +162,41 @@ func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
 }
 
 func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode bool) (uint32, bool, error) {
+	fmt.Printf("Attempting compilation %#x\n", program)
 	statedb := evm.StateDB
 
 	version, err := p.StylusVersion()
 	if err != nil {
+		fmt.Println(err)
 		return 0, false, err
 	}
 	latest, err := p.ProgramVersion(program)
 	if err != nil {
+		fmt.Println(err)
 		return 0, false, err
 	}
 	if latest >= version {
+		fmt.Println("Up to date")
 		return 0, false, ProgramUpToDateError()
 	}
 
 	wasm, err := getWasm(statedb, program)
 	if err != nil {
+		fmt.Println(err)
 		return 0, false, err
 	}
 
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit, err := p.PageLimit()
 	if err != nil {
+		fmt.Println(err)
 		return 0, false, err
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
 	footprint, err := compileUserWasm(statedb, program, wasm, pageLimit, version, debugMode)
 	if err != nil {
+		fmt.Println("Compile error", err)
 		return 0, true, err
 	}
 

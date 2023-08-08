@@ -400,20 +400,35 @@ func TestStylusCargoPlugin(t *testing.T) {
 		nil,
 		programCreationData,
 	)
-	arbWasmABI, err := precompilesgen.ArbWasmMetaData.GetAbi()
-	Require(t, err)
-	compileMethod, ok := arbWasmABI.Methods["compileProgram"]
-	if !ok {
-		Fatal(t, "Cannot find compileProgram method in ArbWasm ABI")
+
+	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "not OK receipt")
 	}
-	compileProgramData := compileMethod.ID
-	programArg := make([]byte, 32)
-	copy(programArg[12:], types.ArbOwnerAddress[:])
-	compileProgramData = append(compileProgramData, programArg...)
+	// }
 
-	args = multicallAppend(args, vm.CALL, types.ArbWasmAddress, compileProgramData)
+	// arbWasmABI, err := precompilesgen.ArbWasmMetaData.GetAbi()
+	// Require(t, err)
+	// compileMethod, ok := arbWasmABI.Methods["compileProgram"]
+	// if !ok {
+	// 	Fatal(t, "Cannot find compileProgram method in ArbWasm ABI")
+	// }
+	// compileProgramData := compileMethod.ID
+	// programArg := make([]byte, 32)
+	// expectedAddr := common.HexToAddress("0x921bd9fa0f3295c0351164a28ba7c23c343b786d")
+	// copy(programArg[12:], expectedAddr[:])
+	// compileProgramData = append(compileProgramData, programArg...)
 
-	t.Logf("Multicall full data is %#x", args)
+	// args = argsForMulticall(vm.CALL, types.ArbWasmAddress, nil, compileProgramData)
+
+	// tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	// receipt = ensure(tx, l2client.SendTransaction(ctx, tx))
+	// if receipt.Status != types.ReceiptStatusSuccessful {
+	// 	Fatal(t, "not OK receipt")
+	// }
+
+	// t.Log("Submitted both txs")
 	time.Sleep(time.Hour)
 }
 
