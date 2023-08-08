@@ -44,7 +44,7 @@ func callUserWasmRustImpl(
 
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
-func rustConfigImpl(version, maxDepth u32, inkPrice, hostioInk u64, debugMode u32) *rustConfig
+func rustConfigImpl(version, maxDepth u32, inkPrice, hostioInk u64, callScalar u16, debugMode u32) *rustConfig
 func rustEvmDataImpl(
 	blockBasefee *hash,
 	chainId *hash,
@@ -79,7 +79,7 @@ func callUserWasm(
 	// since the program has previously passed compilation, don't limit memory
 	pageLimit := uint16(math.MaxUint16)
 
-	wasm, err := getWasm(db, program.address)
+	wasm, _, err := getWasm(db, program.address)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
 	}
@@ -124,7 +124,7 @@ func (vec *rustVec) intoSlice() []byte {
 }
 
 func (p *goParams) encode() *rustConfig {
-	return rustConfigImpl(p.version, p.maxDepth, p.inkPrice, p.hostioInk, p.debugMode)
+	return rustConfigImpl(p.version, p.maxDepth, p.inkPrice, p.hostioInk, p.callScalar, p.debugMode)
 }
 
 func (d *evmData) encode() *rustEvmData {

@@ -28,13 +28,15 @@ type Programs struct {
 	pageGas        storage.StorageBackedUint32
 	pageRamp       storage.StorageBackedUint64
 	pageLimit      storage.StorageBackedUint16
+	wasmCallScalar storage.StorageBackedUint16
 	version        storage.StorageBackedUint32
 }
 
 type Program struct {
-	footprint uint16
-	version   uint32
-	address   common.Address // not saved in state
+	compressedSize uint16 // Unit is 104857 bytes, or 0.1 kilobyte
+	footprint      uint16
+	version        uint32
+	address        common.Address // not saved in state
 }
 
 var machineVersionsKey = []byte{0}
@@ -48,6 +50,7 @@ const (
 	pageGasOffset
 	pageRampOffset
 	pageLimitOffset
+	wasmCallScalarOffset
 )
 
 var ProgramNotCompiledError func() error
@@ -57,8 +60,11 @@ var ProgramUpToDateError func() error
 const MaxWasmSize = 64 * 1024
 const initialFreePages = 2
 const initialPageGas = 1000
-const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
-const initialPageLimit = 128      // reject wasms with memories larger than 8MB
+const initialPageRamp = 620674314     // targets 8MB costing 32 million gas, minus the linear term
+const initialPageLimit = 128          // reject wasms with memories larger than 8MB
+const initialWasmCallScalar = 1000    // wasm 64kb after compression costs 1,000 gas to call, scales linearly
+const wasmCallScalarUnitKB = 64       // WasmCallScalar is price of 64kb of compressed wasm
+const compressedWasmSizeFactorKB = 10 // compressed size is stored with units of 0.1kb
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
@@ -68,6 +74,7 @@ func Initialize(sto *storage.Storage) {
 	pageGas := sto.OpenStorageBackedUint32(pageGasOffset)
 	pageRamp := sto.OpenStorageBackedUint64(pageRampOffset)
 	pageLimit := sto.OpenStorageBackedUint16(pageLimitOffset)
+	wasmCallScalar := sto.OpenStorageBackedUint16(wasmCallScalarOffset)
 	version := sto.OpenStorageBackedUint64(versionOffset)
 	_ = inkPrice.Set(1)
 	_ = wasmMaxDepth.Set(math.MaxUint32)
@@ -76,6 +83,7 @@ func Initialize(sto *storage.Storage) {
 	_ = pageGas.Set(initialPageGas)
 	_ = pageRamp.Set(initialPageRamp)
 	_ = pageLimit.Set(initialPageLimit)
+	_ = wasmCallScalar.Set(initialWasmCallScalar)
 	_ = version.Set(1)
 }
 
@@ -90,6 +98,7 @@ func Open(sto *storage.Storage) *Programs {
 		pageGas:        sto.OpenStorageBackedUint32(pageGasOffset),
 		pageRamp:       sto.OpenStorageBackedUint64(pageRampOffset),
 		pageLimit:      sto.OpenStorageBackedUint16(pageLimitOffset),
+		wasmCallScalar: sto.OpenStorageBackedUint16(wasmCallScalarOffset),
 		version:        sto.OpenStorageBackedUint32(versionOffset),
 	}
 }
@@ -157,6 +166,14 @@ func (p Programs) SetPageLimit(limit uint16) error {
 	return p.pageLimit.Set(limit)
 }
 
+func (p Programs) WasmCallScalar() (uint16, error) {
+	return p.wasmCallScalar.Get()
+}
+
+func (p Programs) SetWasmCallScalar(gas uint16) error {
+	return p.wasmCallScalar.Set(gas)
+}
+
 func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
 	return p.programs.GetUint32(program.Hash())
 }
@@ -176,7 +193,7 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 		return 0, false, ProgramUpToDateError()
 	}
 
-	wasm, err := getWasm(statedb, program)
+	wasm, compressedSize, err := getWasm(statedb, program)
 	if err != nil {
 		return 0, false, err
 	}
@@ -198,9 +215,10 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	statedb.AddStylusPagesEver(footprint)
 
 	programData := Program{
-		footprint: footprint,
-		version:   version,
-		address:   program,
+		compressedSize: uint16(compressedSize / int(compressedWasmSizeFactorKB*1024)),
+		footprint:      footprint,
+		version:        version,
+		address:        program,
 	}
 	return version, false, p.programs.Set(program.Hash(), programData.serialize())
 }
@@ -248,7 +266,13 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	cost := model.GasCost(program.footprint, open, ever)
+	memoryCost := model.GasCost(program.footprint, open, ever)
+	wasmCallScalar, err := p.WasmCallScalar()
+	if err != nil {
+		return nil, err
+	}
+	callCost := (uint64(program.compressedSize) * compressedWasmSizeFactorKB * uint64(wasmCallScalar)) / uint64(wasmCallScalarUnitKB)
+	cost := common.SaturatingUAdd(memoryCost, callCost)
 	if err := contract.BurnGas(cost); err != nil {
 		return nil, err
 	}
@@ -272,20 +296,22 @@ func (p Programs) CallProgram(
 	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
 }
 
-func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
+func getWasm(statedb vm.StateDB, program common.Address) ([]byte, int, error) {
 	prefixedWasm := statedb.GetCode(program)
 	if prefixedWasm == nil {
-		return nil, fmt.Errorf("missing wasm at address %v", program)
+		return nil, 0, fmt.Errorf("missing wasm at address %v", program)
 	}
-	wasm, err := state.StripStylusPrefix(prefixedWasm)
+	compressedWasm, err := state.StripStylusPrefix(prefixedWasm)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return arbcompress.Decompress(wasm, MaxWasmSize)
+	wasm, err := arbcompress.Decompress(compressedWasm, MaxWasmSize)
+	return wasm, len(compressedWasm), err
 }
 
 func (p Program) serialize() common.Hash {
 	data := common.Hash{}
+	copy(data[24:], arbmath.Uint16ToBytes(p.compressedSize))
 	copy(data[26:], arbmath.Uint16ToBytes(p.footprint))
 	copy(data[28:], arbmath.Uint32ToBytes(p.version))
 	return data
@@ -298,18 +324,20 @@ func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
 	}
 	data, err := p.programs.Get(address.Hash())
 	return Program{
-		footprint: arbmath.BytesToUint16(data[26:28]),
-		version:   arbmath.BytesToUint32(data[28:]),
-		address:   address,
+		compressedSize: arbmath.BytesToUint16(data[24:26]),
+		footprint:      arbmath.BytesToUint16(data[26:28]),
+		version:        arbmath.BytesToUint32(data[28:]),
+		address:        address,
 	}, err
 }
 
 type goParams struct {
-	version   uint32
-	maxDepth  uint32
-	inkPrice  uint64
-	hostioInk uint64
-	debugMode uint32
+	version    uint32
+	maxDepth   uint32
+	inkPrice   uint64
+	hostioInk  uint64
+	debugMode  uint32
+	callScalar uint16
 }
 
 func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
@@ -325,12 +353,17 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 	if err != nil {
 		return nil, err
 	}
+	callScalar, err := p.WasmCallScalar()
+	if err != nil {
+		return nil, err
+	}
 
 	config := &goParams{
-		version:   version,
-		maxDepth:  maxDepth,
-		inkPrice:  inkPrice.Uint64(),
-		hostioInk: hostioInk,
+		version:    version,
+		maxDepth:   maxDepth,
+		inkPrice:   inkPrice.Uint64(),
+		hostioInk:  hostioInk,
+		callScalar: callScalar,
 	}
 	if debug {
 		config.debugMode = 1

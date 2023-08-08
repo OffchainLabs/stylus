@@ -184,7 +184,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// Safety: λ(version, maxDepth u32, inkGasPrice, hostioInk u64, debugMode u32) *StylusConfig
+/// Safety: λ(
+///     version, maxDepth u32, inkGasPrice, hostioInk u64, callScalar u16, debugMode u32
+/// ) *StylusConfig
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustConfigImpl(
     sp: usize,
@@ -197,6 +199,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
             ink_price: sp.read_u64(),
             hostio_ink: sp.read_u64(),
         },
+        call_scalar: sp.read_u16(),
     };
     sp.skip_space(); // skip debugMode
     sp.write_ptr(heapify(config));

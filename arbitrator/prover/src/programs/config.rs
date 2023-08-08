@@ -28,6 +28,8 @@ pub struct StylusConfig {
     pub max_depth: u32,
     /// Pricing parameters supplied at runtime
     pub pricing: PricingParams,
+    /// Overhead cost for calling a 64kb wasm after compression, linearly scales with size
+    pub call_scalar: u16,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -45,6 +47,7 @@ impl Default for StylusConfig {
             version: 0,
             max_depth: u32::MAX,
             pricing: PricingParams::default(),
+            call_scalar: 0,
         }
     }
 }
@@ -59,12 +62,19 @@ impl Default for PricingParams {
 }
 
 impl StylusConfig {
-    pub const fn new(version: u32, max_depth: u32, ink_price: u64, hostio_ink: u64) -> Self {
+    pub const fn new(
+        version: u32,
+        max_depth: u32,
+        ink_price: u64,
+        hostio_ink: u64,
+        call_scalar: u16,
+    ) -> Self {
         let pricing = PricingParams::new(ink_price, hostio_ink);
         Self {
             version,
             max_depth,
             pricing,
+            call_scalar,
         }
     }
 }

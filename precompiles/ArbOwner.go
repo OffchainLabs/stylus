@@ -198,6 +198,11 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 	return c.State.Programs().SetPageLimit(limit)
 }
 
+// SetWasmCallScalar sets the overhead cost for calling a 64kb wasm after compression, linearly scaled by contract size
+func (con ArbOwner) SetWasmCallScalar(c ctx, _ mech, gas uint16) error {
+	return c.State.Programs().SetWasmCallScalar(gas)
+}
+
 func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte) error {
 	if c == nil {
 		return errors.New("nil context")

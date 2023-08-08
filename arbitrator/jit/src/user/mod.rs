@@ -110,7 +110,9 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// go side: λ(version, maxDepth u32, inkPrice, hostioInk u64, debugMode: u32) *(CompileConfig, StylusConfig)
+/// go side: λ(
+///     version, maxDepth u32, inkPrice, hostioInk u64, callScalar u16, debugMode: u32,
+/// ) *(CompileConfig, StylusConfig)
 pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
 
@@ -121,6 +123,7 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
             ink_price: sp.read_u64(),
             hostio_ink: sp.read_u64(),
         },
+        call_scalar: sp.read_u16(),
     };
     let compile = CompileConfig::version(config.version, sp.read_u32() != 0);
     sp.skip_space().write_ptr(heapify((compile, config)));
