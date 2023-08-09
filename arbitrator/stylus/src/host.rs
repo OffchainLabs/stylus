@@ -344,7 +344,7 @@ pub(crate) fn native_keccak256<E: EvmApi>(
 
     let preimage = env.read_slice(input, len)?;
     env.report_hostio_advanced(Opcode::KECCAK256, &preimage, 0, 0)?;
-    let digest = crypto::keccak(&preimage);
+    let digest = crypto::keccak(preimage);
     env.write_bytes32(output, digest.into())?;
     Ok(())
 }
