@@ -22,7 +22,7 @@
     (import "user_host" "arbitrator_forward__evm_gas_left"     (func $evm_gas_left     (result i64)))
     (import "user_host" "arbitrator_forward__evm_ink_left"     (func $evm_ink_left     (result i64)))
     (import "user_host" "arbitrator_forward__block_basefee"    (func $block_basefee    (param i32)))
-    (import "user_host" "arbitrator_forward__chainid"          (func $chainid          (param i32)))
+    (import "user_host" "arbitrator_forward__chainid"          (func $chainid          (result i64)))
     (import "user_host" "arbitrator_forward__block_coinbase"   (func $block_coinbase   (param i32)))
     (import "user_host" "arbitrator_forward__block_gas_limit"  (func $block_gas_limit  (result i64)))
     (import "user_host" "arbitrator_forward__block_number"     (func $block_number     (param i32)))

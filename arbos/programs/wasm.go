@@ -47,7 +47,7 @@ func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
 func rustConfigImpl(version, maxDepth u32, inkPrice, hostioInk u64, debugMode u32) *rustConfig
 func rustEvmDataImpl(
 	blockBasefee *hash,
-	chainId *hash,
+	chainId *u64,
 	blockCoinbase *addr,
 	blockGasLimit u64,
 	blockNumber *hash,

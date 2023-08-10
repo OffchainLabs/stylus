@@ -254,11 +254,10 @@ pub(crate) fn block_basefee<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> Mayb
     Ok(())
 }
 
-pub(crate) fn chainid<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn chainid<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::CHAINID_GAS)?;
-    env.write_bytes32(ptr, env.evm_data.chainid)?;
-    Ok(())
+    Ok(env.evm_data.chainid)
 }
 
 pub(crate) fn block_coinbase<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
