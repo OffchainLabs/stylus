@@ -200,6 +200,21 @@ pub unsafe extern "C" fn user_host__emit_log(data: usize, len: u32, topics: u32)
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn user_host__report_hostio(opcode: Opcode, gas: u64, cost: u64) {
+    let program = Program::start_free();
+
+    program.evm_api.report_hostio(opcode, gas, cost).unwrap();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__report_hostio_advanced(opcode: Opcode, data: usize, len: u32, offset: u32, size: u32, gas: u64, cost: u64) {
+    let program = Program::start_free();
+
+    let data = wavm::read_slice_usize(data, len as usize);
+    program.evm_api.report_hostio_advanced(opcode, data, offset, size, gas, cost).unwrap();
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn user_host__account_balance(address: usize, ptr: usize) {
     let program = Program::start(2 * PTR_INK + EVM_API_INK);
     let address = wavm::read_bytes20(address);

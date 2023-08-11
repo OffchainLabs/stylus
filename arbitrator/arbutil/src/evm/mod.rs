@@ -58,7 +58,38 @@ pub const CALLVALUE_GAS: u64 = GAS_QUICK_STEP;
 pub const GASPRICE_GAS: u64 = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
+pub const RETURNDATASIZE_GAS: u64 = GAS_QUICK_STEP;
+
+// vm.GasQuickStep (see jump_table.go)
 pub const ORIGIN_GAS: u64 = GAS_QUICK_STEP;
+
+#[derive(Clone, Copy, Debug)]
+#[repr(u32)]
+pub enum Opcode {
+    KECCAK256 = 0x20,
+    ADDRESS = 0x30,
+    BALANCE = 0x31,
+    ORIGIN = 0x32,
+    CALLER = 0x33,
+    CALLVALUE = 0x34,
+    CALLDATALOAD = 0x35,
+    CALLDATASIZE = 0x36,
+    CALLDATACOPY = 0x37,
+    GASPRICE = 0x3A,
+    RETURNDATASIZE = 0x3D,
+    RETURNDATACOPY = 0x3E,
+    EXTCODEHASH = 0x3f,
+    COINBASE = 0x41,
+    TIMESTAMP = 0x42,
+    NUMBER = 0x43,
+    GASLIMIT = 0x45,
+    CHAINID = 0x46,
+    BASEFEE = 0x48,
+    GAS = 0x5A,
+    LOG0 = 0xA0,
+    RETURN = 0xF3,
+    REVERT = 0xFD,
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]

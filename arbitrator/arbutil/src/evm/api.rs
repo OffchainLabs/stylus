@@ -1,7 +1,10 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
+use crate::{
+    evm::{user::UserOutcomeKind, Opcode},
+    Bytes20, Bytes32,
+};
 use eyre::Result;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +43,8 @@ pub enum EvmApiMethod {
     Create2,
     GetReturnData,
     EmitLog,
+    ReportHostio,
+    ReportHostioAdvanced,
     AccountBalance,
     AccountCodeHash,
     AddPages,
@@ -96,7 +101,7 @@ pub trait EvmApi: Send + 'static {
         code: Vec<u8>,
         endowment: Bytes32,
         gas: u64,
-    ) -> (eyre::Result<Bytes20>, u32, u64);
+    ) -> (Result<Bytes20>, u32, u64);
 
     /// Deploys a new contract using the init code provided, with an address determined in part by the `salt`.
     /// Returns the new contract's address on success, or the error reason on failure.
@@ -108,7 +113,7 @@ pub trait EvmApi: Send + 'static {
         endowment: Bytes32,
         salt: Bytes32,
         gas: u64,
-    ) -> (eyre::Result<Bytes20>, u32, u64);
+    ) -> (Result<Bytes20>, u32, u64);
 
     /// Returns the EVM return data.
     /// Analogous to `vm.RETURNDATASIZE`.
@@ -118,6 +123,45 @@ pub trait EvmApi: Send + 'static {
     /// Returns an error message on failure.
     /// Analogous to `vm.LOG(n)` where n ∈ [0, 4].
     fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()>;
+
+    /// Emits a trace for the given opCode with no parameters.
+    /// Use for the following hostios:
+    /// env.args (CALLDATALOAD)
+    /// env.evm_data.return_data_len (RETURNDATASIZE)
+    /// account_balance (BALANCE)
+    /// account_codehash (EXTCODEHASH)
+    /// evm_gas_left (GAS)
+    /// evm_ink_left (GAS)
+    /// block_basefee (BASEFEE)
+    /// chainid (CHAINID)
+    /// block_coinbase (COINBASE)
+    /// block_gas_limit (GASLIMIT)
+    /// block_number (NUMBER)
+    /// block_timestamp (TIMESTAMP)
+    /// contract_address (ADDRESS)
+    /// msg_sender (CALLER)
+    /// msg_value (CALLVALUE)
+    /// tx_gas_price (GASPRICE)
+    /// tx_ink_price (GASPRICE)
+    /// tx_origin (ORIGIN)
+    fn report_hostio(&mut self, opcode: Opcode, gas: u64, cost: u64) -> Result<()>;
+
+    /// Emits a trace for the given opCode with assorted parameters.
+    /// Use for the following hostios:
+    /// get_return_data (RETURNDATACOPY) - uses `offset` and `size`, ignores `data`
+    /// native_keccak256 (SHA3) - uses `data`, ignores `offset` and `size`
+    /// account_balance (BALANCE) - uses `data` (address), ignores `offset` and `size`
+    /// account_balance (BALANCE) - uses `data` (address), ignores `offset` and `size`
+    /// emit_log (LOG0-LOG4) - uses `data` and `size`, ignores `offset`
+    fn report_hostio_advanced(
+        &mut self,
+        opcode: Opcode,
+        data: Vec<u8>,
+        offset: u32,
+        size: u32,
+        gas: u64,
+        cost: u64,
+    ) -> Result<()>;
 
     /// Gets the balance of the given account.
     /// Returns the balance and the access cost in gas.
