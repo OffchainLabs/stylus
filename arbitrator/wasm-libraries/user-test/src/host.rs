@@ -64,13 +64,13 @@ pub unsafe extern "C" fn vm_hooks__emit_log(data: usize, len: u32, topics: u32) 
 
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__report_hostio(_opcode: u32, _gas: u64, _cost: u64) {
-    let mut _program = Program::start();
+    let mut _program = Program::start_free();
     // Do nothing
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__report_hostio_advanced(_opcode: u32, data: usize, len: u32, _offset: u32, _size: u32, _gas: u64, _cost: u64) {
-    let mut _program = Program::start();
+    let mut _program = Program::start_free();
     let _data = wavm::read_slice_usize(data, len as usize);
     // Do nothing
 }
