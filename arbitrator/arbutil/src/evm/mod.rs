@@ -75,6 +75,7 @@ pub struct EvmData {
     pub tx_gas_price: Bytes32,
     pub tx_origin: Bytes20,
     pub reentrant: u32,
+    pub tracing_enabled: u32,
     pub return_data_len: u32,
 }
 

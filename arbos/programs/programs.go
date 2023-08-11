@@ -256,6 +256,7 @@ func (p Programs) CallProgram(
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
 		reentrant:       arbmath.BoolToUint32(reentrant),
+		tracingEnabled:  arbmath.BoolToUint32(tracingInfo != nil),
 	}
 
 	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
@@ -343,6 +344,7 @@ type evmData struct {
 	txGasPrice      common.Hash
 	txOrigin        common.Address
 	reentrant       uint32
+	tracingEnabled  uint32
 }
 
 type userStatus uint8
