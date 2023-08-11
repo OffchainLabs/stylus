@@ -4,7 +4,7 @@
 use crate::{evm_api::ApiCaller, Program};
 use arbutil::{
     crypto,
-    evm::{self, api::EvmApi, js::JsEvmApi, user::UserOutcomeKind},
+    evm::{self, api::EvmApi, js::JsEvmApi, user::UserOutcomeKind, Opcode},
     pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
     wavm, Bytes20, Bytes32,
 };

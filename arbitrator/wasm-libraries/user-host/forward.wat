@@ -19,7 +19,7 @@
     (import "user_host" "arbitrator_forward__emit_log"         (func $emit_log         (param i32 i32 i32)))
     (import "user_host" "arbitrator_forward__report_hostio"    (func $report_hostio    (param i32 i64 i64)))
     (import "user_host" "arbitrator_forward__report_hostio_advanced"
-            (func $report_hostio_advanced (param i32 i32 i32 i32 i32 i64 i64)))
+        (func $report_hostio_advanced (param i32 i32 i32 i32 i32 i64 i64)))
     (import "user_host" "arbitrator_forward__account_balance"  (func $account_balance  (param i32 i32)))
     (import "user_host" "arbitrator_forward__account_codehash" (func $account_codehash (param i32 i32)))
     (import "user_host" "arbitrator_forward__evm_gas_left"     (func $evm_gas_left     (result i64)))
