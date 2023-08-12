@@ -308,7 +308,7 @@ pub(crate) fn contract_address<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> M
 }
 
 pub(crate) fn msg_reentrant<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
-    let mut env = WasmEnv::start(&mut env, 0)?;
+    let env = WasmEnv::start(&mut env, 0)?;
     Ok(env.evm_data.reentrant as u32)
 }
 
