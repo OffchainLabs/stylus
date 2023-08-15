@@ -285,6 +285,16 @@ pub(crate) fn contract_address<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> M
     Ok(())
 }
 
+pub(crate) fn contract_footprint<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
+    let env = WasmEnv::start(&mut env, 0)?;
+    Ok(env.evm_data.footprint.into())
+}
+
+pub(crate) fn contract_wasm_size<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
+    let env = WasmEnv::start(&mut env, 0)?;
+    Ok(env.evm_data.wasm_size.into())
+}
+
 pub(crate) fn msg_reentrant<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
     let env = WasmEnv::start(&mut env, 0)?;
     Ok(env.evm_data.reentrant as u32)

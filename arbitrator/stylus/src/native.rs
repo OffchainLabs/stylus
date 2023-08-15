@@ -141,6 +141,8 @@ impl<E: EvmApi> NativeInstance<E> {
                 "block_number" => func!(host::block_number),
                 "block_timestamp" => func!(host::block_timestamp),
                 "contract_address" => func!(host::contract_address),
+                "contract_footprint" => func!(host::contract_footprint),
+                "contract_wasm_size" => func!(host::contract_wasm_size),
                 "msg_reentrant" => func!(host::msg_reentrant),
                 "msg_sender" => func!(host::msg_sender),
                 "msg_value" => func!(host::msg_value),
@@ -301,6 +303,9 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
         (u8 <- $($types:tt)+) => {
             Function::new_typed(&mut store, $($types)+ -> u8 { panic!("incomplete import") })
         };
+        (u16 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> u16 { panic!("incomplete import") })
+        };
         (u32 <- $($types:tt)+) => {
             Function::new_typed(&mut store, $($types)+ -> u32 { panic!("incomplete import") })
         };
@@ -342,6 +347,8 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "block_number" => stub!(u64 <- ||),
             "block_timestamp" => stub!(u64 <- ||),
             "contract_address" => stub!(|_: u32|),
+            "contract_footprint" => stub!(u16 <- ||),
+            "contract_wasm_size" => stub!(u16 <- ||),
             "msg_reentrant" => stub!(u32 <- ||),
             "msg_sender" => stub!(|_: u32|),
             "msg_value" => stub!(|_: u32|),

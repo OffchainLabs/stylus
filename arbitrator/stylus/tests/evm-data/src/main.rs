@@ -3,13 +3,7 @@
 
 #![no_main]
 
-use stylus_sdk::{
-    alloy_primitives::{Address, B256, U256},
-    block,
-    contract::{self, Call},
-    evm, msg, tx,
-    types::AddressVM,
-};
+use stylus_sdk::{alloy_primitives::{Address, B256, U256}, block, contract::{self, Call}, evm, msg, tx, types::AddressVM};
 
 stylus_sdk::entrypoint!(user_main);
 
@@ -35,6 +29,8 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let origin = tx::origin();
     let gas_price = tx::gas_price();
     let ink_price = tx::ink_price();
+    let footprint = contract::footprint();
+    let wasm_size = contract::wasm_size();
 
     let mut block_number = block::number();
     block_number -= 1;
@@ -70,5 +66,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(ink_left_before.to_be_bytes());
     output.extend(gas_left_after.to_be_bytes());
     output.extend(ink_left_after.to_be_bytes());
+    output.extend(footprint.to_be_bytes());
+    output.extend(wasm_size.to_be_bytes());
     Ok(output)
 }

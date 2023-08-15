@@ -32,8 +32,8 @@ type Programs struct {
 }
 
 type Program struct {
-	wasmSize  uint16 // Unit is half of a kb
 	footprint uint16
+	wasmSize  uint16 // Unit is half of a kb
 	version   uint16
 	address   common.Address // not saved in state
 }
@@ -203,8 +203,8 @@ func (p Programs) CompileProgram(evm *vm.EVM, program common.Address, debugMode 
 	wasmSize := arbmath.SaturatingUCast[uint16]((len(wasm) + 511) / 512)
 
 	programData := Program{
-		wasmSize:  wasmSize,
 		footprint: footprint,
+		wasmSize:  wasmSize,
 		version:   version,
 		address:   program,
 	}
@@ -281,6 +281,8 @@ func (p Programs) CallProgram(
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
 		reentrant:       arbmath.BoolToUint32(reentrant),
+		footprint:       program.footprint,
+		wasmSize:        program.wasmSize,
 	}
 
 	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params, model)
@@ -309,8 +311,8 @@ func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
 func (p Programs) deserializeProgram(address common.Address) (Program, error) {
 	data, err := p.programs.Get(address.Hash())
 	return Program{
-		wasmSize:  arbmath.BytesToUint16(data[26:28]),
 		footprint: arbmath.BytesToUint16(data[28:30]),
+		wasmSize:  arbmath.BytesToUint16(data[26:28]),
 		version:   arbmath.BytesToUint16(data[30:]),
 		address:   address,
 	}, err
@@ -318,8 +320,8 @@ func (p Programs) deserializeProgram(address common.Address) (Program, error) {
 
 func (p Program) serialize() common.Hash {
 	data := common.Hash{}
-	copy(data[26:], arbmath.Uint16ToBytes(p.wasmSize))
 	copy(data[28:], arbmath.Uint16ToBytes(p.footprint))
+	copy(data[26:], arbmath.Uint16ToBytes(p.wasmSize))
 	copy(data[30:], arbmath.Uint16ToBytes(p.version))
 	return data
 }
@@ -370,6 +372,8 @@ type evmData struct {
 	txGasPrice      common.Hash
 	txOrigin        common.Address
 	reentrant       uint32
+	footprint       uint16
+	wasmSize        uint16
 }
 
 type userStatus uint8

@@ -274,6 +274,18 @@ pub unsafe extern "C" fn user_host__contract_address(ptr: usize) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn user_host__contract_footprint() -> u32 {
+    let program = Program::start(0);
+    program.evm_data.footprint.into()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__contract_wasm_size() -> u32 {
+    let program = Program::start(0);
+    program.evm_data.wasm_size.into()
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn user_host__msg_reentrant() -> u32 {
     let program = Program::start(0);
     program.evm_data.reentrant

@@ -605,6 +605,16 @@ func testEvmData(t *testing.T, jit bool) {
 		Fatal(t, "gas and ink converted to gas don't match", gasUsed, calculatedGasUsed, inkPrice)
 	}
 
+	footprint := getU32("footprint")
+	if footprint != 1 {
+		Fatal(t, "Unexpected footprint", footprint)
+	}
+
+	wasmSize := getU32("wasm_size")
+	if wasmSize < 30 || wasmSize > 100 {
+		Fatal(t, "Unexpected wasmSize", wasmSize)
+	}
+
 	tx = l2info.PrepareTxTo("Owner", &evmDataAddr, evmDataGas, nil, evmDataData)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
