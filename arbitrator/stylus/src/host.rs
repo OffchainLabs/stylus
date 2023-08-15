@@ -54,71 +54,75 @@ pub(crate) fn storage_store_bytes32<E: EvmApi>(
 }
 
 pub(crate) fn call_contract<E: EvmApi>(
-    env: WasmEnvMut<E>,
+    mut env: WasmEnvMut<E>,
     contract: u32,
-    data: u32,
+    data_ptr: u32,
     data_len: u32,
     value: u32,
-    gas: u64,
+    mut gas: u64,
     ret_len: u32,
 ) -> Result<u8, Escape> {
-    let value = Some(value);
-    let call = |api: &mut E, contract, data, gas, value: Option<_>| {
-        api.contract_call(contract, data, gas, value.unwrap())
-    };
-    do_call(env, contract, data, data_len, value, gas, ret_len, call)
+    let mut env = WasmEnv::start(&mut env)?;
+
+    let contract = env.read_bytes20(contract)?;
+    let input = env.read_slice(data_ptr, data_len)?;
+    let value = env.read_bytes32(value)?;
+
+    env.pay_for_evm_copy(data_len.into())?;
+    gas = gas.min(env.gas_left()?); // provide no more than what the user has
+
+    let (outs_len, gas_cost, status) = env.evm_api.contract_call(contract, input, gas, value);
+
+    env.evm_data.return_data_len = outs_len;
+    env.write_u32(ret_len, outs_len)?;
+    env.buy_gas(gas_cost)?;
+    Ok(status as u8)
 }
 
 pub(crate) fn delegate_call_contract<E: EvmApi>(
-    env: WasmEnvMut<E>,
+    mut env: WasmEnvMut<E>,
     contract: u32,
-    data: u32,
+    data_ptr: u32,
     data_len: u32,
-    gas: u64,
+    mut gas: u64,
     ret_len: u32,
 ) -> Result<u8, Escape> {
-    let call = |api: &mut E, contract, data, gas, _| api.delegate_call(contract, data, gas);
-    do_call(env, contract, data, data_len, None, gas, ret_len, call)
+    let mut env = WasmEnv::start(&mut env)?;
+
+    let contract = env.read_bytes20(contract)?;
+    let input = env.read_slice(data_ptr, data_len)?;
+
+    env.pay_for_evm_copy(data_len.into())?;
+    gas = gas.min(env.gas_left()?); // provide no more than what the user has
+
+    let (outs_len, gas_cost, status) = env.evm_api.delegate_call(contract, input, gas);
+
+    env.evm_data.return_data_len = outs_len;
+    env.write_u32(ret_len, outs_len)?;
+    env.buy_gas(gas_cost)?;
+    Ok(status as u8)
 }
 
 pub(crate) fn static_call_contract<E: EvmApi>(
-    env: WasmEnvMut<E>,
-    contract: u32,
-    data: u32,
-    data_len: u32,
-    gas: u64,
-    ret_len: u32,
-) -> Result<u8, Escape> {
-    let call = |api: &mut E, contract, data, gas, _| api.static_call(contract, data, gas);
-    do_call(env, contract, data, data_len, None, gas, ret_len, call)
-}
-
-pub(crate) fn do_call<F, E>(
     mut env: WasmEnvMut<E>,
     contract: u32,
-    calldata: u32,
-    calldata_len: u32,
-    value: Option<u32>,
+    data_ptr: u32,
+    data_len: u32,
     mut gas: u64,
-    return_data_len: u32,
-    call: F,
-) -> Result<u8, Escape>
-where
-    E: EvmApi,
-    F: FnOnce(&mut E, Bytes20, Vec<u8>, u64, Option<Bytes32>) -> (u32, u64, UserOutcomeKind),
-{
+    ret_len: u32,
+) -> Result<u8, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
-    env.pay_for_evm_copy(calldata_len.into())?;
-    gas = gas.min(env.gas_left()?); // provide no more than what the user has
 
     let contract = env.read_bytes20(contract)?;
-    let input = env.read_slice(calldata, calldata_len)?;
-    let value = value.map(|x| env.read_bytes32(x)).transpose()?;
-    let api = &mut env.evm_api;
+    let input = env.read_slice(data_ptr, data_len)?;
 
-    let (outs_len, gas_cost, status) = call(api, contract, input, gas, value);
+    env.pay_for_evm_copy(data_len.into())?;
+    gas = gas.min(env.gas_left()?); // provide no more than what the user has
+
+    let (outs_len, gas_cost, status) = env.evm_api.static_call(contract, input, gas);
+
     env.evm_data.return_data_len = outs_len;
-    env.write_u32(return_data_len, outs_len)?;
+    env.write_u32(ret_len, outs_len)?;
     env.buy_gas(gas_cost)?;
     Ok(status as u8)
 }
