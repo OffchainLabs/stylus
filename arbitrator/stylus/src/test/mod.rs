@@ -14,6 +14,7 @@ use wasmer::{
 use wasmer_compiler_singlepass::Singlepass;
 
 mod api;
+mod handler;
 mod misc;
 mod native;
 mod sdk;
