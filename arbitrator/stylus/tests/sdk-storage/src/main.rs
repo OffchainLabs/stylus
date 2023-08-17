@@ -6,7 +6,7 @@
 use stylus_sdk::{
     alloy_primitives::{Address, Uint, B256, I32, U16, U256, U64, U8},
     prelude::*,
-    stylus_proc::{sol_storage, Erase},
+    stylus_proc::sol_storage,
 };
 
 #[global_allocator]
@@ -27,9 +27,10 @@ sol_storage! {
         bytes bytes_long;
         string chars;
         Maps maps;
+        uint64[3] fixed;
+        Struct[3] fixed_structs;
     };
 
-    #[derive(Erase)]
     pub struct Struct {
         uint16 num;
         int32 other;
@@ -188,9 +189,24 @@ fn populate(mut contract: Contract) {
         entry.other.set(contract.sub.other.get());
         entry.word.set(contract.sub.word.get());
     }
+
+    // Fixed array of uint64.
+    let mut fixed = contract.fixed;
+    let mut setter = fixed.get_mut(0).unwrap();
+    let value = U64::from(77);
+    setter.set(value);
+    assert_eq!(setter.get(), value);
+    assert_eq!(false, fixed.get(100).is_some());
+
+    // Fixed array of structs.
+    let mut fixed_structs = maps.fixed_structs;
+    let mut setter = fixed_structs.get_mut(0).unwrap();
+    setter.num.set(contract.sub.num.get());
+    setter.other.set(contract.sub.other.get());
+    setter.word.set(contract.sub.word.get());
 }
 
-fn remove(mut contract: Contract) {
+fn remove(contract: Contract) {
     // pop all elements
     let mut bytes_full = contract.bytes_full;
     while let Some(value) = bytes_full.pop() {
@@ -243,6 +259,9 @@ fn remove(mut contract: Contract) {
     }
     vects.delete(Address::with_last_byte(3));
 
-    // erase a struct
-    contract.structs.erase_last();
+    let mut fixed = contract.fixed;
+    fixed.erase();
+
+    let mut fixed_structs = contract.fixed_structs;
+    fixed_structs.erase();
 }
