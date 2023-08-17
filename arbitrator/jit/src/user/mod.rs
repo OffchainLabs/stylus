@@ -172,9 +172,19 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
 
 #[derive(Default)]
 pub struct StylusThreadHandler {
-    calls: u32,
     timeout: Duration,
     thread_info: Option<(SyncSender<DownMsg>, Receiver<UpMsg>, thread::JoinHandle<()>)>,
+}
+
+impl Drop for StylusThreadHandler {
+    fn drop(&mut self) {
+        let Some((down, _, handler)) = self.thread_info.take() else {
+            return
+        };
+        down.send(DownMsg::Close)
+            .expect("failed sending done message to stylus thread");
+        handler.join().expect("failed joining stylus thread");
+    }
 }
 
 enum UpMsg {
@@ -196,4 +206,5 @@ struct StylusLaunchParams {
 enum DownMsg {
     ExecWasm(StylusLaunchParams),
     CallResponse(Vec<ApiValue>),
+    Close,
 }

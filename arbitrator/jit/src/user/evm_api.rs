@@ -49,7 +49,7 @@ impl StylusThread {
         }
     }
 
-    unsafe fn launch_new_wavm(&self, params: StylusLaunchParams) -> (Result<UserOutcome>, u64) {
+    unsafe fn handle_exec_request(&self, params: StylusLaunchParams) {
         let evm_api = JsEvmApi::new(params.evm_api_ids.clone(), self.clone());
         let instance = NativeInstance::deserialize(
             &params.module,
@@ -72,7 +72,11 @@ impl StylusThread {
             Ok(UserOutcome::OutOfStack) => 0, // take all ink when out of stack
             _ => instance.ink_left().into(),
         };
-        (outcome, ink_left)
+
+        self.data
+            .up
+            .send(UpMsg::WasmDone(outcome, ink_left))
+            .expect("failed sending from stylus thread to go");
     }
 }
 
@@ -87,12 +91,9 @@ impl JsCallIntoGo for StylusThread {
                 let msg = self.data.down.lock().unwrap().recv().unwrap();
                 match msg {
                     DownMsg::CallResponse(res) => return res,
-                    DownMsg::ExecWasm(params) => {
-                        let (outcome, ink_left) = self.launch_new_wavm(params);
-                        self.data
-                            .up
-                            .send(UpMsg::WasmDone(outcome, ink_left))
-                            .expect("failed sending from stylus thread to go");
+                    DownMsg::ExecWasm(params) => self.handle_exec_request(params),
+                    DownMsg::Close => {
+                        panic!("stylus thread: got close message while waiting for call return")
                     }
                 }
             }
@@ -101,38 +102,27 @@ impl JsCallIntoGo for StylusThread {
 }
 
 impl StylusThreadHandler {
-    fn increase_call(&mut self, timeout: Duration) {
-        self.calls += 1;
-        if self.calls > 1 {
+    fn prepare_thread(&mut self, timeout: Duration) {
+        if self.thread_info.is_some() {
             return;
         }
         let up_channel = mpsc::sync_channel(0);
         let down_channel = mpsc::sync_channel(0);
         let handler: thread::JoinHandle<()> = thread::spawn(move || unsafe {
             let thread = StylusThread::new(up_channel.0, down_channel.1);
-            // Safety: module came from compile_user_wasm
-            let msg = thread.data.down.lock().unwrap().recv().unwrap();
-            let DownMsg::ExecWasm(params) = msg else {
-                panic!("stylus thread got wrong message")
-            };
-            let (outcome, ink_left) = thread.launch_new_wavm(params);
-            thread
-                .data
-                .up
-                .send(UpMsg::WasmDone(outcome, ink_left))
-                .expect("failed replying from stylus thread");
+            loop {
+                let msg = thread.data.down.lock().unwrap().recv().unwrap();
+                match msg {
+                    DownMsg::CallResponse(_) => {
+                        panic!("stylus thread: got call response message but no call waiting")
+                    }
+                    DownMsg::ExecWasm(params) => thread.handle_exec_request(params),
+                    DownMsg::Close => break,
+                }
+            }
         });
         self.thread_info = Some((down_channel.0, up_channel.1, handler));
         self.timeout = timeout;
-    }
-
-    fn decrease_call(&mut self) {
-        self.calls -= 1;
-        if self.calls > 0 {
-            return;
-        }
-        let (_, _, handler) = self.thread_info.take().expect("stylus thread not found");
-        handler.join().expect("failed joining stylus thread");
     }
 
     fn send(&mut self, msg: DownMsg) -> Result<()> {
@@ -169,7 +159,7 @@ pub(super) fn exec_wasm(
     let (env, mut store) = env.data_and_store_mut();
 
     env.stylus_thread_handler
-        .increase_call(env.process.child_timeout);
+        .prepare_thread(env.process.child_timeout);
 
     env.stylus_thread_handler
         .send(DownMsg::ExecWasm(StylusLaunchParams {
@@ -228,7 +218,6 @@ pub(super) fn exec_wasm(
             }
             Panic(error) => bail!(error),
             WasmDone(res, ink_left) => {
-                env.stylus_thread_handler.decrease_call();
                 return Ok((res, ink_left));
             }
         }
