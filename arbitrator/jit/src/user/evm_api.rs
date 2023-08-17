@@ -7,7 +7,7 @@ use crate::{
     gostack::GoStack,
     machine::WasmEnvMut,
     syscall::{DynamicObject, GoValue, JsValue, STYLUS_ID},
-    user::{DownMsg, StylusThreadHandler, UpMsg, StylusLaunchParams},
+    user::{DownMsg, StylusLaunchParams, StylusThreadHandler, UpMsg},
 };
 use arbutil::{
     evm::{
@@ -40,10 +40,7 @@ struct StylusThread {
 }
 
 impl StylusThread {
-    fn new(
-        up: SyncSender<UpMsg>,
-        down: Receiver<DownMsg>,
-    ) -> Self {
+    fn new(up: SyncSender<UpMsg>, down: Receiver<DownMsg>) -> Self {
         Self {
             data: Arc::new(StylusThreadData {
                 up,
@@ -52,13 +49,14 @@ impl StylusThread {
         }
     }
 
-    unsafe fn launch_new_wavm(
-        &self,
-        params: StylusLaunchParams,
-    ) -> (Result<UserOutcome>, u64) {
+    unsafe fn launch_new_wavm(&self, params: StylusLaunchParams) -> (Result<UserOutcome>, u64) {
         let evm_api = JsEvmApi::new(params.evm_api_ids.clone(), self.clone());
-        let instance =
-            NativeInstance::deserialize(&params.module, params.compile.clone(), evm_api, params.evm_data);
+        let instance = NativeInstance::deserialize(
+            &params.module,
+            params.compile.clone(),
+            evm_api,
+            params.evm_data,
+        );
         let mut instance = match instance {
             Ok(instance) => instance,
             Err(error) => {
@@ -90,8 +88,7 @@ impl JsCallIntoGo for StylusThread {
                 match msg {
                     DownMsg::CallResponse(res) => return res,
                     DownMsg::ExecWasm(params) => {
-                        let (outcome, ink_left) =
-                            self.launch_new_wavm(params);
+                        let (outcome, ink_left) = self.launch_new_wavm(params);
                         self.data
                             .up
                             .send(UpMsg::WasmDone(outcome, ink_left))
@@ -104,10 +101,7 @@ impl JsCallIntoGo for StylusThread {
 }
 
 impl StylusThreadHandler {
-    fn increase_call(
-        &mut self,
-        timeout: Duration,
-    ) {
+    fn increase_call(&mut self, timeout: Duration) {
         self.calls += 1;
         if self.calls > 1 {
             return;
@@ -115,8 +109,7 @@ impl StylusThreadHandler {
         let up_channel = mpsc::sync_channel(0);
         let down_channel = mpsc::sync_channel(0);
         let handler: thread::JoinHandle<()> = thread::spawn(move || unsafe {
-            let thread =
-                StylusThread::new(up_channel.0, down_channel.1);
+            let thread = StylusThread::new(up_channel.0, down_channel.1);
             // Safety: module came from compile_user_wasm
             let msg = thread.data.down.lock().unwrap().recv().unwrap();
             let DownMsg::ExecWasm(params) = msg else {
@@ -179,7 +172,15 @@ pub(super) fn exec_wasm(
         .increase_call(env.process.child_timeout);
 
     env.stylus_thread_handler
-        .send(DownMsg::ExecWasm(StylusLaunchParams{evm_api_ids, evm_data, module, calldata, ink, compile, config}))?;
+        .send(DownMsg::ExecWasm(StylusLaunchParams {
+            evm_api_ids,
+            evm_data,
+            module,
+            calldata,
+            ink,
+            compile,
+            config,
+        }))?;
 
     loop {
         let msg = env.stylus_thread_handler.recv()?;
