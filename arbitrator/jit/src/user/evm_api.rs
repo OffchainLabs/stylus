@@ -7,11 +7,12 @@ use crate::{
     gostack::GoStack,
     machine::WasmEnvMut,
     syscall::{DynamicObject, GoValue, JsValue, STYLUS_ID},
+    user::{DownMsg, StylusLaunchParams, StylusThreadHandler, UpMsg},
 };
 use arbutil::{
     evm::{
         js::{ApiValue, JsCallIntoGo, JsEvmApi},
-        user::{UserOutcome, UserOutcomeKind},
+        user::UserOutcome,
         EvmData,
     },
     Color,
@@ -19,33 +20,125 @@ use arbutil::{
 use eyre::{bail, Result};
 use prover::programs::prelude::*;
 use std::{
-    sync::mpsc::{self, SyncSender},
+    sync::{
+        mpsc::{self, Receiver, SyncSender},
+        Arc, Mutex,
+    },
     thread,
+    time::Duration,
 };
 use stylus::{native::NativeInstance, run::RunProgram};
 
-struct ApiCaller {
-    parent: SyncSender<EvmMsg>,
+struct StylusThreadData {
+    up: SyncSender<UpMsg>,
+    down: Mutex<Receiver<DownMsg>>,
 }
 
-enum EvmMsg {
-    Call(u32, Vec<ApiValue>, SyncSender<Vec<ApiValue>>),
-    Panic(String),
-    Done,
+#[derive(Clone)]
+struct StylusThread {
+    data: Arc<StylusThreadData>,
 }
 
-impl ApiCaller {
-    fn new(parent: SyncSender<EvmMsg>) -> Self {
-        Self { parent }
+impl StylusThread {
+    fn new(up: SyncSender<UpMsg>, down: Receiver<DownMsg>) -> Self {
+        Self {
+            data: Arc::new(StylusThreadData {
+                up,
+                down: down.into(),
+            }),
+        }
+    }
+
+    unsafe fn handle_exec_request(&self, params: StylusLaunchParams) {
+        let evm_api = JsEvmApi::new(params.evm_api_ids.clone(), self.clone());
+        let instance = NativeInstance::deserialize(
+            &params.module,
+            params.compile.clone(),
+            evm_api,
+            params.evm_data,
+        );
+        let mut instance = match instance {
+            Ok(instance) => instance,
+            Err(error) => {
+                let message = format!("failed to instantiate program {error:?}");
+                self.data.up.send(UpMsg::Panic(message.clone())).unwrap();
+                panic!("{message}");
+            }
+        };
+
+        let outcome = instance.run_main(&params.calldata, params.config, params.ink);
+
+        let ink_left: u64 = match outcome {
+            Ok(UserOutcome::OutOfStack) => 0, // take all ink when out of stack
+            _ => instance.ink_left().into(),
+        };
+
+        self.data
+            .up
+            .send(UpMsg::WasmDone(outcome, ink_left))
+            .expect("failed sending from stylus thread to go");
     }
 }
 
-impl JsCallIntoGo for ApiCaller {
+impl JsCallIntoGo for StylusThread {
     fn call_go(&mut self, func: u32, args: Vec<ApiValue>) -> Vec<ApiValue> {
-        let (tx, rx) = mpsc::sync_channel(0);
-        let msg = EvmMsg::Call(func, args, tx);
-        self.parent.send(msg).unwrap();
-        rx.recv().unwrap()
+        unsafe {
+            self.data
+                .up
+                .send(UpMsg::Call(func, args))
+                .expect("failed sending from stylus thread to go");
+            loop {
+                let msg = self.data.down.lock().unwrap().recv().unwrap();
+                match msg {
+                    DownMsg::CallResponse(res) => return res,
+                    DownMsg::ExecWasm(params) => self.handle_exec_request(params),
+                    DownMsg::Close => {
+                        panic!("stylus thread: got close message while waiting for call return")
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl StylusThreadHandler {
+    fn prepare_thread(&mut self, timeout: Duration) {
+        if self.thread_info.is_some() {
+            return;
+        }
+        let up_channel = mpsc::sync_channel(0);
+        let down_channel = mpsc::sync_channel(0);
+        let handler: thread::JoinHandle<()> = thread::spawn(move || unsafe {
+            let thread = StylusThread::new(up_channel.0, down_channel.1);
+            loop {
+                let msg = thread.data.down.lock().unwrap().recv().unwrap();
+                match msg {
+                    DownMsg::CallResponse(_) => {
+                        panic!("stylus thread: got call response message but no call waiting")
+                    }
+                    DownMsg::ExecWasm(params) => thread.handle_exec_request(params),
+                    DownMsg::Close => break,
+                }
+            }
+        });
+        self.thread_info = Some((down_channel.0, up_channel.1, handler));
+        self.timeout = timeout;
+    }
+
+    fn send(&mut self, msg: DownMsg) -> Result<()> {
+        let (ref down, _, _) = self.thread_info.as_mut().expect("stylus thread not found");
+        match down.send(msg) {
+            Ok(_) => Ok(()),
+            Err(err) => bail!("{}", err.red()),
+        }
+    }
+
+    fn recv(&mut self) -> Result<UpMsg> {
+        let (_, ref up, _) = self.thread_info.as_mut().expect("stylus thread not found");
+        match up.recv_timeout(self.timeout) {
+            Ok(msg) => Ok(msg),
+            Err(err) => bail!("{}", err.red()),
+        }
     }
 }
 
@@ -57,46 +150,32 @@ pub(super) fn exec_wasm(
     calldata: Vec<u8>,
     compile: CompileConfig,
     config: StylusConfig,
-    evm_api: Vec<u8>,
+    evm_api_ids: Vec<u8>,
     evm_data: EvmData,
     ink: u64,
 ) -> Result<(Result<UserOutcome>, u64)> {
-    use EvmMsg::*;
-    use UserOutcomeKind::*;
+    use UpMsg::*;
 
-    let (tx, rx) = mpsc::sync_channel(0);
-    let evm_api = JsEvmApi::new(evm_api, ApiCaller::new(tx.clone()));
+    let (env, mut store) = env.data_and_store_mut();
 
-    let handle = thread::spawn(move || unsafe {
-        // Safety: module came from compile_user_wasm
-        let instance = NativeInstance::deserialize(&module, compile.clone(), evm_api, evm_data);
-        let mut instance = match instance {
-            Ok(instance) => instance,
-            Err(error) => {
-                let message = format!("failed to instantiate program {error:?}");
-                tx.send(Panic(message.clone())).unwrap();
-                panic!("{message}");
-            }
-        };
+    env.stylus_thread_handler
+        .prepare_thread(env.process.child_timeout);
 
-        let outcome = instance.run_main(&calldata, config, ink);
-        tx.send(Done).unwrap();
-
-        let ink_left = match outcome.as_ref().map(|e| e.into()) {
-            Ok(OutOfStack) => 0, // take all ink when out of stack
-            _ => instance.ink_left().into(),
-        };
-        (outcome, ink_left)
-    });
+    env.stylus_thread_handler
+        .send(DownMsg::ExecWasm(StylusLaunchParams {
+            evm_api_ids,
+            evm_data,
+            module,
+            calldata,
+            ink,
+            compile,
+            config,
+        }))?;
 
     loop {
-        let msg = match rx.recv_timeout(env.data().process.child_timeout) {
-            Ok(msg) => msg,
-            Err(err) => bail!("{}", err.red()),
-        };
+        let msg = env.stylus_thread_handler.recv()?;
         match msg {
-            Call(func, args, respond) => {
-                let (env, mut store) = env.data_and_store_mut();
+            Call(func, args) => {
                 let js = &mut env.js_state;
 
                 let mut objects = vec![];
@@ -134,12 +213,13 @@ pub(super) fn exec_wasm(
                 for id in object_ids {
                     env.js_state.pool.remove(id);
                 }
-                respond.send(outs).unwrap();
+                env.stylus_thread_handler
+                    .send(DownMsg::CallResponse(outs))?;
             }
             Panic(error) => bail!(error),
-            Done => break,
+            WasmDone(res, ink_left) => {
+                return Ok((res, ink_left));
+            }
         }
     }
-
-    Ok(handle.join().unwrap())
 }

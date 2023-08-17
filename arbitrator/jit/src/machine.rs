@@ -217,6 +217,8 @@ pub struct WasmEnv {
     pub process: ProcessEnv,
     /// The exported funcs callable in hostio
     pub exports: WasmEnvFuncs,
+    /// sub-process handling stylus calls
+    pub stylus_thread_handler: user::StylusThreadHandler,
 }
 
 impl WasmEnv {
