@@ -7,8 +7,9 @@ use arbutil::{
         api::{EvmApi, EvmApiStatus},
         user::UserOutcomeKind,
     },
-    Bytes20, Bytes32,
+    Bytes20, Bytes32, Color,
 };
+use core::fmt::Display;
 use eyre::{ErrReport, Result};
 
 #[repr(C)]
@@ -249,5 +250,9 @@ impl EvmApi for GoEvmApi {
 
     fn add_pages(&mut self, pages: u16) -> u64 {
         call!(self, add_pages, pages)
+    }
+
+    fn debug_print<D: Display>(&self, text: D) {
+        println!("{} {text}", "Stylus says:".yellow());
     }
 }
