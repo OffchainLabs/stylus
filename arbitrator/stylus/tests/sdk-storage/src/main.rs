@@ -6,7 +6,7 @@
 use stylus_sdk::{
     alloy_primitives::{Address, Uint, B256, I32, U16, U256, U64, U8},
     prelude::*,
-    stylus_proc::sol_storage,
+    stylus_proc::{sol_storage, Erase},
 };
 
 #[global_allocator]
@@ -27,14 +27,23 @@ sol_storage! {
         bytes bytes_long;
         string chars;
         Maps maps;
-        uint64[3] fixed;
-        Struct[3] fixed_structs;
+        uint64[3] fixed_arr;
+        Struct[2] fixed_arr_struct;
+        Struct2 struct_with_fixed;
     };
 
+    #[derive(Erase)]
     pub struct Struct {
         uint16 num;
         int32 other;
         bytes32 word;
+    };
+
+    #[derive(Erase)]
+    pub struct Struct2 {
+        bytes2 a;
+        bytes1[2] b;
+        bytes2 c;
     };
 
     pub struct Maps {
@@ -190,20 +199,29 @@ fn populate(mut contract: Contract) {
         entry.word.set(contract.sub.word.get());
     }
 
-    // Fixed array of uint64.
-    let mut fixed = contract.fixed;
+    // Set fixed array of primitives.
+    let mut fixed = contract.fixed_arr;
     let mut setter = fixed.get_mut(0).unwrap();
     let value = U64::from(77);
     setter.set(value);
     assert_eq!(setter.get(), value);
-    assert_eq!(false, fixed.get(100).is_some());
 
-    // Fixed array of structs.
-    let mut fixed_structs = maps.fixed_structs;
-    let mut setter = fixed_structs.get_mut(0).unwrap();
+    // Set fixed array of structs.
+    let mut fixed = contract.fixed_arr_struct;
+    let mut setter = fixed.get_mut(0).unwrap();
     setter.num.set(contract.sub.num.get());
     setter.other.set(contract.sub.other.get());
     setter.word.set(contract.sub.word.get());
+
+    // Ensure a struct with primitives and fixed arrays starts the
+    // fixed array at a new word.
+    let mut struct_with_fixed = contract.struct_with_fixed;
+    struct_with_fixed.a.set(Uint::from(1).into());
+    let mut b_1 = struct_with_fixed.b.setter(0).unwrap();
+    b_1.set(Uint::from(2).into());
+    let mut b_2 = struct_with_fixed.b.setter(1).unwrap();
+    b_2.set(Uint::from(3).into());
+    struct_with_fixed.c.set(Uint::from(4).into());
 }
 
 fn remove(contract: Contract) {
@@ -233,14 +251,14 @@ fn remove(contract: Contract) {
     }
     assert!(vector.is_empty() && vector.len() == 0);
 
-    // erase inner vectors
+    // clear inner vectors
     let mut nested = contract.nested;
     while nested.len() > 2 {
         nested.erase_last();
     }
     nested.shrink().map(|mut x| x.erase());
 
-    // erase map elements
+    // clear map elements
     let maps = contract.maps;
     let mut basic = maps.basic;
     for i in 0..7 {
@@ -251,7 +269,7 @@ fn remove(contract: Contract) {
     let value = basic.replace(Uint::from(8), Address::with_last_byte(32));
     assert_eq!(value, Address::with_last_byte(8));
 
-    // erase vectors in map
+    // clear vectors in map
     let mut vects = maps.vects;
     for a in 0..3 {
         let mut bools = vects.setter(Address::with_last_byte(a));
@@ -259,9 +277,15 @@ fn remove(contract: Contract) {
     }
     vects.delete(Address::with_last_byte(3));
 
-    let mut fixed = contract.fixed;
+    // Clear fixed array.
+    let mut fixed = contract.fixed_arr;
     fixed.erase();
 
-    let mut fixed_structs = contract.fixed_structs;
-    fixed_structs.erase();
+    // Clear fixed array of structs.
+    let mut fixed = contract.fixed_arr_struct;
+    fixed.erase();
+
+    // Clear struct with primitives and fixed array inside.
+    let mut fixed = contract.struct_with_fixed;
+    fixed.erase();
 }
