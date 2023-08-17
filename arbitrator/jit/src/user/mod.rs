@@ -7,11 +7,17 @@ use crate::{
     user::evm_api::exec_wasm,
 };
 use arbutil::{
-    evm::{user::UserOutcome, EvmData},
+    evm::{js::ApiValue, user::UserOutcome, EvmData},
     heapify,
 };
+use eyre::Result;
 use prover::programs::{config::PricingParams, prelude::*};
-use std::mem;
+use std::{
+    mem,
+    sync::mpsc::{Receiver, SyncSender},
+    thread,
+    time::Duration,
+};
 use stylus::native;
 
 mod evm_api;
@@ -162,4 +168,32 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         return_data_len: 0,
     };
     sp.write_ptr(heapify(evm_data));
+}
+
+#[derive(Default)]
+pub struct StylusThreadHandler {
+    calls: u32,
+    timeout: Duration,
+    thread_info: Option<(SyncSender<DownMsg>, Receiver<UpMsg>, thread::JoinHandle<()>)>,
+}
+
+enum UpMsg {
+    Call(u32, Vec<ApiValue>),
+    Panic(String),
+    WasmDone(Result<UserOutcome>, u64),
+}
+
+struct StylusLaunchParams {
+    evm_api_ids: Vec<u8>,
+    compile: CompileConfig,
+    config: StylusConfig,
+    evm_data: EvmData,
+    module: Vec<u8>,
+    calldata: Vec<u8>,
+    ink: u64,
+}
+
+enum DownMsg {
+    ExecWasm(StylusLaunchParams),
+    CallResponse(Vec<ApiValue>),
 }
