@@ -1859,6 +1859,8 @@ dependencies = [
  "wasmer-compiler-cranelift",
  "wasmer-compiler-llvm",
  "wasmer-compiler-singlepass",
+ "wasmer-types",
+ "wasmer-vm",
 ]
 
 [[package]]
