@@ -251,14 +251,14 @@ fn remove(contract: Contract) {
     }
     assert!(vector.is_empty() && vector.len() == 0);
 
-    // clear inner vectors
+    // erase inner vectors
     let mut nested = contract.nested;
     while nested.len() > 2 {
         nested.erase_last();
     }
     nested.shrink().map(|mut x| x.erase());
 
-    // clear map elements
+    // erase map elements
     let maps = contract.maps;
     let mut basic = maps.basic;
     for i in 0..7 {
@@ -269,7 +269,7 @@ fn remove(contract: Contract) {
     let value = basic.replace(Uint::from(8), Address::with_last_byte(32));
     assert_eq!(value, Address::with_last_byte(8));
 
-    // clear vectors in map
+    // erase vectors in map
     let mut vects = maps.vects;
     for a in 0..3 {
         let mut bools = vects.setter(Address::with_last_byte(a));
@@ -277,15 +277,15 @@ fn remove(contract: Contract) {
     }
     vects.delete(Address::with_last_byte(3));
 
-    // Clear fixed array.
+    // erase fixed array.
     let mut fixed = contract.fixed_arr;
     fixed.erase();
 
-    // Clear fixed array of structs.
+    // erase fixed array of structs.
     let mut fixed = contract.fixed_arr_struct;
     fixed.erase();
 
-    // Clear struct with primitives and fixed array inside.
+    // erase struct with primitives and fixed array inside.
     let mut fixed = contract.struct_with_fixed;
     fixed.erase();
 }
