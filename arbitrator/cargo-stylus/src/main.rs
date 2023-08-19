@@ -113,8 +113,9 @@ async fn main() -> eyre::Result<(), String> {
                 Some(path) => PathBuf::from_str(&path).unwrap(),
                 None => project::build_project_to_wasm()?,
             };
-            let wasm_file_bytes = project::get_compressed_wasm_bytes(&wasm_file_path)?;
-            check::run_checks(&wasm_file_bytes, disabled)
+            let (wasm_file_bytes, deploy_ready_code) =
+                project::get_compressed_wasm_bytes(&wasm_file_path)?;
+            check::run_checks(&wasm_file_bytes, &deploy_ready_code, disabled)
         }
         Commands::Deploy(deploy_config) => match deploy::deploy(deploy_config).await {
             Ok(_) => Ok(()),

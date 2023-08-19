@@ -49,9 +49,9 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
             Some(path) => PathBuf::from_str(&path).unwrap(),
             None => project::build_project_to_wasm()?,
         };
-        let wasm_file_bytes = project::get_compressed_wasm_bytes(&wasm_file_path)?;
+        let (_, deploy_ready_code) = project::get_compressed_wasm_bytes(&wasm_file_path)?;
         println!("Deploying program to address {expected_program_addr:#032x}");
-        let deployment_calldata = program_deployment_calldata(&wasm_file_bytes);
+        let deployment_calldata = program_deployment_calldata(&deploy_ready_code);
         let mut tx_request = Eip1559TransactionRequest::new()
             .from(wallet.address())
             .data(deployment_calldata);
