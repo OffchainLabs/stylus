@@ -11,6 +11,8 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/validator/valnode"
 	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
@@ -786,12 +789,16 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
 
 	l2config := arbnode.ConfigDefaultL1Test()
-	l2config.BlockValidator.Enable = true
+	l2config.BlockValidator.Enable = false
+	l2config.Staker.Enable = true
 	l2config.BatchPoster.Enable = true
 	l2config.L1Reader.Enable = true
 	l2config.Sequencer.MaxRevertGasReject = 0
 	l2config.L1Reader.OldHeaderTimeout = 10 * time.Minute
-	AddDefaultValNode(t, ctx, l2config, jit)
+	valConf := valnode.TestValidationConfig
+	valConf.UseJit = jit
+	_, valStack := createTestValidationNode(t, ctx, &valConf)
+	configByValidationNode(t, l2config, valStack)
 
 	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
 
@@ -818,16 +825,18 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 
 	// Set random pricing params
 	inkPrice := testhelpers.RandomUint32(1, 20000) // evm to ink
-	colors.PrintMint(fmt.Sprintf("ink price=%d", inkPrice))
+	colors.PrintGrey(fmt.Sprintf("ink price=%d", inkPrice))
 
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
+	ensure(arbOwner.SetSpeedLimit(&auth, 7000000)) // use production speed limit
 
 	programAddress := deployWasm(t, ctx, auth, l2client, file)
 	return ctx, node, l2info, l2client, auth, programAddress, cleanup
 }
 
 func readWasmFile(t *testing.T, file string) []byte {
+	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 	source, err := os.ReadFile(file)
 	Require(t, err)
 
@@ -837,7 +846,7 @@ func readWasmFile(t *testing.T, file string) []byte {
 	Require(t, err)
 
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
-	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(wasm), toKb(wasmSource)))
+	colors.PrintGrey(fmt.Sprintf("%v: len %.2fK vs %.2fK", name, toKb(wasm), toKb(wasmSource)))
 
 	wasm = append(state.StylusPrefix, wasm...)
 	return wasm
@@ -846,20 +855,27 @@ func readWasmFile(t *testing.T, file string) []byte {
 func deployWasm(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
 ) common.Address {
+	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 	wasm := readWasmFile(t, file)
+	auth.GasLimit = 32000000 // skip gas estimation
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
-	colors.PrintBlue("program deployed to ", programAddress.Hex())
-	return compileWasm(t, ctx, auth, l2client, programAddress)
+	colors.PrintGrey(name, ": deployed to ", programAddress.Hex())
+	return compileWasm(t, ctx, auth, l2client, programAddress, name)
 }
 
 func compileWasm(
-	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, program common.Address,
+	t *testing.T,
+	ctx context.Context,
+	auth bind.TransactOpts,
+	l2client *ethclient.Client,
+	program common.Address,
+	name string,
 ) common.Address {
 
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
-	timed(t, "compile", func() {
+	timed(t, "compile "+name, func() {
 		tx, err := arbWasm.CompileProgram(&auth, program)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
@@ -968,7 +984,7 @@ func validateBlockRange(
 
 	success := true
 	for _, block := range blocks {
-		// no classic data, so block numbers are message indecies
+		// no classic data, so block numbers are message indicies
 		inboxPos := arbutil.MessageIndex(block)
 
 		now := time.Now()
@@ -989,12 +1005,15 @@ func validateBlockRange(
 
 func waitForSequencer(t *testing.T, node *arbnode.Node, block uint64) {
 	t.Helper()
+	msgCount := arbutil.BlockNumberToMessageCount(block, 0)
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		return meta.MessageCount >= arbutil.BlockNumberToMessageCount(block, 0)
+		msgExecuted, err := node.Execution.ExecEngine.HeadMessageNumber()
+		Require(t, err)
+		return msgExecuted+1 >= msgCount && meta.MessageCount >= msgCount
 	})
 }
 
@@ -1003,7 +1022,7 @@ func timed(t *testing.T, message string, lambda func()) {
 	now := time.Now()
 	lambda()
 	passed := time.Since(now)
-	colors.PrintBlue("Time to ", message, ": ", passed.String())
+	colors.PrintGrey("Time to ", message, ": ", passed.String())
 }
 
 func formatTime(duration time.Duration) string {
