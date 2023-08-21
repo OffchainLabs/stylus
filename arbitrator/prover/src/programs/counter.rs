@@ -7,17 +7,12 @@ use crate::Machine;
 use arbutil::operator::{OperatorCode, OperatorInfo};
 use eyre::{eyre, Result};
 use fnv::FnvHashMap as HashMap;
-use lazy_static::lazy_static;
 use parking_lot::Mutex;
+use wasmer::LocalFunctionIndex;
 use std::collections::BTreeMap;
-use std::{clone::Clone, fmt::Debug, sync::Arc};
-use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
+use std::{fmt::Debug, sync::Arc};
+use wasmer_types::{GlobalIndex, GlobalInit, Type};
 use wasmparser::Operator;
-
-lazy_static! {
-    /// Assigns each operator a sequential offset
-    pub static ref OP_OFFSETS: Mutex<HashMap<OperatorCode, usize>> = Mutex::new(HashMap::default());
-}
 
 #[derive(Debug)]
 pub struct Counter {
@@ -27,7 +22,7 @@ pub struct Counter {
 
 impl Counter {
     pub fn new() -> Self {
-        let counters = Arc::new(Mutex::new(Vec::with_capacity(OperatorCode::OPERATOR_COUNT)));
+        let counters = Arc::new(Mutex::new(Vec::with_capacity(OperatorCode::COUNT)));
         Self { counters }
     }
 
@@ -50,7 +45,7 @@ where
 
     fn update_module(&self, module: &mut M) -> Result<()> {
         let mut counters = self.counters.lock();
-        for index in 0..OperatorCode::OPERATOR_COUNT {
+        for index in 0..OperatorCode::COUNT {
             let zero_count = GlobalInit::I64Const(0);
             let global = module.add_global(&Self::global_name(index), Type::I64, zero_count)?;
             counters.push(global);
@@ -117,11 +112,8 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
             }
 
             let counters = self.counters.lock();
-            let mut operators = OP_OFFSETS.lock();
             for (op, count) in increments {
-                let opslen = operators.len();
-                let offset = *operators.entry(op).or_insert(opslen);
-                let global = *counters.get(offset).ok_or_else(|| eyre!("no global"))?;
+                let global = *counters.get(op.seq()).ok_or_else(|| eyre!("no global"))?;
                 out.extend(update(global.as_u32(), count));
             }
 
@@ -136,20 +128,24 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
 }
 
 pub trait CountingMachine {
-    fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>>;
-}
+    fn operator_count(&mut self, op: OperatorCode) -> Result<usize>;
 
-impl CountingMachine for Machine {
-    fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>> {
+    fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, usize>> {
         let mut counts = BTreeMap::new();
-
-        for (&op, &offset) in OP_OFFSETS.lock().iter() {
-            let count = self.get_global(&Counter::global_name(offset))?;
-            let count: u64 = count.try_into()?;
+        for op in OperatorCode::op_iter() {
+            let count = self.operator_count(op)?;
             if count != 0 {
-                counts.insert(op, count);
+                counts.insert(op, count as usize);
             }
         }
         Ok(counts)
+    }
+}
+
+impl CountingMachine for Machine {
+    fn operator_count(&mut self, op: OperatorCode) -> Result<usize> {
+        let count = self.get_global(&Counter::global_name(op.seq()))?;
+        let count: u64 = count.try_into()?;
+        Ok(count as usize)
     }
 }

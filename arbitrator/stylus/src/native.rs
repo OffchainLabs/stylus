@@ -13,14 +13,13 @@ use arbutil::{
 use eyre::{bail, eyre, ErrReport, Result};
 use prover::programs::{
     config::PricingParams,
-    counter::{Counter, CountingMachine, OP_OFFSETS},
+    counter::{Counter, CountingMachine},
     depth::STYLUS_STACK_LEFT,
     meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
     prelude::*,
     start::STYLUS_START,
 };
 use std::{
-    collections::BTreeMap,
     fmt::Debug,
     ops::{Deref, DerefMut},
 };
@@ -261,16 +260,9 @@ impl<E: EvmApi> GasMeteredMachine for NativeInstance<E> {
 }
 
 impl<E: EvmApi> CountingMachine for NativeInstance<E> {
-    fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>> {
-        let mut counts = BTreeMap::new();
-
-        for (&op, &offset) in OP_OFFSETS.lock().iter() {
-            let count: u64 = self.get_global(&Counter::global_name(offset))?;
-            if count != 0 {
-                counts.insert(op, count);
-            }
-        }
-        Ok(counts)
+    fn operator_count(&mut self, op: OperatorCode) -> Result<usize> {
+        let count: u64 = self.get_global(&Counter::global_name(op.seq()))?;
+        Ok(count as usize)
     }
 }
 

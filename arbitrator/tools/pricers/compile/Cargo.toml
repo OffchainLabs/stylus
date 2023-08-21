@@ -1,0 +1,21 @@
+[package]
+name = "compile"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+affinity = "0.1.2"
+arbitrary = "1.1.6"
+structopt = "0.3.23"
+humantime = "2.1.0"
+eyre = "0.6.5"
+rand = "0.8.5"
+wabt = "0.10.0"
+num = "0.4.0"
+wat = "1.0.56"
+arbutil = { path = "../../../arbutil" }
+prover = { path = "../../../prover" }
+stylus = { path = "../../../stylus" }
+wasmer = { path = "../../wasmer/lib/api" }
+wasm-smith = { path = "../../wasm-tools/crates/wasm-smith" }
+wasmprinter = { path = "../../wasm-tools/crates/wasmprinter" }
