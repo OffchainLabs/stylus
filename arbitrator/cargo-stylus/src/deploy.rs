@@ -42,7 +42,14 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
         Some(DeployMode::DeployOnly) => (true, false),
         Some(DeployMode::CompileOnly) => (false, true),
         // Default mode is to deploy and compile
-        None => (true, true),
+        None => {
+            if cfg.estimate_gas_only && cfg.compile_program_address.is_none() {
+                // cannot compile if not really deploying
+                (true, false)
+            } else {
+                (true, true)
+            }
+        }
     };
 
     if deploy {

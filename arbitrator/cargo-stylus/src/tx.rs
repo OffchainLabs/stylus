@@ -29,8 +29,10 @@ where
         .base_fee_per_gas
         .ok_or("no base fee found for block")?;
 
-    tx_request.max_fee_per_gas = Some(base_fee);
-    tx_request.max_priority_fee_per_gas = Some(base_fee);
+    if !(estimate_only) {
+        tx_request.max_fee_per_gas = Some(base_fee);
+        tx_request.max_priority_fee_per_gas = Some(base_fee);
+    }
 
     let typed = TypedTransaction::Eip1559(tx_request.clone());
     let estimated = client
