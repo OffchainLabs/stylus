@@ -1,9 +1,9 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use check::StylusCheck;
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use ethers::types::H160;
 
@@ -84,7 +84,7 @@ pub enum DeployMode {
 }
 
 #[derive(Clone, Debug, Args)]
-#[group(required = true, multiple = false)]
+#[group(required = true, multiple = true)]
 pub struct WalletSource {
     #[arg(long, group = "keystore")]
     keystore_path: Option<String>,
