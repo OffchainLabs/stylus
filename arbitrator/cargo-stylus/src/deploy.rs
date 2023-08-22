@@ -12,14 +12,14 @@ use ethers::{
     signers::{LocalWallet, Signer},
 };
 
-use crate::{constants, project, tx, DeployConfig, DeployMode, WalletSource};
+use crate::{constants, project, tx, DeployConfig, DeployMode};
 
 /// Performs one of three different modes for a Stylus program:
 /// DeployOnly: Sends a signed tx to deploy a Stylus program to a new address.
 /// CompileOnly: Sends a signed tx to compile a Stylus program at a specified address.
 /// DeployAndCompile (default): Sends both transactions above.
 pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
-    let wallet = load_wallet(&cfg.wallet)?;
+    let wallet = load_wallet(&cfg)?;
 
     let provider = Provider::<Http>::try_from(&cfg.endpoint)
         .map_err(|e| format!("could not initialize provider from http {}", e))?;
@@ -90,31 +90,43 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
 
 /// Loads a wallet for signing transactions either from a private key file path.
 /// or a keystore along with a keystore password file.
-fn load_wallet(cfg: &WalletSource) -> eyre::Result<LocalWallet, String> {
+fn load_wallet(cfg: &DeployConfig) -> eyre::Result<LocalWallet, String> {
+    if cfg.private_key_path.is_some()
+        && (cfg.keystore_opts.keystore_password_path.is_some()
+            && cfg.keystore_opts.keystore_path.is_some())
+    {
+        return Err("must provide either privkey path or keystore options exclusively".to_string());
+    }
+
     if let Some(priv_key_path) = &cfg.private_key_path {
-        let f = std::fs::File::open(priv_key_path)
-            .map_err(|e| format!("could not read private key file {}", e))?;
-        let mut buf_reader = BufReader::new(f);
-        let mut privkey = String::new();
-        buf_reader
-            .read_line(&mut privkey)
-            .map_err(|e| format!("could not read privkey from file {}", e))?;
-        let privkey = privkey.trim();
-        return LocalWallet::from_str(privkey)
+        let privkey = read_secret_from_file(&priv_key_path)?;
+        return LocalWallet::from_str(&privkey)
             .map_err(|e| format!("could not parse private key {}", e));
     }
     let keystore_password_path = cfg
+        .keystore_opts
         .keystore_password_path
         .as_ref()
         .ok_or("no keystore password path provided")?;
+    let keystore_pass = read_secret_from_file(&keystore_password_path)?;
     let keystore_path = cfg
+        .keystore_opts
         .keystore_path
         .as_ref()
         .ok_or("no keystore path provided")?;
-    let keystore_pass = std::fs::read_to_string(keystore_password_path)
-        .map_err(|e| format!("could not keystore password file {}", e))?;
     LocalWallet::decrypt_keystore(keystore_path, keystore_pass)
         .map_err(|e| format!("could not decrypt keystore {}", e))
+}
+
+fn read_secret_from_file(fpath: &str) -> Result<String, String> {
+    let f =
+        std::fs::File::open(fpath).map_err(|e| format!("could not read secret from file {}", e))?;
+    let mut buf_reader = BufReader::new(f);
+    let mut secret = String::new();
+    buf_reader
+        .read_line(&mut secret)
+        .map_err(|e| format!("could not read secret from file {}", e))?;
+    Ok(secret.trim().to_string())
 }
 
 /// Prepares an EVM bytecode prelude for contract creation.
