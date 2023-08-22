@@ -41,7 +41,14 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
         Some(DeployMode::DeployOnly) => (true, false),
         Some(DeployMode::CompileOnly) => (false, true),
         // Default mode is to deploy and compile
-        None => (true, true),
+        None => {
+            if cfg.estimate_gas_only && cfg.compile_program_address.is_none() {
+                // cannot compile if not really deploying
+                (true, false)
+            } else {
+                (true, true)
+            }
+        }
     };
 
     if deploy {
@@ -86,7 +93,7 @@ fn load_wallet(cfg: &WalletSource) -> eyre::Result<LocalWallet, String> {
     if let Some(priv_key_path) = &cfg.private_key_path {
         let privkey = std::fs::read_to_string(priv_key_path)
             .map_err(|e| format!("could not read private key file {}", e))?;
-        return LocalWallet::from_str(privkey.as_str())
+        return LocalWallet::from_str(privkey.as_str().trim())
             .map_err(|e| format!("could not parse private key {}", e));
     }
     let keystore_password_path = cfg
