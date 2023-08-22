@@ -77,8 +77,8 @@ mod test {
                 v128.const i32x4 1 2 3 4))
         "#;
         let wasm_bytes = wat2wasm(wat.as_bytes()).unwrap();
-        let disabled = vec![];
-        match run_checks(&wasm_bytes, &[], &disabled) {
+        let disabled: Vec<StylusCheck> = vec![];
+        match run_checks(&wasm_bytes, &[], disabled) {
             Ok(_) => panic!("Expected error"),
             Err(e) => assert!(e.contains("128-bit types are not supported")),
         }
