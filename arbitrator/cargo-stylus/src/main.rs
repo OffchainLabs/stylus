@@ -66,7 +66,10 @@ pub struct DeployConfig {
     endpoint: String,
     /// Wallet source to use with the cargo stylus plugin.
     #[command(flatten)]
-    wallet: WalletSource,
+    keystore_opts: KeystoreOpts,
+    /// Privkey source to use with the cargo stylus plugin.
+    #[arg(long)]
+    private_key_path: Option<String>,
     /// If only compiling an onchain program, the address of the program to send a compilation tx for.
     #[arg(long)]
     compile_program_address: Option<H160>,
@@ -84,14 +87,12 @@ pub enum DeployMode {
 }
 
 #[derive(Clone, Debug, Args)]
-#[group(required = true, multiple = true)]
-pub struct WalletSource {
-    #[arg(long, group = "keystore")]
-    keystore_path: Option<String>,
-    #[arg(long, group = "keystore")]
-    keystore_password_path: Option<String>,
+#[group(multiple = true)]
+pub struct KeystoreOpts {
     #[arg(long)]
-    private_key_path: Option<String>,
+    keystore_path: Option<String>,
+    #[arg(long)]
+    keystore_password_path: Option<String>,
 }
 
 #[tokio::main]

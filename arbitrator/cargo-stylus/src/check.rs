@@ -78,7 +78,7 @@ mod test {
         "#;
         let wasm_bytes = wat2wasm(wat.as_bytes()).unwrap();
         let disabled = vec![];
-        match run_checks(&wasm_bytes, disabled) {
+        match run_checks(&wasm_bytes, &[], &disabled) {
             Ok(_) => panic!("Expected error"),
             Err(e) => assert!(e.contains("128-bit types are not supported")),
         }
