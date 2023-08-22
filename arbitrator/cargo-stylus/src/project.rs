@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 use brotli2::read::BrotliEncoder;
 use bytes::buf::Reader;
 use bytes::Buf;
+use bytesize::ByteSize;
 
 use crate::constants::{BROTLI_COMPRESSION_LEVEL, EOF_PREFIX, RUST_TARGET};
 use arbutil::Color;
@@ -48,7 +49,7 @@ pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
 }
 
 /// Reads a WASM file at a specified path and returns its brotli compressed bytes.
-pub fn get_compressed_wasm_bytes(wasm_path: &PathBuf) -> eyre::Result<Vec<u8>, String> {
+pub fn get_compressed_wasm_bytes(wasm_path: &PathBuf) -> eyre::Result<(Vec<u8>, Vec<u8>), String> {
     println!("Reading WASM file at {}", wasm_path.display().yellow());
 
     let wasm_file_bytes = std::fs::read(wasm_path)
@@ -62,10 +63,12 @@ pub fn get_compressed_wasm_bytes(wasm_path: &PathBuf) -> eyre::Result<Vec<u8>, S
         .map_err(|e| format!("could not Brotli compress WASM bytes {}", e))?;
 
     println!(
-        "Compressed WASM size: {} bytes",
-        compressed_bytes.len().to_string().yellow()
+        "Compressed WASM size: {}",
+        ByteSize::b(compressed_bytes.len() as u64)
+            .to_string()
+            .yellow(),
     );
-    let mut code = hex::decode(EOF_PREFIX).unwrap();
-    code.extend(compressed_bytes);
-    Ok(code)
+    let mut deploy_ready_code = hex::decode(EOF_PREFIX).unwrap();
+    deploy_ready_code.extend(compressed_bytes);
+    Ok((wasm_file_bytes, deploy_ready_code))
 }

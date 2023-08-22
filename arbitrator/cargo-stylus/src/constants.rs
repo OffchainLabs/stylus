@@ -3,7 +3,7 @@
 use bytesize::ByteSize;
 
 /// EOF prefix used in Stylus compressed WASMs on-chain
-pub const EOF_PREFIX: &str = "EF000000";
+pub const EOF_PREFIX: &str = "EFF000";
 /// Maximum brotli compression level used for Stylus programs.
 pub const BROTLI_COMPRESSION_LEVEL: u32 = 11;
 /// Address of the Arbitrum WASM precompile on L2.

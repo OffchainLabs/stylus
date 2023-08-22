@@ -29,15 +29,12 @@ impl TryFrom<&str> for StylusCheck {
 /// Runs a series of checks on the WASM program to ensure it is valid for compilation
 /// and code size before being deployed and compiled onchain. An optional list of checks
 /// to disable can be specified.
-pub fn run_checks(wasm_file_bytes: &[u8], disabled: Vec<StylusCheck>) -> eyre::Result<(), String> {
-    println!(
-        "Compressed WASM size: {}",
-        ByteSize::b(wasm_file_bytes.len() as u64)
-            .to_string()
-            .yellow(),
-    );
-
-    let compressed_size = ByteSize::b(wasm_file_bytes.len() as u64);
+pub fn run_checks(
+    wasm_file_bytes: &[u8],
+    deploy_ready_code: &[u8],
+    disabled: Vec<StylusCheck>,
+) -> eyre::Result<(), String> {
+    let compressed_size = ByteSize::b(deploy_ready_code.len() as u64);
     let check_compressed_size = disabled.contains(&StylusCheck::CompressedSize);
 
     if check_compressed_size && compressed_size > constants::MAX_PROGRAM_SIZE {

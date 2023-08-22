@@ -1,3 +1,4 @@
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
@@ -41,7 +42,14 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
         Some(DeployMode::DeployOnly) => (true, false),
         Some(DeployMode::CompileOnly) => (false, true),
         // Default mode is to deploy and compile
-        None => (true, true),
+        None => {
+            if cfg.estimate_gas_only && cfg.compile_program_address.is_none() {
+                // cannot compile if not really deploying
+                (true, false)
+            } else {
+                (true, true)
+            }
+        }
     };
 
     if deploy {
@@ -49,9 +57,9 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
             Some(path) => PathBuf::from_str(&path).unwrap(),
             None => project::build_project_to_wasm()?,
         };
-        let wasm_file_bytes = project::get_compressed_wasm_bytes(&wasm_file_path)?;
+        let (_, deploy_ready_code) = project::get_compressed_wasm_bytes(&wasm_file_path)?;
         println!("Deploying program to address {expected_program_addr:#032x}");
-        let deployment_calldata = program_deployment_calldata(&wasm_file_bytes);
+        let deployment_calldata = program_deployment_calldata(&deploy_ready_code);
         let mut tx_request = Eip1559TransactionRequest::new()
             .from(wallet.address())
             .data(deployment_calldata);
@@ -84,9 +92,15 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
 /// or a keystore along with a keystore password file.
 fn load_wallet(cfg: &WalletSource) -> eyre::Result<LocalWallet, String> {
     if let Some(priv_key_path) = &cfg.private_key_path {
-        let privkey = std::fs::read_to_string(priv_key_path)
+        let f = std::fs::File::open(priv_key_path)
             .map_err(|e| format!("could not read private key file {}", e))?;
-        return LocalWallet::from_str(privkey.as_str())
+        let mut buf_reader = BufReader::new(f);
+        let mut privkey = String::new();
+        buf_reader
+            .read_line(&mut privkey)
+            .map_err(|e| format!("could not read privkey from file {}", e))?;
+        let privkey = privkey.trim();
+        return LocalWallet::from_str(privkey)
             .map_err(|e| format!("could not parse private key {}", e));
     }
     let keystore_password_path = cfg

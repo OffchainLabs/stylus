@@ -1,9 +1,9 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use check::StylusCheck;
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use ethers::types::H160;
 
@@ -26,14 +26,20 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Instrument a Rust project using Stylus, optionally outputting the brotli-compressed,
-    /// compiled WASM code to deploy on-chain. This command runs compiled WASM code through
-    /// Stylus instrumentation checks and reports any failures. Allows for disabling specific .
+    /// Instrument a Rust project using Stylus.
+    /// This command runs compiled WASM code through
+    /// Stylus instrumentation checks and reports any failures. Allows for disabling specific
     /// checks via the `--disabled-checks` flag.
     #[command(alias = "c")]
     Check {
+        /// Disables specific compilation checks. At the moment, `compressed-size` is the only
+        /// option available to disable. Disabling it skips checking the compressed program
+        /// is within the 24Kb contract limit.
         #[arg(long)]
         disabled_checks: Option<Vec<String>>,
+        /// If desired, it loads a WASM file from a specified path. If not provided, it will try to find
+        /// a WASM file under the current working directory's Rust target release directory and use its
+        /// contents for the deploy command.
         #[arg(long)]
         wasm_file_path: Option<String>,
     },
@@ -51,7 +57,7 @@ pub struct DeployConfig {
     /// to complete the operation.
     #[arg(long)]
     estimate_gas_only: bool,
-    /// By default, submits a single, atomic deploy and compile transaction to Arbitrum.
+    /// By default, submits two transactions to deploy and compile the program to Arbitrum.
     /// Otherwise, a user could choose to split up the deploy and compile steps into individual transactions.
     #[arg(long, value_enum)]
     mode: Option<DeployMode>,
@@ -78,7 +84,7 @@ pub enum DeployMode {
 }
 
 #[derive(Clone, Debug, Args)]
-#[group(required = true, multiple = false)]
+#[group(required = true, multiple = true)]
 pub struct WalletSource {
     #[arg(long, group = "keystore")]
     keystore_path: Option<String>,
@@ -107,8 +113,9 @@ async fn main() -> eyre::Result<(), String> {
                 Some(path) => PathBuf::from_str(&path).unwrap(),
                 None => project::build_project_to_wasm()?,
             };
-            let wasm_file_bytes = project::get_compressed_wasm_bytes(&wasm_file_path)?;
-            check::run_checks(&wasm_file_bytes, disabled)
+            let (wasm_file_bytes, deploy_ready_code) =
+                project::get_compressed_wasm_bytes(&wasm_file_path)?;
+            check::run_checks(&wasm_file_bytes, &deploy_ready_code, disabled)
         }
         Commands::Deploy(deploy_config) => match deploy::deploy(deploy_config).await {
             Ok(_) => Ok(()),
