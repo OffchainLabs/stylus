@@ -70,13 +70,7 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
             .activate_program_address
             .unwrap_or(expected_program_addr);
         println!("Activating program at address {program_addr:#032x}");
-        let mut activate_calldata = vec![];
-        let activate_method_hash = hex::decode(constants::ARBWASM_ACTIVATE_METHOD_HASH).unwrap();
-        activate_calldata.extend(activate_method_hash);
-        let mut extension = [0u8; 32];
-        // Next, we add the address to the last 20 bytes of extension
-        extension[12..32].copy_from_slice(program_addr.as_bytes());
-        activate_calldata.extend(extension);
+        let activate_calldata = activation_calldata(&program_addr);
 
         let to = hex::decode(constants::ARB_WASM_ADDRESS).unwrap();
         let to = H160::from_slice(&to);
@@ -129,6 +123,17 @@ fn read_secret_from_file(fpath: &str) -> Result<String, String> {
         .read_line(&mut secret)
         .map_err(|e| format!("could not read secret from file {}", e))?;
     Ok(secret.trim().to_string())
+}
+
+pub fn activation_calldata(program_addr: &H160) -> Vec<u8> {
+    let mut activate_calldata = vec![];
+    let activate_method_hash = hex::decode(constants::ARBWASM_ACTIVATE_METHOD_HASH).unwrap();
+    activate_calldata.extend(activate_method_hash);
+    let mut extension = [0u8; 32];
+    // Next, we add the address to the last 20 bytes of extension
+    extension[12..32].copy_from_slice(program_addr.as_bytes());
+    activate_calldata.extend(extension);
+    activate_calldata
 }
 
 /// Prepares an EVM bytecode prelude for contract creation.

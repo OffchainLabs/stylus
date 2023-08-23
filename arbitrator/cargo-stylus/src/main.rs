@@ -10,6 +10,7 @@ use ethers::types::H160;
 mod check;
 mod constants;
 mod deploy;
+mod multicall;
 mod project;
 mod tx;
 
