@@ -53,8 +53,8 @@ enum StylusSubcommands {
     },
     /// Instruments a Rust project using Stylus and by outputting its brotli-compressed WASM code.
     /// Then, it submits two transactions: the first deploys the WASM
-    /// program to an address and the second triggers a compilation onchain
-    /// Developers can choose to split up the deploy and compile steps via this command as desired.
+    /// program to an address and the second triggers an activation onchain
+    /// Developers can choose to split up the deploy and activate steps via this command as desired.
     #[command(alias = "d")]
     Deploy(DeployConfig),
 }
@@ -65,8 +65,8 @@ pub struct DeployConfig {
     /// to complete the operation.
     #[arg(long)]
     estimate_gas_only: bool,
-    /// By default, submits two transactions to deploy and compile the program to Arbitrum.
-    /// Otherwise, a user could choose to split up the deploy and compile steps into individual transactions.
+    /// By default, submits two transactions to deploy and activate the program to Arbitrum.
+    /// Otherwise, a user could choose to split up the deploy and activate steps into individual transactions.
     #[arg(long, value_enum)]
     mode: Option<DeployMode>,
     /// The endpoint of the L2 node to connect to.
@@ -78,9 +78,9 @@ pub struct DeployConfig {
     /// Privkey source to use with the cargo stylus plugin.
     #[arg(long)]
     private_key_path: Option<String>,
-    /// If only compiling an onchain program, the address of the program to send a compilation tx for.
+    /// If only activating an already-deployed, onchain program, the address of the program to send an activation tx for.
     #[arg(long)]
-    compile_program_address: Option<H160>,
+    activate_program_address: Option<H160>,
     /// If desired, it loads a WASM file from a specified path. If not provided, it will try to find
     /// a WASM file under the current working directory's Rust target release directory and use its
     /// contents for the deploy command.
@@ -91,7 +91,7 @@ pub struct DeployConfig {
 #[derive(Debug, Clone, ValueEnum)]
 pub enum DeployMode {
     DeployOnly,
-    CompileOnly,
+    ActivateOnly,
 }
 
 #[derive(Clone, Debug, Args)]

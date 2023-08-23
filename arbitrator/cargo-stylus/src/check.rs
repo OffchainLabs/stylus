@@ -27,7 +27,7 @@ impl TryFrom<&str> for StylusCheck {
 }
 
 /// Runs a series of checks on the WASM program to ensure it is valid for compilation
-/// and code size before being deployed and compiled onchain. An optional list of checks
+/// and code size before being deployed and activated onchain. An optional list of checks
 /// to disable can be specified.
 pub fn run_checks(
     wasm_file_bytes: &[u8],

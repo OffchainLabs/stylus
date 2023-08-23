@@ -16,8 +16,8 @@ use crate::{constants, project, tx, DeployConfig, DeployMode};
 
 /// Performs one of three different modes for a Stylus program:
 /// DeployOnly: Sends a signed tx to deploy a Stylus program to a new address.
-/// CompileOnly: Sends a signed tx to compile a Stylus program at a specified address.
-/// DeployAndCompile (default): Sends both transactions above.
+/// ActivateOnly: Sends a signed tx to activate a Stylus program at a specified address.
+/// DeployAndActivate (default): Sends both transactions above.
 pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
     let wallet = load_wallet(&cfg)?;
 
@@ -38,13 +38,13 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
 
     let expected_program_addr = get_contract_address(wallet.address(), nonce);
 
-    let (deploy, compile) = match cfg.mode {
+    let (deploy, activate) = match cfg.mode {
         Some(DeployMode::DeployOnly) => (true, false),
-        Some(DeployMode::CompileOnly) => (false, true),
-        // Default mode is to deploy and compile
+        Some(DeployMode::ActivateOnly) => (false, true),
+        // Default mode is to deploy and activate
         None => {
-            if cfg.estimate_gas_only && cfg.compile_program_address.is_none() {
-                // cannot compile if not really deploying
+            if cfg.estimate_gas_only && cfg.activate_program_address.is_none() {
+                // cannot activate if not really deploying
                 (true, false)
             } else {
                 (true, true)
@@ -65,16 +65,18 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
             .data(deployment_calldata);
         tx::submit_signed_tx(&client, cfg.estimate_gas_only, &mut tx_request).await?;
     }
-    if compile {
-        let program_addr = cfg.compile_program_address.unwrap_or(expected_program_addr);
-        println!("Compiling program at address {program_addr:#032x}");
-        let mut compile_calldata = vec![];
-        let compile_method_hash = hex::decode(constants::ARBWASM_COMPILE_METHOD_HASH).unwrap();
-        compile_calldata.extend(compile_method_hash);
+    if activate {
+        let program_addr = cfg
+            .activate_program_address
+            .unwrap_or(expected_program_addr);
+        println!("Activating program at address {program_addr:#032x}");
+        let mut activate_calldata = vec![];
+        let activate_method_hash = hex::decode(constants::ARBWASM_ACTIVATE_METHOD_HASH).unwrap();
+        activate_calldata.extend(activate_method_hash);
         let mut extension = [0u8; 32];
         // Next, we add the address to the last 20 bytes of extension
         extension[12..32].copy_from_slice(program_addr.as_bytes());
-        compile_calldata.extend(extension);
+        activate_calldata.extend(extension);
 
         let to = hex::decode(constants::ARB_WASM_ADDRESS).unwrap();
         let to = H160::from_slice(&to);
@@ -82,7 +84,7 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
         let mut tx_request = Eip1559TransactionRequest::new()
             .from(wallet.address())
             .to(to)
-            .data(compile_calldata);
+            .data(activate_calldata);
         tx::submit_signed_tx(&client, cfg.estimate_gas_only, &mut tx_request).await?;
     }
     Ok(())
