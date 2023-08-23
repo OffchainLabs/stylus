@@ -1,9 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
-use std::path::PathBuf;
-use std::str::FromStr;
-
-use check::StylusCheck;
 use clap::{Args, Parser, ValueEnum};
 use ethers::types::H160;
 
@@ -12,6 +8,7 @@ mod constants;
 mod deploy;
 mod project;
 mod tx;
+mod wallet;
 
 #[derive(Parser, Debug)]
 #[command(name = "cargo")]
@@ -35,28 +32,36 @@ struct StylusArgs {
 #[derive(Parser, Debug, Clone)]
 enum StylusSubcommands {
     /// Instrument a Rust project using Stylus.
-    /// This command runs compiled WASM code through
-    /// Stylus instrumentation checks and reports any failures. Allows for disabling specific
-    /// checks via the `--disabled-checks` flag.
+    /// This command runs compiled WASM code through Stylus instrumentation checks and reports any failures.
     #[command(alias = "c")]
-    Check {
-        /// Disables specific compilation checks. At the moment, `compressed-size` is the only
-        /// option available to disable. Disabling it skips checking the compressed program
-        /// is within the 24Kb contract limit.
-        #[arg(long)]
-        disabled_checks: Option<Vec<String>>,
-        /// If desired, it loads a WASM file from a specified path. If not provided, it will try to find
-        /// a WASM file under the current working directory's Rust target release directory and use its
-        /// contents for the deploy command.
-        #[arg(long)]
-        wasm_file_path: Option<String>,
-    },
+    Check(CheckConfig),
     /// Instruments a Rust project using Stylus and by outputting its brotli-compressed WASM code.
     /// Then, it submits two transactions: the first deploys the WASM
     /// program to an address and the second triggers an activation onchain
     /// Developers can choose to split up the deploy and activate steps via this command as desired.
     #[command(alias = "d")]
     Deploy(DeployConfig),
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct CheckConfig {
+    /// The endpoint of the L2 node to connect to.
+    #[arg(short, long, default_value = "http://localhost:8545")]
+    endpoint: String,
+    /// If desired, it loads a WASM file from a specified path. If not provided, it will try to find
+    /// a WASM file under the current working directory's Rust target release directory and use its
+    /// contents for the deploy command.
+    #[arg(long)]
+    wasm_file_path: Option<String>,
+    /// If only activating an already-deployed, onchain program, the address of the program to send an activation tx for.
+    #[arg(long)]
+    activate_program_address: Option<H160>,
+    /// Privkey source to use with the cargo stylus plugin.
+    #[arg(long)]
+    private_key_path: Option<String>,
+    /// Wallet source to use with the cargo stylus plugin.
+    #[command(flatten)]
+    keystore_opts: KeystoreOpts,
 }
 
 #[derive(Debug, Args, Clone)]
@@ -106,32 +111,13 @@ pub struct KeystoreOpts {
 #[tokio::main]
 async fn main() -> eyre::Result<(), String> {
     let CargoCli::Stylus(args) = CargoCli::parse();
+
     match args.command {
-        StylusSubcommands::Check {
-            disabled_checks,
-            wasm_file_path,
-        } => {
-            let disabled = disabled_checks.map_or(Vec::default(), |checks| {
-                checks
-                    .into_iter()
-                    .map(|s| s.as_str().try_into())
-                    .collect::<Result<Vec<StylusCheck>, String>>()
-                    .expect("Could not parse disabled Stylus checks")
-            });
-            let wasm_file_path: PathBuf = match wasm_file_path {
-                Some(path) => PathBuf::from_str(&path).unwrap(),
-                None => project::build_project_to_wasm()?,
-            };
-            let (wasm_file_bytes, deploy_ready_code) =
-                project::get_compressed_wasm_bytes(&wasm_file_path)?;
-            check::run_checks(&wasm_file_bytes, &deploy_ready_code, disabled)
-        }
-        StylusSubcommands::Deploy(deploy_config) => match deploy::deploy(deploy_config).await {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!(
-                "Could not perform deployment/compilation transaction {}",
-                e
-            )),
-        },
+        StylusSubcommands::Check(cfg) => check::run_checks(cfg)
+            .await
+            .map_err(|e| format!("Could not run Stylus checks: {e}")),
+        StylusSubcommands::Deploy(cfg) => deploy::deploy(cfg)
+            .await
+            .map_err(|e| format!("Could not perform deploy / activate tx: {e}")),
     }
 }
