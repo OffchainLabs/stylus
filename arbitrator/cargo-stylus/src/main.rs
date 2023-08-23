@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use check::StylusCheck;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, ValueEnum};
 use ethers::types::H160;
 
 mod check;
@@ -14,18 +14,26 @@ mod project;
 mod tx;
 
 #[derive(Parser, Debug)]
+#[command(name = "cargo")]
+#[command(bin_name = "cargo")]
+enum CargoCli {
+    Stylus(StylusArgs),
+}
+
+#[derive(Parser, Debug)]
 #[command(name = "stylus")]
+#[command(bin_name = "cargo stylus")]
 #[command(author = "Offchain Labs, Inc.")]
 #[command(version = "0.0.1")]
 #[command(about = "Cargo command for developing Arbitrum Stylus projects", long_about = None)]
 #[command(propagate_version = true)]
-struct Cli {
+struct StylusArgs {
     #[command(subcommand)]
-    command: Commands,
+    command: StylusSubcommands,
 }
 
-#[derive(Debug, Subcommand)]
-enum Commands {
+#[derive(Parser, Debug, Clone)]
+enum StylusSubcommands {
     /// Instrument a Rust project using Stylus.
     /// This command runs compiled WASM code through
     /// Stylus instrumentation checks and reports any failures. Allows for disabling specific
@@ -51,7 +59,7 @@ enum Commands {
     Deploy(DeployConfig),
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Clone)]
 pub struct DeployConfig {
     /// Does not submit a transaction, but instead estimates the gas required
     /// to complete the operation.
@@ -97,9 +105,9 @@ pub struct KeystoreOpts {
 
 #[tokio::main]
 async fn main() -> eyre::Result<(), String> {
-    let cli = Cli::parse();
-    match cli.command {
-        Commands::Check {
+    let CargoCli::Stylus(args) = CargoCli::parse();
+    match args.command {
+        StylusSubcommands::Check {
             disabled_checks,
             wasm_file_path,
         } => {
@@ -118,7 +126,7 @@ async fn main() -> eyre::Result<(), String> {
                 project::get_compressed_wasm_bytes(&wasm_file_path)?;
             check::run_checks(&wasm_file_bytes, &deploy_ready_code, disabled)
         }
-        Commands::Deploy(deploy_config) => match deploy::deploy(deploy_config).await {
+        StylusSubcommands::Deploy(deploy_config) => match deploy::deploy(deploy_config).await {
             Ok(_) => Ok(()),
             Err(e) => Err(format!(
                 "Could not perform deployment/compilation transaction {}",
