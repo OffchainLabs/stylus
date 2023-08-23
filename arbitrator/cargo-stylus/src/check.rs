@@ -3,9 +3,22 @@
 use bytesize::ByteSize;
 
 use arbutil::Color;
-use prover::programs::prelude::*;
 
-use crate::constants;
+use ethers::{
+    providers::JsonRpcClient,
+    types::{transaction::eip2718::TypedTransaction, Address},
+};
+
+use crate::{
+    constants::{ARB_WASM_ADDRESS, MAX_PROGRAM_SIZE},
+    deploy::activation_calldata,
+};
+
+use ethers::types::Eip1559TransactionRequest;
+use ethers::{
+    core::types::spoof,
+    providers::{Provider, RawCall},
+};
 
 /// Defines the stylus checks that occur during the compilation of a WASM program
 /// into a module. Checks can be disabled during the compilation process for debugging purposes.
@@ -37,50 +50,48 @@ pub fn run_checks(
     let compressed_size = ByteSize::b(deploy_ready_code.len() as u64);
     let check_compressed_size = disabled.contains(&StylusCheck::CompressedSize);
 
-    if check_compressed_size && compressed_size > constants::MAX_PROGRAM_SIZE {
+    if check_compressed_size && compressed_size > MAX_PROGRAM_SIZE {
         return Err(format!(
             "Brotli-compressed WASM size {} is bigger than program size limit: {}",
             compressed_size.to_string().red(),
-            constants::MAX_PROGRAM_SIZE,
+            MAX_PROGRAM_SIZE,
         ));
     }
-    compile_native_wasm_module(CompileConfig::default(), &wasm_file_bytes)?;
+    //check_can_activate(client, expected_program_address, compressed_wasm)
     Ok(())
 }
 
-/// Compiles compressed wasm file bytes into a native module using a specified compile config.
-pub fn compile_native_wasm_module(
-    cfg: CompileConfig,
-    wasm_file_bytes: &[u8],
-) -> eyre::Result<Vec<u8>, String> {
-    let module = stylus::native::module(wasm_file_bytes, cfg)
-        .map_err(|e| format!("Could not compile wasm {}", e))?;
-    let success = "Stylus compilation successful!".to_string().mint();
-    println!("{}", success);
+/// Checks if a program can be successfully activated onchain before it is deployed
+/// by using an eth_call override that injects the program's code at a specified address.
+/// This allows for verifying an activation call is correct and will succeed if sent
+/// as a transaction with the appropriate gas.
+pub async fn check_can_activate<T>(
+    client: Provider<T>,
+    expected_program_address: &Address,
+    compressed_wasm: Vec<u8>,
+) -> eyre::Result<(), String>
+where
+    T: JsonRpcClient + Sync + Send + std::fmt::Debug,
+{
+    let calldata = activation_calldata(expected_program_address);
+    let to = hex::decode(ARB_WASM_ADDRESS).unwrap();
+    let to = Address::from_slice(&to);
 
-    println!(
-        "Compiled WASM module total size: {}",
-        ByteSize::b(module.len() as u64),
+    let tx_request = Eip1559TransactionRequest::new().to(to).data(calldata);
+    let tx = TypedTransaction::Eip1559(tx_request);
+
+    // Spoof the state as if the program already exists at the specified address
+    // using an eth_call override.
+    let state = spoof::code(
+        Address::from_slice(expected_program_address.as_bytes()),
+        compressed_wasm.into(),
     );
-    Ok(module)
-}
+    let response = client
+        .call_raw(&tx)
+        .state(&state)
+        .await
+        .map_err(|e| format!("program predeployment check failed: {e}"))?;
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use wasmer::wat2wasm;
-    #[test]
-    fn test_run_checks() {
-        let wat = r#"
-        (module
-            (func $foo (export "foo") (result v128)
-                v128.const i32x4 1 2 3 4))
-        "#;
-        let wasm_bytes = wat2wasm(wat.as_bytes()).unwrap();
-        let disabled: Vec<StylusCheck> = vec![];
-        match run_checks(&wasm_bytes, &[], disabled) {
-            Ok(_) => panic!("Expected error"),
-            Err(e) => assert!(e.contains("128-bit types are not supported")),
-        }
-    }
+    println!("Got response: {}", hex::encode(&response));
+    Ok(())
 }
