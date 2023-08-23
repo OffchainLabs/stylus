@@ -11,6 +11,6 @@ pub const ARB_WASM_ADDRESS: &str = "0000000000000000000000000000000000000071";
 /// Maximum allowed size of a program on Arbitrum (and Ethereum).
 pub const MAX_PROGRAM_SIZE: ByteSize = ByteSize::kb(24);
 /// 4 bytes method selector for the activate method of ArbWasm.
-pub const ARBWASM_ACTIVATE_METHOD_HASH: &str = "2e50f32b";
+pub const ARBWASM_ACTIVATE_METHOD_HASH: &str = "58c780c2";
 /// Target for compiled WASM folder in a Rust project
 pub const RUST_TARGET: &str = "wasm32-unknown-unknown";
