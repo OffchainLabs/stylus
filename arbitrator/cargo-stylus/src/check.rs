@@ -38,7 +38,7 @@ pub async fn run_checks(cfg: CheckConfig) -> eyre::Result<(), String> {
     let compressed_size = ByteSize::b(deploy_ready_code.len() as u64);
     if compressed_size > MAX_PROGRAM_SIZE {
         return Err(format!(
-            "Brotli-compressed WASM size {} is bigger than program size limit: {}",
+            "brotli-compressed WASM size {} is bigger than program size limit: {}",
             compressed_size.to_string().red(),
             MAX_PROGRAM_SIZE,
         ));
@@ -47,11 +47,11 @@ pub async fn run_checks(cfg: CheckConfig) -> eyre::Result<(), String> {
     let wallet = wallet::load(cfg.private_key_path, cfg.keystore_opts)?;
 
     let provider = Provider::<Http>::try_from(&cfg.endpoint)
-        .map_err(|e| format!("could not initialize provider from http {}", e))?;
+        .map_err(|e| format!("could not initialize provider from http {e}"))?;
     let chain_id = provider
         .get_chainid()
         .await
-        .map_err(|e| format!("could not get chain id {}", e))?
+        .map_err(|e| format!("could not get chain id {e}"))?
         .as_u64();
     let client = SignerMiddleware::new(provider.clone(), wallet.clone().with_chain_id(chain_id));
 
@@ -59,7 +59,7 @@ pub async fn run_checks(cfg: CheckConfig) -> eyre::Result<(), String> {
     let nonce = client
         .get_transaction_count(addr, None)
         .await
-        .map_err(|e| format!("could not get nonce {} {}", addr, e))?;
+        .map_err(|e| format!("could not get nonce {addr} {e}"))?;
 
     let next_program_addr = get_contract_address(wallet.address(), nonce);
     let expected_program_addr = cfg.activate_program_address.unwrap_or(next_program_addr);
