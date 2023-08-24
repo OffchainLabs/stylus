@@ -36,12 +36,12 @@ pub fn load(
 }
 
 fn read_secret_from_file(fpath: &str) -> Result<String, String> {
-    let f =
-        std::fs::File::open(fpath).map_err(|e| format!("could not read secret from file {}", e))?;
+    let f = std::fs::File::open(fpath)
+        .map_err(|e| format!("could not open file at path: {fpath}: {e}"))?;
     let mut buf_reader = BufReader::new(f);
     let mut secret = String::new();
     buf_reader
         .read_line(&mut secret)
-        .map_err(|e| format!("could not read secret from file {}", e))?;
+        .map_err(|e| format!("could not read secret from file at path {fpath}: {e}"))?;
     Ok(secret.trim().to_string())
 }
