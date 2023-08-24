@@ -467,7 +467,6 @@ dependencies = [
 name = "cargo-stylus"
 version = "0.1.0"
 dependencies = [
- "arbutil",
  "brotli2",
  "bytes",
  "bytesize",
@@ -475,12 +474,9 @@ dependencies = [
  "ethers",
  "eyre",
  "hex",
- "prover",
  "serde",
  "serde_json",
- "stylus",
  "tokio",
- "wasmer",
 ]
 
 [[package]]

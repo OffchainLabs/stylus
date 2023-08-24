@@ -1,86 +1,118 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 use bytesize::ByteSize;
+use std::path::PathBuf;
+use std::str::FromStr;
 
-use arbutil::Color;
-use prover::programs::prelude::*;
+use crate::{
+    color::Color,
+    constants::{ARB_WASM_ADDRESS, MAX_PROGRAM_SIZE},
+    deploy::activation_calldata,
+    project, wallet, CheckConfig,
+};
+use ethers::prelude::*;
+use ethers::utils::get_contract_address;
+use ethers::{
+    providers::JsonRpcClient,
+    types::{transaction::eip2718::TypedTransaction, Address},
+};
 
-use crate::constants;
-
-/// Defines the stylus checks that occur during the compilation of a WASM program
-/// into a module. Checks can be disabled during the compilation process for debugging purposes.
-#[derive(PartialEq)]
-pub enum StylusCheck {
-    CompressedSize,
-    // TODO: Adding more checks here would require being able to toggle
-    // compiler middlewares in the compile config store() method.
-}
-
-impl TryFrom<&str> for StylusCheck {
-    type Error = String;
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "compressed-size" => Ok(StylusCheck::CompressedSize),
-            _ => Err(format!("invalid Stylus middleware check: {}", value,)),
-        }
-    }
-}
+use ethers::types::Eip1559TransactionRequest;
+use ethers::{
+    core::types::spoof,
+    providers::{Provider, RawCall},
+};
 
 /// Runs a series of checks on the WASM program to ensure it is valid for compilation
-/// and code size before being deployed and compiled onchain. An optional list of checks
+/// and code size before being deployed and activated onchain. An optional list of checks
 /// to disable can be specified.
-pub fn run_checks(
-    wasm_file_bytes: &[u8],
-    deploy_ready_code: &[u8],
-    disabled: Vec<StylusCheck>,
-) -> eyre::Result<(), String> {
-    let compressed_size = ByteSize::b(deploy_ready_code.len() as u64);
-    let check_compressed_size = disabled.contains(&StylusCheck::CompressedSize);
+pub async fn run_checks(cfg: CheckConfig) -> eyre::Result<(), String> {
+    let wasm_file_path: PathBuf = match cfg.wasm_file_path {
+        Some(path) => PathBuf::from_str(&path).unwrap(),
+        None => project::build_project_to_wasm()
+            .map_err(|e| format!("failed to build project to WASM: {e}"))?,
+    };
+    let (_, deploy_ready_code) = project::get_compressed_wasm_bytes(&wasm_file_path)
+        .map_err(|e| format!("failed to get compressed WASM bytes: {e}"))?;
 
-    if check_compressed_size && compressed_size > constants::MAX_PROGRAM_SIZE {
+    let compressed_size = ByteSize::b(deploy_ready_code.len() as u64);
+    if compressed_size > MAX_PROGRAM_SIZE {
         return Err(format!(
-            "Brotli-compressed WASM size {} is bigger than program size limit: {}",
+            "brotli-compressed WASM size {} is bigger than program size limit: {}",
             compressed_size.to_string().red(),
-            constants::MAX_PROGRAM_SIZE,
+            MAX_PROGRAM_SIZE,
         ));
     }
-    compile_native_wasm_module(CompileConfig::default(), &wasm_file_bytes)?;
-    Ok(())
-}
 
-/// Compiles compressed wasm file bytes into a native module using a specified compile config.
-pub fn compile_native_wasm_module(
-    cfg: CompileConfig,
-    wasm_file_bytes: &[u8],
-) -> eyre::Result<Vec<u8>, String> {
-    let module = stylus::native::module(wasm_file_bytes, cfg)
-        .map_err(|e| format!("Could not compile wasm {}", e))?;
-    let success = "Stylus compilation successful!".to_string().mint();
-    println!("{}", success);
+    let provider = Provider::<Http>::try_from(&cfg.endpoint)
+        .map_err(|e| format!("could not initialize provider from http {e}"))?;
 
-    println!(
-        "Compiled WASM module total size: {}",
-        ByteSize::b(module.len() as u64),
-    );
-    Ok(module)
-}
+    let expected_program_addr = match cfg.activate_program_address {
+        Some(addr) => addr,
+        None => {
+            let wallet = wallet::load(cfg.private_key_path, cfg.keystore_opts)?;
+            let chain_id = provider
+                .get_chainid()
+                .await
+                .map_err(|e| format!("could not get chain id {e}"))?
+                .as_u64();
+            let client =
+                SignerMiddleware::new(provider.clone(), wallet.clone().with_chain_id(chain_id));
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use wasmer::wat2wasm;
-    #[test]
-    fn test_run_checks() {
-        let wat = r#"
-        (module
-            (func $foo (export "foo") (result v128)
-                v128.const i32x4 1 2 3 4))
-        "#;
-        let wasm_bytes = wat2wasm(wat.as_bytes()).unwrap();
-        let disabled = vec![];
-        match run_checks(&wasm_bytes, &[], &disabled) {
-            Ok(_) => panic!("Expected error"),
-            Err(e) => assert!(e.contains("128-bit types are not supported")),
+            let addr = wallet.address();
+            let nonce = client
+                .get_transaction_count(addr, None)
+                .await
+                .map_err(|e| format!("could not get nonce {addr} {e}"))?;
+
+            get_contract_address(wallet.address(), nonce)
         }
+    };
+    check_can_activate(provider, &expected_program_addr, deploy_ready_code).await
+}
+
+/// Checks if a program can be successfully activated onchain before it is deployed
+/// by using an eth_call override that injects the program's code at a specified address.
+/// This allows for verifying an activation call is correct and will succeed if sent
+/// as a transaction with the appropriate gas.
+pub async fn check_can_activate<T>(
+    client: Provider<T>,
+    expected_program_address: &Address,
+    compressed_wasm: Vec<u8>,
+) -> eyre::Result<(), String>
+where
+    T: JsonRpcClient + Send + Sync,
+{
+    let calldata = activation_calldata(expected_program_address);
+    let to = hex::decode(ARB_WASM_ADDRESS).unwrap();
+    let to = Address::from_slice(&to);
+
+    let tx_request = Eip1559TransactionRequest::new().to(to).data(calldata);
+    let tx = TypedTransaction::Eip1559(tx_request);
+
+    // Spoof the state as if the program already exists at the specified address
+    // using an eth_call override.
+    let state = spoof::code(
+        Address::from_slice(expected_program_address.as_bytes()),
+        compressed_wasm.into(),
+    );
+    let response = client.call_raw(&tx).state(&state).await.map_err(|e| {
+        format!(
+            "program predeployment check failed when checking against ARB_WASM_ADDRESS {to}: {e}"
+        )
+    })?;
+
+    if response.len() < 2 {
+        return Err(format!(
+            "Stylus version bytes response too short, expected at least 2 bytes but got: {}",
+            hex::encode(&response)
+        ));
     }
+    let n = response.len();
+    let version_bytes: [u8; 2] = response[n - 2..]
+        .try_into()
+        .map_err(|e| format!("could not parse Stylus version bytes: {e}"))?;
+    let version = u16::from_be_bytes(version_bytes);
+    println!("Program succeeded Stylus onchain activation checks with Stylus version: {version}");
+    Ok(())
 }

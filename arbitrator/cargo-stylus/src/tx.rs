@@ -1,5 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
+use crate::color::Color;
+
 use ethers::types::transaction::eip2718::TypedTransaction;
 use ethers::types::Eip1559TransactionRequest;
 use ethers::{middleware::SignerMiddleware, providers::Middleware, signers::Signer};
@@ -19,11 +21,11 @@ where
     let block_num = client
         .get_block_number()
         .await
-        .map_err(|e| format!("could not get block number {}", e))?;
+        .map_err(|e| format!("could not get block number: {e}"))?;
     let block = client
         .get_block(block_num)
         .await
-        .map_err(|e| format!("could not get block {}", e))?
+        .map_err(|e| format!("could not get block: {e}"))?
         .ok_or("no block found")?;
     let base_fee = block
         .base_fee_per_gas
@@ -40,7 +42,7 @@ where
         .await
         .map_err(|e| format!("{}", e))?;
 
-    println!("Estimated gas: {estimated}");
+    println!("Estimated gas: {}", estimated.pink());
 
     if estimate_only {
         return Ok(());
@@ -51,11 +53,11 @@ where
     let pending_tx = client
         .send_transaction(typed, None)
         .await
-        .map_err(|e| format!("could not send tx {}", e))?;
+        .map_err(|e| format!("could not send tx: {e}"))?;
 
     let receipt = pending_tx
         .await
-        .map_err(|e| format!("could not get receipt {}", e))?
+        .map_err(|e| format!("could not get receipt: {e}"))?
         .ok_or("no receipt found")?;
 
     match receipt.status {
@@ -66,7 +68,11 @@ where
         Some(_) => {
             let tx_hash = receipt.transaction_hash;
             let gas_used = receipt.gas_used.unwrap();
-            println!("Confirmed tx {tx_hash:#032x}, gas used {gas_used}");
+            println!(
+                "Confirmed tx {}, gas used {}",
+                tx_hash.pink(),
+                gas_used.mint()
+            );
             Ok(())
         }
     }
