@@ -3,7 +3,6 @@ members = [
         "arbutil",
         "prover",
         "stylus",
-        "cargo-stylus",
         "jit",
 ]
 exclude = [

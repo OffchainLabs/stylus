@@ -6,8 +6,6 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use brotli2::read::BrotliEncoder;
-use bytes::buf::Reader;
-use bytes::Buf;
 use bytesize::ByteSize;
 
 use crate::{
@@ -60,9 +58,12 @@ pub fn get_compressed_wasm_bytes(wasm_path: &PathBuf) -> eyre::Result<(Vec<u8>, 
             wasm_path.as_os_str().to_string_lossy(),
         )
     })?;
-    let wbytes: Reader<&[u8]> = wasm_file_bytes.reader();
 
-    let mut compressor = BrotliEncoder::new(wbytes, BROTLI_COMPRESSION_LEVEL);
+    let wasm_bytes = wasmer::wat2wasm(&wasm_file_bytes)
+        .map_err(|e| format!("could not parse wasm file bytes: {e:?}"))?;
+    let wasm_bytes = &*wasm_bytes;
+
+    let mut compressor = BrotliEncoder::new(wasm_bytes, BROTLI_COMPRESSION_LEVEL);
     let mut compressed_bytes = vec![];
     compressor
         .read_to_end(&mut compressed_bytes)
@@ -76,5 +77,5 @@ pub fn get_compressed_wasm_bytes(wasm_path: &PathBuf) -> eyre::Result<(Vec<u8>, 
     );
     let mut deploy_ready_code = hex::decode(EOF_PREFIX).unwrap();
     deploy_ready_code.extend(compressed_bytes);
-    Ok((wasm_file_bytes, deploy_ready_code))
+    Ok((wasm_bytes.to_vec(), deploy_ready_code))
 }
