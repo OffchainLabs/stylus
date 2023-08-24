@@ -118,11 +118,16 @@ async fn main() -> eyre::Result<(), String> {
     let CargoCli::Stylus(args) = CargoCli::parse();
 
     match args.command {
-        StylusSubcommands::Check(cfg) => check::run_checks(cfg)
-            .await
-            .map_err(|e| format!("Stylus checks failed: {}", e.red())),
-        StylusSubcommands::Deploy(cfg) => deploy::deploy(cfg)
-            .await
-            .map_err(|e| format!("Deploy / activation command failed: {}", e.red())),
+        StylusSubcommands::Check(cfg) => {
+            if let Err(e) = check::run_checks(cfg).await {
+                println!("Stylus checks failed: {}", e.red());
+            };
+        }
+        StylusSubcommands::Deploy(cfg) => {
+            if let Err(e) = deploy::deploy(cfg).await {
+                println!("Deploy / activation command failed: {}", e.red());
+            };
+        }
     }
+    Ok(())
 }

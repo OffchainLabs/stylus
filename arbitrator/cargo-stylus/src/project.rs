@@ -52,7 +52,7 @@ pub fn build_project_to_wasm() -> eyre::Result<PathBuf, String> {
 
 /// Reads a WASM file at a specified path and returns its brotli compressed bytes.
 pub fn get_compressed_wasm_bytes(wasm_path: &PathBuf) -> eyre::Result<(Vec<u8>, Vec<u8>), String> {
-    println!("Reading WASM file at {}", wasm_path.display().yellow());
+    println!("Reading WASM file at {}", wasm_path.display().pink());
 
     let wasm_file_bytes = std::fs::read(wasm_path).map_err(|e| {
         format!(
@@ -72,7 +72,7 @@ pub fn get_compressed_wasm_bytes(wasm_path: &PathBuf) -> eyre::Result<(Vec<u8>, 
         "Compressed WASM size: {}",
         ByteSize::b(compressed_bytes.len() as u64)
             .to_string()
-            .yellow(),
+            .mint(),
     );
     let mut deploy_ready_code = hex::decode(EOF_PREFIX).unwrap();
     deploy_ready_code.extend(compressed_bytes);
