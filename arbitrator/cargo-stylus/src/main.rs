@@ -1,9 +1,11 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 use clap::{Args, Parser, ValueEnum};
+use color::Color;
 use ethers::types::H160;
 
 mod check;
+mod color;
 mod constants;
 mod deploy;
 mod project;
@@ -118,9 +120,9 @@ async fn main() -> eyre::Result<(), String> {
     match args.command {
         StylusSubcommands::Check(cfg) => check::run_checks(cfg)
             .await
-            .map_err(|e| format!("Stylus checks failed: {e}")),
+            .map_err(|e| format!("Stylus checks failed: {}", e.red())),
         StylusSubcommands::Deploy(cfg) => deploy::deploy(cfg)
             .await
-            .map_err(|e| format!("Deploy / activation command failed: {e}")),
+            .map_err(|e| format!("Deploy / activation command failed: {}", e.red())),
     }
 }

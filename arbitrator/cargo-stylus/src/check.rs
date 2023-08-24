@@ -4,9 +4,8 @@ use bytesize::ByteSize;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use arbutil::Color;
-
 use crate::{
+    color::Color,
     constants::{ARB_WASM_ADDRESS, MAX_PROGRAM_SIZE},
     deploy::activation_calldata,
     project, wallet, CheckConfig,
@@ -30,9 +29,11 @@ use ethers::{
 pub async fn run_checks(cfg: CheckConfig) -> eyre::Result<(), String> {
     let wasm_file_path: PathBuf = match cfg.wasm_file_path {
         Some(path) => PathBuf::from_str(&path).unwrap(),
-        None => project::build_project_to_wasm()?,
+        None => project::build_project_to_wasm()
+            .map_err(|e| format!("failed to build project to WASM: {e}"))?,
     };
-    let (_, deploy_ready_code) = project::get_compressed_wasm_bytes(&wasm_file_path)?;
+    let (_, deploy_ready_code) = project::get_compressed_wasm_bytes(&wasm_file_path)
+        .map_err(|e| format!("failed to get compressed WASM bytes: {e}"))?;
 
     let compressed_size = ByteSize::b(deploy_ready_code.len() as u64);
     if compressed_size > MAX_PROGRAM_SIZE {
@@ -95,15 +96,15 @@ where
         Address::from_slice(expected_program_address.as_bytes()),
         compressed_wasm.into(),
     );
-    let response = client
-        .call_raw(&tx)
-        .state(&state)
-        .await
-        .map_err(|e| format!("program predeployment check failed: {e}"))?;
+    let response = client.call_raw(&tx).state(&state).await.map_err(|e| {
+        format!(
+            "program predeployment check failed when checking against ARB_WASM_ADDRESS {to}: {e}"
+        )
+    })?;
 
     if response.len() < 2 {
         return Err(format!(
-            "Stylus version bytes response too short: {}",
+            "Stylus version bytes response too short, expected at least 2 bytes but got: {}",
             hex::encode(&response)
         ));
     }
@@ -112,6 +113,6 @@ where
         .try_into()
         .map_err(|e| format!("could not parse Stylus version bytes: {e}"))?;
     let version = u16::from_be_bytes(version_bytes);
-    println!("Program succeeded Stylus onchain activation checks - Stylus version: {version}");
+    println!("Program succeeded Stylus onchain activation checks with Stylus version: {version}");
     Ok(())
 }

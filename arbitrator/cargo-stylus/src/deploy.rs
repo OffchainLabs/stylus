@@ -18,14 +18,19 @@ use crate::{constants, project, tx, wallet, DeployConfig, DeployMode};
 /// ActivateOnly: Sends a signed tx to activate a Stylus program at a specified address.
 /// DeployAndActivate (default): Sends both transactions above.
 pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
-    let wallet = wallet::load(cfg.private_key_path, cfg.keystore_opts)?;
+    let wallet = wallet::load(cfg.private_key_path, cfg.keystore_opts)
+        .map_err(|e| format!("could not load wallet: {e}"))?;
 
-    let provider = Provider::<Http>::try_from(&cfg.endpoint)
-        .map_err(|e| format!("could not initialize provider from http {}", e))?;
+    let provider = Provider::<Http>::try_from(&cfg.endpoint).map_err(|e| {
+        format!(
+            "could not initialize provider from http endpoint: {}: {e}",
+            &cfg.endpoint
+        )
+    })?;
     let chain_id = provider
         .get_chainid()
         .await
-        .map_err(|e| format!("could not get chain id {}", e))?
+        .map_err(|e| format!("could not get chain id {e}"))?
         .as_u64();
     let client = SignerMiddleware::new(provider, wallet.clone().with_chain_id(chain_id));
 
@@ -33,7 +38,7 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
     let nonce = client
         .get_transaction_count(addr, None)
         .await
-        .map_err(|e| format!("could not get nonce {} {}", addr, e))?;
+        .map_err(|e| format!("could not get nonce for address {addr}: {e}"))?;
 
     let expected_program_addr = get_contract_address(wallet.address(), nonce);
 
@@ -54,7 +59,8 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
     if deploy {
         let wasm_file_path: PathBuf = match &cfg.wasm_file_path {
             Some(path) => PathBuf::from_str(&path).unwrap(),
-            None => project::build_project_to_wasm()?,
+            None => project::build_project_to_wasm()
+                .map_err(|e| format!("could not build project to WASM: {e}"))?,
         };
         let (_, deploy_ready_code) = project::get_compressed_wasm_bytes(&wasm_file_path)?;
         println!("Deploying program to address {expected_program_addr:#032x}");
@@ -62,7 +68,9 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
         let mut tx_request = Eip1559TransactionRequest::new()
             .from(wallet.address())
             .data(deployment_calldata);
-        tx::submit_signed_tx(&client, cfg.estimate_gas_only, &mut tx_request).await?;
+        tx::submit_signed_tx(&client, cfg.estimate_gas_only, &mut tx_request)
+            .await
+            .map_err(|e| format!("could not submit signed deployment tx: {e}"))?;
     }
     if activate {
         let program_addr = cfg
@@ -78,7 +86,9 @@ pub async fn deploy(cfg: DeployConfig) -> eyre::Result<(), String> {
             .from(wallet.address())
             .to(to)
             .data(activate_calldata);
-        tx::submit_signed_tx(&client, cfg.estimate_gas_only, &mut tx_request).await?;
+        tx::submit_signed_tx(&client, cfg.estimate_gas_only, &mut tx_request)
+            .await
+            .map_err(|e| format!("could not submit signed deployment tx: {e}"))?;
     }
     Ok(())
 }
