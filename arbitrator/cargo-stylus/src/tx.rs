@@ -21,11 +21,11 @@ where
     let block_num = client
         .get_block_number()
         .await
-        .map_err(|e| format!("could not get block number: {e}"))?;
+        .map_err(|e| format!("could not get block number: {e:?}"))?;
     let block = client
         .get_block(block_num)
         .await
-        .map_err(|e| format!("could not get block: {e}"))?
+        .map_err(|e| format!("could not get block: {e:?}"))?
         .ok_or("no block found")?;
     let base_fee = block
         .base_fee_per_gas
@@ -53,17 +53,17 @@ where
     let pending_tx = client
         .send_transaction(typed, None)
         .await
-        .map_err(|e| format!("could not send tx: {e}"))?;
+        .map_err(|e| format!("could not send tx: {e:?}"))?;
 
     let receipt = pending_tx
         .await
-        .map_err(|e| format!("could not get receipt: {e}"))?
+        .map_err(|e| format!("could not get receipt: {e:?}"))?
         .ok_or("no receipt found")?;
 
     match receipt.status {
         None => Err(format!(
             "Tx with hash {} reverted",
-            receipt.transaction_hash
+            receipt.transaction_hash,
         )),
         Some(_) => {
             let tx_hash = receipt.transaction_hash;

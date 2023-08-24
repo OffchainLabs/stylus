@@ -30,10 +30,10 @@ pub async fn run_checks(cfg: CheckConfig) -> eyre::Result<(), String> {
     let wasm_file_path: PathBuf = match cfg.wasm_file_path {
         Some(path) => PathBuf::from_str(&path).unwrap(),
         None => project::build_project_to_wasm()
-            .map_err(|e| format!("failed to build project to WASM: {e}"))?,
+            .map_err(|e| format!("failed to build project to WASM: {e:?}"))?,
     };
     let (_, deploy_ready_code) = project::get_compressed_wasm_bytes(&wasm_file_path)
-        .map_err(|e| format!("failed to get compressed WASM bytes: {e}"))?;
+        .map_err(|e| format!("failed to get compressed WASM bytes: {e:?}"))?;
 
     let compressed_size = ByteSize::b(deploy_ready_code.len() as u64);
     if compressed_size > MAX_PROGRAM_SIZE {
@@ -45,7 +45,7 @@ pub async fn run_checks(cfg: CheckConfig) -> eyre::Result<(), String> {
     }
 
     let provider = Provider::<Http>::try_from(&cfg.endpoint)
-        .map_err(|e| format!("could not initialize provider from http {e}"))?;
+        .map_err(|e| format!("could not initialize provider from http: {e:?}"))?;
 
     let expected_program_addr = match cfg.activate_program_address {
         Some(addr) => addr,
@@ -54,7 +54,7 @@ pub async fn run_checks(cfg: CheckConfig) -> eyre::Result<(), String> {
             let chain_id = provider
                 .get_chainid()
                 .await
-                .map_err(|e| format!("could not get chain id {e}"))?
+                .map_err(|e| format!("could not get chain id {e:?}"))?
                 .as_u64();
             let client =
                 SignerMiddleware::new(provider.clone(), wallet.clone().with_chain_id(chain_id));
@@ -63,7 +63,7 @@ pub async fn run_checks(cfg: CheckConfig) -> eyre::Result<(), String> {
             let nonce = client
                 .get_transaction_count(addr, None)
                 .await
-                .map_err(|e| format!("could not get nonce {addr} {e}"))?;
+                .map_err(|e| format!("could not get nonce {addr}: {e:?}"))?;
 
             get_contract_address(wallet.address(), nonce)
         }
@@ -98,7 +98,7 @@ where
     );
     let response = client.call_raw(&tx).state(&state).await.map_err(|e| {
         format!(
-            "program predeployment check failed when checking against ARB_WASM_ADDRESS {to}: {e}"
+            "program predeployment check failed when checking against ARB_WASM_ADDRESS {to}: {e:?}"
         )
     })?;
 
@@ -111,7 +111,7 @@ where
     let n = response.len();
     let version_bytes: [u8; 2] = response[n - 2..]
         .try_into()
-        .map_err(|e| format!("could not parse Stylus version bytes: {e}"))?;
+        .map_err(|e| format!("could not parse Stylus version bytes: {e:?}"))?;
     let version = u16::from_be_bytes(version_bytes);
     println!("Program succeeded Stylus onchain activation checks with Stylus version: {version}");
     Ok(())

@@ -120,12 +120,12 @@ async fn main() -> eyre::Result<(), String> {
     match args.command {
         StylusSubcommands::Check(cfg) => {
             if let Err(e) = check::run_checks(cfg).await {
-                println!("Stylus checks failed: {}", e.red());
+                println!("Stylus checks failed: {:?}", e.red());
             };
         }
         StylusSubcommands::Deploy(cfg) => {
             if let Err(e) = deploy::deploy(cfg).await {
-                println!("Deploy / activation command failed: {}", e.red());
+                println!("Deploy / activation command failed: {:?}", e.red());
             };
         }
     }

@@ -20,7 +20,7 @@ pub fn load(
     if let Some(priv_key_path) = &private_key_path {
         let privkey = read_secret_from_file(&priv_key_path)?;
         return LocalWallet::from_str(&privkey)
-            .map_err(|e| format!("could not parse private key {}", e));
+            .map_err(|e| format!("could not parse private key: {e:?}"));
     }
     let keystore_password_path = keystore_opts
         .keystore_password_path
@@ -32,16 +32,16 @@ pub fn load(
         .as_ref()
         .ok_or("no keystore path provided")?;
     LocalWallet::decrypt_keystore(keystore_path, keystore_pass)
-        .map_err(|e| format!("could not decrypt keystore {}", e))
+        .map_err(|e| format!("could not decrypt keystore: {e:?}"))
 }
 
 fn read_secret_from_file(fpath: &str) -> Result<String, String> {
     let f = std::fs::File::open(fpath)
-        .map_err(|e| format!("could not open file at path: {fpath}: {e}"))?;
+        .map_err(|e| format!("could not open file at path: {fpath}: {e:?}"))?;
     let mut buf_reader = BufReader::new(f);
     let mut secret = String::new();
     buf_reader
         .read_line(&mut secret)
-        .map_err(|e| format!("could not read secret from file at path {fpath}: {e}"))?;
+        .map_err(|e| format!("could not read secret from file at path {fpath}: {e:?}"))?;
     Ok(secret.trim().to_string())
 }
