@@ -1,9 +1,8 @@
-use std::path::PathBuf;
-use std::str::FromStr;
-
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 use bytesize::ByteSize;
+use std::path::PathBuf;
+use std::str::FromStr;
 
 use arbutil::Color;
 
@@ -44,25 +43,30 @@ pub async fn run_checks(cfg: CheckConfig) -> eyre::Result<(), String> {
         ));
     }
 
-    let wallet = wallet::load(cfg.private_key_path, cfg.keystore_opts)?;
-
     let provider = Provider::<Http>::try_from(&cfg.endpoint)
         .map_err(|e| format!("could not initialize provider from http {e}"))?;
-    let chain_id = provider
-        .get_chainid()
-        .await
-        .map_err(|e| format!("could not get chain id {e}"))?
-        .as_u64();
-    let client = SignerMiddleware::new(provider.clone(), wallet.clone().with_chain_id(chain_id));
 
-    let addr = wallet.address();
-    let nonce = client
-        .get_transaction_count(addr, None)
-        .await
-        .map_err(|e| format!("could not get nonce {addr} {e}"))?;
+    let expected_program_addr = match cfg.activate_program_address {
+        Some(addr) => addr,
+        None => {
+            let wallet = wallet::load(cfg.private_key_path, cfg.keystore_opts)?;
+            let chain_id = provider
+                .get_chainid()
+                .await
+                .map_err(|e| format!("could not get chain id {e}"))?
+                .as_u64();
+            let client =
+                SignerMiddleware::new(provider.clone(), wallet.clone().with_chain_id(chain_id));
 
-    let next_program_addr = get_contract_address(wallet.address(), nonce);
-    let expected_program_addr = cfg.activate_program_address.unwrap_or(next_program_addr);
+            let addr = wallet.address();
+            let nonce = client
+                .get_transaction_count(addr, None)
+                .await
+                .map_err(|e| format!("could not get nonce {addr} {e}"))?;
+
+            get_contract_address(wallet.address(), nonce)
+        }
+    };
     check_can_activate(provider, &expected_program_addr, deploy_ready_code).await
 }
 
@@ -76,7 +80,7 @@ pub async fn check_can_activate<T>(
     compressed_wasm: Vec<u8>,
 ) -> eyre::Result<(), String>
 where
-    T: JsonRpcClient + Send + Sync + std::fmt::Debug,
+    T: JsonRpcClient + Send + Sync,
 {
     let calldata = activation_calldata(expected_program_address);
     let to = hex::decode(ARB_WASM_ADDRESS).unwrap();
@@ -97,6 +101,17 @@ where
         .await
         .map_err(|e| format!("program predeployment check failed: {e}"))?;
 
-    println!("Got response: {}", hex::encode(&response));
+    if response.len() < 2 {
+        return Err(format!(
+            "Stylus version bytes response too short: {}",
+            hex::encode(&response)
+        ));
+    }
+    let n = response.len();
+    let version_bytes: [u8; 2] = response[n - 2..]
+        .try_into()
+        .map_err(|e| format!("could not parse Stylus version bytes: {e}"))?;
+    let version = u16::from_be_bytes(version_bytes);
+    println!("Program succeeded Stylus onchain activation checks - Stylus version: {version}");
     Ok(())
 }

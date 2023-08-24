@@ -53,7 +53,10 @@ pub struct CheckConfig {
     /// contents for the deploy command.
     #[arg(long)]
     wasm_file_path: Option<String>,
-    /// If only activating an already-deployed, onchain program, the address of the program to send an activation tx for.
+    /// Specify the program address we want to check activation for. If unspecified, it will
+    /// compute the next program address from the user's wallet address and nonce.
+    /// To avoid needing a wallet to run this command, pass in 0x0000000000000000000000000000000000000000
+    /// or any other desired program address to check against.
     #[arg(long)]
     activate_program_address: Option<H160>,
     /// Privkey source to use with the cargo stylus plugin.
@@ -115,9 +118,9 @@ async fn main() -> eyre::Result<(), String> {
     match args.command {
         StylusSubcommands::Check(cfg) => check::run_checks(cfg)
             .await
-            .map_err(|e| format!("Could not run Stylus checks: {e}")),
+            .map_err(|e| format!("Stylus checks failed: {e}")),
         StylusSubcommands::Deploy(cfg) => deploy::deploy(cfg)
             .await
-            .map_err(|e| format!("Could not perform deploy / activate tx: {e}")),
+            .map_err(|e| format!("Deploy / activation command failed: {e}")),
     }
 }
