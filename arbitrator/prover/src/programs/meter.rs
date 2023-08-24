@@ -213,7 +213,7 @@ pub trait MeteredMachine {
 
     fn ink_ready(&mut self) -> Result<u64, OutOfInkError> {
         let MachineMeter::Ready(ink_left) = self.ink_left() else {
-            return self.out_of_ink()
+            return self.out_of_ink();
         };
         Ok(ink_left)
     }
