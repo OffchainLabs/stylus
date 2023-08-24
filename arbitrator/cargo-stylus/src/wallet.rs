@@ -14,7 +14,7 @@ pub fn load(
     if private_key_path.is_some()
         && (keystore_opts.keystore_password_path.is_some() && keystore_opts.keystore_path.is_some())
     {
-        return Err("must provide either privkey path or keystore options exclusively".to_string());
+        return Err("must provide either --private-key-path or (--keystore-path and --keystore-password-path)".to_string());
     }
 
     if let Some(priv_key_path) = &private_key_path {
