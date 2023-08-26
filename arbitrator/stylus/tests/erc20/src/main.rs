@@ -5,6 +5,11 @@
 
 #![cfg_attr(not(feature = "export-abi"), no_main)]
 
+#![no_std]
+
+extern crate alloc;
+use alloc::vec::Vec;
+use alloc::string::String;
 use crate::erc20::{Erc20, Erc20Params};
 use stylus_sdk::{alloy_primitives::U256, call, msg, prelude::*};
 
