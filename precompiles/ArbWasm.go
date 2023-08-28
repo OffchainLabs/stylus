@@ -6,16 +6,17 @@ package precompiles
 type ArbWasm struct {
 	Address addr // 0x71
 
-	ProgramNotCompiledError func() error
-	ProgramOutOfDateError   func(version uint16) error
-	ProgramUpToDateError    func() error
+	ProgramNotActivatedError func() error
+	ProgramOutOfDateError    func(version uint16) error
+	ProgramUpToDateError     func() error
 }
 
 // Compile a wasm program with the latest instrumentation
-func (con ArbWasm) CompileProgram(c ctx, evm mech, program addr) (uint16, error) {
-	version, takeAllGas, err := c.State.Programs().CompileProgram(evm, program, evm.ChainConfig().DebugMode())
+func (con ArbWasm) ActivateProgram(c ctx, evm mech, program addr) (uint16, error) {
+	version, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, evm.ChainConfig().DebugMode())
 	if takeAllGas {
-		return version, c.BurnOut()
+		_ = c.BurnOut()
+		return version, err
 	}
 	return version, err
 }
@@ -57,8 +58,12 @@ func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
 }
 
 // Gets the current program version
-func (con ArbWasm) ProgramVersion(c ctx, _ mech, program addr) (uint16, error) {
-	return c.State.Programs().ProgramVersion(program)
+func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint16, error) {
+	codehash, err := c.GetCodeHash(program)
+	if err != nil {
+		return 0, err
+	}
+	return c.State.Programs().ProgramVersion(codehash)
 }
 
 // Gets the added wasm call cost paid per half kb uncompressed wasm
