@@ -8,10 +8,9 @@ use arbutil::operator::{OperatorCode, OperatorInfo};
 use eyre::{eyre, Result};
 use fnv::FnvHashMap as HashMap;
 use parking_lot::Mutex;
-use wasmer::LocalFunctionIndex;
 use std::collections::BTreeMap;
 use std::{fmt::Debug, sync::Arc};
-use wasmer_types::{GlobalIndex, GlobalInit, Type};
+use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::Operator;
 
 #[derive(Debug)]
