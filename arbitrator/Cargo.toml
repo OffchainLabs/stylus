@@ -8,6 +8,7 @@ members = [
 exclude = [
         "stylus/tests/"
 ]
+resolver = "2"
 
 [workspace.package]
 authors = ["Offchain Labs"]

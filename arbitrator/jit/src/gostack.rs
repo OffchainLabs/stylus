@@ -259,10 +259,10 @@ impl<'s> GoStack<'s> {
     /// Caller must cut lifetimes before this call.
     pub unsafe fn resume(&mut self, env: &mut WasmEnv) -> MaybeEscape {
         let Some(resume) = &env.exports.resume else {
-            return Escape::failure(format!("wasmer failed to bind {}", "resume".red()))
+            return Escape::failure(format!("wasmer failed to bind {}", "resume".red()));
         };
         let Some(get_stack_pointer) = &env.exports.get_stack_pointer else {
-            return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()))
+            return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()));
         };
 
         // save our progress from the stack pointer

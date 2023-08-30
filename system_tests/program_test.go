@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/validator/valnode"
 	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
@@ -44,17 +45,44 @@ func TestProgramKeccak(t *testing.T) {
 }
 
 func keccakTest(t *testing.T, jit bool) {
-	ctx, node, _, l2client, auth, programAddress, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
+	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
+	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
+	wasm := readWasmFile(t, rustFile("keccak"))
+	otherAddressSameCode := deployContract(t, ctx, auth, l2client, wasm)
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
+
+	colors.PrintBlue("program deployed to ", programAddress.Hex())
+	timed(t, "compile same code", func() {
+		if _, err := arbWasm.ActivateProgram(&auth, otherAddressSameCode); err == nil || !strings.Contains(err.Error(), "ProgramUpToDate") {
+			Fatal(t, "compile should have failed with ProgramUpToDate")
+		}
+	})
+
+	if programAddress == otherAddressSameCode {
+		Fatal(t, "expected to deploy at two separate program addresses")
+	}
+
 	stylusVersion, err := arbWasm.StylusVersion(nil)
 	Require(t, err)
+	statedb, err := node.Execution.Backend.ArbInterface().BlockChain().State()
+	Require(t, err)
+	codehashVersion, err := arbWasm.CodehashVersion(nil, statedb.GetCodeHash(programAddress))
+	Require(t, err)
+	if codehashVersion != stylusVersion || stylusVersion == 0 {
+		Fatal(t, "unexpected versions", stylusVersion, codehashVersion)
+	}
 	programVersion, err := arbWasm.ProgramVersion(nil, programAddress)
 	Require(t, err)
 	if programVersion != stylusVersion || stylusVersion == 0 {
 		Fatal(t, "unexpected versions", stylusVersion, programVersion)
+	}
+	otherVersion, err := arbWasm.ProgramVersion(nil, otherAddressSameCode)
+	Require(t, err)
+	if otherVersion != programVersion {
+		Fatal(t, "mismatched versions", stylusVersion, programVersion)
 	}
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
@@ -65,6 +93,17 @@ func keccakTest(t *testing.T, jit bool) {
 
 	timed(t, "execute", func() {
 		result := sendContractCall(t, ctx, programAddress, l2client, args)
+		if len(result) != 32 {
+			Fatal(t, "unexpected return result: ", "result", result)
+		}
+		hash := common.BytesToHash(result)
+		if hash != correct {
+			Fatal(t, "computed hash mismatch", hash, correct)
+		}
+		colors.PrintGrey("keccak(x) = ", hash)
+	})
+	timed(t, "execute same code, different address", func() {
+		result := sendContractCall(t, ctx, otherAddressSameCode, l2client, args)
 		if len(result) != 32 {
 			Fatal(t, "unexpected return result: ", "result", result)
 		}
@@ -87,8 +126,95 @@ func keccakTest(t *testing.T, jit bool) {
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
+	ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
 
 	validateBlocks(t, 1, jit, ctx, node, l2client)
+}
+
+func TestProgramActivateTwice(t *testing.T) {
+	t.Parallel()
+	testActivateTwice(t, true)
+}
+
+func testActivateTwice(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&auth, 1))
+
+	wasm := readWasmFile(t, rustFile("keccak"))
+	keccakA := deployContract(t, ctx, auth, l2client, wasm)
+	keccakB := deployContract(t, ctx, auth, l2client, wasm)
+
+	colors.PrintBlue("keccak program A deployed to ", keccakA)
+	colors.PrintBlue("keccak program B deployed to ", keccakB)
+
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	preimage := []byte("it's time to du-du-du-du d-d-d-d-d-d-d de-duplicate")
+
+	keccakArgs := []byte{0x01} // keccak the preimage once
+	keccakArgs = append(keccakArgs, preimage...)
+
+	checkReverts := func() {
+		msg := ethereum.CallMsg{
+			To:    &keccakA,
+			Value: big.NewInt(0),
+			Data:  keccakArgs,
+		}
+		_, err = l2client.CallContract(ctx, msg, nil)
+		if err == nil || !strings.Contains(err.Error(), "ProgramNotActivated") {
+			Fatal(t, "call should have failed with ProgramNotActivated")
+		}
+
+		// execute onchain for proving's sake
+		tx := l2info.PrepareTxTo("Owner", &keccakA, 1e9, nil, keccakArgs)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		EnsureTxFailed(t, ctx, l2client, tx)
+	}
+
+	// Calling the contract pre-activation should fail.
+	checkReverts()
+
+	// mechanisms for creating calldata
+	activateProgram, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "activateProgram")
+	legacyError, _ := util.NewCallParser(precompilesgen.ArbDebugABI, "legacyError")
+	callKeccak, _ := util.NewCallParser(mocksgen.ProgramTestABI, "callKeccak")
+	pack := func(data []byte, err error) []byte {
+		Require(t, err)
+		return data
+	}
+	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+
+	// Successfully activate, but then revert
+	args := argsForMulticall(vm.CALL, types.ArbWasmAddress, nil, pack(activateProgram(keccakA)))
+	args = multicallAppend(args, vm.CALL, types.ArbDebugAddress, pack(legacyError()))
+
+	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	EnsureTxFailed(t, ctx, l2client, tx)
+
+	// Ensure the revert also reverted keccak's activation
+	checkReverts()
+
+	// Compile keccak program A, then call into B, which should succeed due to being the same codehash
+	args = argsForMulticall(vm.CALL, types.ArbWasmAddress, nil, pack(activateProgram(keccakA)))
+	args = multicallAppend(args, vm.CALL, mockAddr, pack(callKeccak(keccakB, keccakArgs)))
+
+	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+
+	validateBlocks(t, 7, jit, ctx, node, l2client)
 }
 
 func TestProgramErrors(t *testing.T) {
@@ -97,8 +223,10 @@ func TestProgramErrors(t *testing.T) {
 }
 
 func errorTest(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("fallible"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
+
+	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
 
 	// ensure tx passes
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, []byte{0x01})
@@ -124,8 +252,9 @@ func TestProgramStorage(t *testing.T) {
 }
 
 func storageTest(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("storage"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
+	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -150,8 +279,9 @@ func TestProgramCalls(t *testing.T) {
 }
 
 func testCalls(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
+	callsAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -342,7 +472,7 @@ func TestProgramReturnData(t *testing.T) {
 }
 
 func testReturnData(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, _, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) {
@@ -392,8 +522,9 @@ func TestProgramLogs(t *testing.T) {
 }
 
 func testLogs(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, _, logAddr, cleanup := setupProgramTest(t, rustFile("log"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
+	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -457,8 +588,9 @@ func TestProgramCreate(t *testing.T) {
 }
 
 func testCreate(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, createAddr, cleanup := setupProgramTest(t, rustFile("create"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
+	createAddr := deployWasm(t, ctx, auth, l2client, rustFile("create"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -490,7 +622,15 @@ func testCreate(t *testing.T, jit bool) {
 		// compile the program
 		arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 		Require(t, err)
-		ensure(arbWasm.CompileProgram(&auth, storeAddr))
+		tx, err = arbWasm.ActivateProgram(&auth, storeAddr)
+		if err != nil {
+			if !strings.Contains(err.Error(), "ProgramUpToDate") {
+				Fatal(t, err)
+			}
+		} else {
+			_, succeedErr := EnsureTxSucceeded(ctx, l2client, tx)
+			Require(t, succeedErr)
+		}
 
 		// check the program works
 		key := testhelpers.RandomHash()
@@ -539,8 +679,9 @@ func TestProgramEvmData(t *testing.T) {
 }
 
 func testEvmData(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, evmDataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
+	evmDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("evm-data"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -619,11 +760,8 @@ func TestProgramMemory(t *testing.T) {
 }
 
 func testMemory(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, memoryAddr, cleanup := setupProgramTest(t, watFile("memory"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
-
-	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
-	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow-and-call"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -632,6 +770,16 @@ func testMemory(t *testing.T, jit bool) {
 		Require(t, err)
 		return receipt
 	}
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+
+	ensure(arbOwner.SetInkPrice(&auth, 1e4))
+	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
+
+	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow-and-call"))
 
 	expectFailure := func(to common.Address, data []byte) {
 		t.Helper()
@@ -651,11 +799,6 @@ func testMemory(t *testing.T, jit bool) {
 		Require(t, l2client.SendTransaction(ctx, tx))
 		EnsureTxFailed(t, ctx, l2client, tx)
 	}
-
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
-	Require(t, err)
-	ensure(arbOwner.SetInkPrice(&auth, 1e4))
-	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
 
 	model := programs.NewMemoryModel(2, 1000)
 
@@ -685,12 +828,12 @@ func testMemory(t *testing.T, jit bool) {
 	colors.PrintGrey("multicall.rs      ", multiAddr)
 	colors.PrintGrey("grow-and-call.wat ", growCallAddr)
 	colors.PrintGrey("grow-120.wat      ", growHugeAddr)
-	compile, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "compileProgram")
+	activate, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "activateProgram")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
 		return data
 	}
-	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(compile(growHugeAddr)))
+	args = arbmath.ConcatByteSlices([]byte{60}, types.ArbWasmAddress[:], pack(activate(growHugeAddr)))
 	expectFailure(growCallAddr, args) // consumes 64, then tries to compile something 120
 
 	// check that compilation then succeeds
@@ -715,14 +858,52 @@ func testMemory(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
+func TestProgramActivateFails(t *testing.T) {
+	t.Parallel()
+	testActivateFails(t, true)
+}
+
+func testActivateFails(t *testing.T, jit bool) {
+	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, false)
+	defer cleanup()
+
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+
+	badExportWasm := readWasmFile(t, watFile("bad-export"))
+	auth.GasLimit = 32000000 // skip gas estimation
+	badExportAddr := deployContract(t, ctx, auth, l2client, badExportWasm)
+
+	blockToValidate := uint64(0)
+	timed(t, "activate bad-export", func() {
+		tx, err := arbWasm.ActivateProgram(&auth, badExportAddr)
+		Require(t, err)
+		txRes, err := WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+		Require(t, err)
+		if txRes.Status != 0 {
+			Fatal(t, "bad-export transaction did not fail")
+		}
+		gotError := arbutil.DetailTxError(ctx, l2client, tx, txRes)
+		if !strings.Contains(gotError.Error(), "reserved symbol") {
+			Fatal(t, "unexpected error: ", gotError)
+		}
+		Require(t, err)
+		blockToValidate = txRes.BlockNumber.Uint64()
+	})
+
+	validateBlockRange(t, []uint64{blockToValidate}, jit, ctx, node, l2client)
+}
+
 func TestProgramSdkStorage(t *testing.T) {
 	t.Parallel()
 	testSdkStorage(t, true)
 }
 
 func testSdkStorage(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, rust, cleanup := setupProgramTest(t, rustFile("sdk-storage"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
+
+	rust := deployWasm(t, ctx, auth, l2client, rustFile("sdk-storage"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -777,8 +958,8 @@ func testSdkStorage(t *testing.T, jit bool) {
 	check()
 }
 
-func setupProgramTest(t *testing.T, file string, jit bool) (
-	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
+func setupProgramTest(t *testing.T, jit bool) (
+	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 	rand.Seed(time.Now().UTC().UnixNano())
@@ -788,12 +969,16 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
 
 	l2config := arbnode.ConfigDefaultL1Test()
-	l2config.BlockValidator.Enable = true
+	l2config.BlockValidator.Enable = false
+	l2config.Staker.Enable = true
 	l2config.BatchPoster.Enable = true
-	l2config.L1Reader.Enable = true
+	l2config.ParentChainReader.Enable = true
 	l2config.Sequencer.MaxRevertGasReject = 0
-	l2config.L1Reader.OldHeaderTimeout = 10 * time.Minute
-	AddDefaultValNode(t, ctx, l2config, jit)
+	l2config.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
+	valConf := valnode.TestValidationConfig
+	valConf.UseJit = jit
+	_, valStack := createTestValidationNode(t, ctx, &valConf)
+	configByValidationNode(t, l2config, valStack)
 
 	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
 
@@ -824,10 +1009,7 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
-	ensure(arbOwner.SetSpeedLimit(&auth, 7000000)) // use production speed limit
-
-	programAddress := deployWasm(t, ctx, auth, l2client, file)
-	return ctx, node, l2info, l2client, auth, programAddress, cleanup
+	return ctx, node, l2info, l2client, auth, cleanup
 }
 
 func readWasmFile(t *testing.T, file string) []byte {
@@ -855,10 +1037,10 @@ func deployWasm(
 	auth.GasLimit = 32000000 // skip gas estimation
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintGrey(name, ": deployed to ", programAddress.Hex())
-	return compileWasm(t, ctx, auth, l2client, programAddress, name)
+	return activateWasm(t, ctx, auth, l2client, programAddress, name)
 }
 
-func compileWasm(
+func activateWasm(
 	t *testing.T,
 	ctx context.Context,
 	auth bind.TransactOpts,
@@ -870,8 +1052,8 @@ func compileWasm(
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
-	timed(t, "compile "+name, func() {
-		tx, err := arbWasm.CompileProgram(&auth, program)
+	timed(t, "activate "+name, func() {
+		tx, err := arbWasm.ActivateProgram(&auth, program)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
@@ -1000,12 +1182,15 @@ func validateBlockRange(
 
 func waitForSequencer(t *testing.T, node *arbnode.Node, block uint64) {
 	t.Helper()
+	msgCount := arbutil.BlockNumberToMessageCount(block, 0)
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		return meta.MessageCount >= arbutil.BlockNumberToMessageCount(block, 0)
+		msgExecuted, err := node.Execution.ExecEngine.HeadMessageNumber()
+		Require(t, err)
+		return msgExecuted+1 >= msgCount && meta.MessageCount >= msgCount
 	})
 }
 

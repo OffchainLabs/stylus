@@ -600,7 +600,7 @@ impl<'a> WasmBinary<'a> {
         macro_rules! limit {
             ($limit:expr, $count:expr, $name:expr) => {
                 if $count > $limit {
-                    bail!("too many wasm {}", $name);
+                    bail!("too many wasm {}: {} > {}", $name, $count, $limit);
                 }
             };
         }
@@ -610,7 +610,10 @@ impl<'a> WasmBinary<'a> {
         limit!(1_000, bin.exports.len(), "exports");
         limit!(1_000, bin.tables.len(), "tables");
         limit!(10_000, bin.codes.len(), "functions");
-        limit!(10_000, bin.globals.len(), "globals");
+        limit!(50_000, bin.globals.len(), "globals");
+        for function in &bin.codes {
+            limit!(4096, function.locals.len(), "locals")
+        }
 
         let max_len = 500;
         macro_rules! too_long {
