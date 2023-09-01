@@ -28,6 +28,7 @@ use wasmer::{
     imports, AsStoreMut, Function, FunctionEnv, Global, Instance, Memory, Module, Pages, Store,
     TypedFunction, Value, WasmTypeList,
 };
+use wasmer_vm::{VMExtern, VMGlobal};
 
 #[derive(Debug)]
 pub struct NativeInstance<E: EvmApi> {
@@ -176,12 +177,17 @@ impl<E: EvmApi> NativeInstance<E> {
     }
 
     pub fn set_meter_data(&mut self) {
-        let store = &mut self.store;
+        let store_objects = &mut self.store.objects_mut();
         let exports = &self.instance.exports;
 
-        let expect_global = |name| -> Global { exports.get_global(name).unwrap().clone() };
-        let ink_left = unsafe { expect_global(STYLUS_INK_LEFT).vmglobal(store) };
-        let ink_status = unsafe { expect_global(STYLUS_INK_STATUS).vmglobal(store) };
+        let expect_global = |name| -> &VMGlobal {
+            let VMExtern::Global(sh) = exports.get_extern(name).unwrap().to_vm_extern() else {
+                panic!("name not found global");
+            };
+            sh.get(store_objects)
+        };
+        let ink_left = expect_global(STYLUS_INK_LEFT).vmglobal();
+        let ink_status = expect_global(STYLUS_INK_STATUS).vmglobal();
 
         self.env_mut().meter = Some(MeterData {
             ink_left,

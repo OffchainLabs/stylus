@@ -76,7 +76,7 @@ pub fn compile_user_wasm(mut env: WasmEnvMut, sp: u32) {
 ///     || mach || calldata... || params || evmApi... || evmData || gas || root || status | 3 pad | out ptr ||
 ///
 pub fn call_user_wasm(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let sp = &mut GoStack::simple(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
     use UserOutcome::*;
 
     // move inputs
@@ -95,7 +95,7 @@ pub fn call_user_wasm(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     sp.skip_u64();
 
     let result = exec_wasm(
-        &mut sp, data, module, calldata, compile, config, evm_api, evm_data, ink,
+        &mut sp, env, module, calldata, compile, config, evm_api, evm_data, ink,
     );
     let (outcome, ink_left) = result.map_err(Escape::Child)?;
 
@@ -151,8 +151,8 @@ pub fn rust_vec_into_slice(mut env: WasmEnvMut, sp: u32) {
 /// The Go compiler expects the call to take the form
 ///     λ(module *Vec<u8>)
 ///
-pub fn drop_machine(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
+pub fn drop_machine(mut env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &mut env);
     if let Some(module) = sp.unbox_option::<Vec<u8>>() {
         mem::drop(module);
     }

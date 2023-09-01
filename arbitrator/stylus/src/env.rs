@@ -16,9 +16,7 @@ use std::{
     ptr::NonNull,
 };
 use thiserror::Error;
-use wasmer::{
-    FunctionEnvMut, Memory, MemoryAccessError, MemoryView, Pages, StoreMut, WasmPtr,
-};
+use wasmer::{FunctionEnvMut, Memory, MemoryAccessError, MemoryView, Pages, StoreMut, WasmPtr};
 use wasmer_types::RawValue;
 use wasmer_vm::VMGlobalDefinition;
 
