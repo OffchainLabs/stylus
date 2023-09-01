@@ -25,7 +25,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 use wasmer::{
-    imports, AsStoreMut, Function, FunctionEnv, Global, Instance, Memory, Module, Pages, Store,
+    imports, AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages, Store,
     TypedFunction, Value, WasmTypeList,
 };
 use wasmer_vm::{VMExtern, VMGlobal};
