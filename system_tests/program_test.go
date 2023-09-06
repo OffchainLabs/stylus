@@ -862,6 +862,42 @@ func testMemory(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
+func TestProgramAcivationLogs(t *testing.T) {
+	t.Parallel()
+	ctx, _, _, l2client, auth, cleanup := setupProgramTest(t, true)
+	defer cleanup()
+
+	wasm := readWasmFile(t, watFile("memory"))
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+
+	nolimitAuth := auth
+	nolimitAuth.GasLimit = 32000000
+
+	programAddress := deployContract(t, ctx, auth, l2client, wasm)
+
+	tx, err := arbWasm.ActivateProgram(&auth, programAddress)
+	Require(t, err)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+
+	if len(receipt.Logs) != 1 {
+		Fatal(t, "expected 1 log while activating, got ", len(receipt.Logs))
+	}
+	parsed, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
+	if err != nil {
+		Fatal(t, "parsing activated log: ", err)
+	}
+	if parsed.Version == 0 {
+		Fatal(t, "activated program with version 0")
+	}
+	if parsed.Program != programAddress {
+		Fatal(t, "unexpected program in activation log: ", parsed.Program)
+	}
+	if !bytes.Equal(crypto.Keccak256(wasm), parsed.Codehash[:]) {
+		Fatal(t, "unexpected codehash in activation log: ", parsed.Codehash)
+	}
+}
+
 func TestProgramActivateFails(t *testing.T) {
 	t.Parallel()
 	testActivateFails(t, true)
