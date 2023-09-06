@@ -874,11 +874,12 @@ func TestProgramAcivationLogs(t *testing.T) {
 	nolimitAuth := auth
 	nolimitAuth.GasLimit = 32000000
 
-	programAddress := deployContract(t, ctx, auth, l2client, wasm)
+	programAddress := deployContract(t, ctx, nolimitAuth, l2client, wasm)
 
 	tx, err := arbWasm.ActivateProgram(&auth, programAddress)
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
 
 	if len(receipt.Logs) != 1 {
 		Fatal(t, "expected 1 log while activating, got ", len(receipt.Logs))
