@@ -170,42 +170,42 @@ func (p Programs) SetCallScalar(scalar uint16) error {
 	return p.callScalar.Set(scalar)
 }
 
-func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode bool) (uint16, bool, error) {
+func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode bool) (common.Hash, uint16, bool, error) {
 	statedb := evm.StateDB
 	codeHash := statedb.GetCodeHash(address)
 
 	version, err := p.StylusVersion()
 	if err != nil {
-		return 0, false, err
+		return common.Hash{}, 0, false, err
 	}
 	latest, err := p.CodehashVersion(codeHash)
 	if err != nil {
-		return 0, false, err
+		return common.Hash{}, 0, false, err
 	}
 	// Already compiled and found in the machine versions mapping.
 	if latest >= version {
-		return 0, false, ProgramUpToDateError()
+		return common.Hash{}, 0, false, ProgramUpToDateError()
 	}
 	wasm, err := getWasm(statedb, address)
 	if err != nil {
-		return 0, false, err
+		return common.Hash{}, 0, false, err
 	}
 
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit, err := p.PageLimit()
 	if err != nil {
-		return 0, false, err
+		return common.Hash{}, 0, false, err
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
 	// charge 3 million up front to begin compilation
 	burner := p.programs.Burner()
 	if err := burner.Burn(3000000); err != nil {
-		return 0, false, err
+		return common.Hash{}, 0, false, err
 	}
 	info, compiledHash, err := compileUserWasm(statedb, address, wasm, pageLimit, version, debugMode, burner)
 	if err != nil {
-		return 0, true, err
+		return common.Hash{}, 0, true, err
 	}
 
 	// wasmSize is stored as half kb units, rounding up
@@ -217,7 +217,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 		version:      version,
 		compiledHash: compiledHash,
 	}
-	return version, false, p.setProgram(codeHash, programData)
+	return codeHash, version, false, p.setProgram(codeHash, programData)
 }
 
 func (p Programs) CallProgram(
