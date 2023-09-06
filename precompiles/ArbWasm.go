@@ -6,8 +6,8 @@ package precompiles
 type ArbWasm struct {
 	Address addr // 0x71
 
-	ProgramActivated         func(ctx, mech, addr, hash, uint16) error
-	ProgramActivatedGasCost  func(addr, hash, uint16) (uint64, error)
+	ProgramActivated         func(ctx, mech, hash, addr, uint16) error
+	ProgramActivatedGasCost  func(hash, addr, uint16) (uint64, error)
 	ProgramNotActivatedError func() error
 	ProgramOutOfDateError    func(version uint16) error
 	ProgramUpToDateError     func() error
@@ -23,14 +23,14 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, program addr) (uint16, error
 	if err != nil {
 		return version, err
 	}
-	eventGas, err := con.ProgramActivatedGasCost(program, codeHash, version)
+	eventGas, err := con.ProgramActivatedGasCost(codeHash, program, version)
 	if err != nil {
 		return version, err
 	}
 	if c.gasLeft < eventGas {
 		return version, c.Burn(eventGas)
 	}
-	return version, con.ProgramActivated(c, evm, program, codeHash, version)
+	return version, con.ProgramActivated(c, evm, codeHash, program, version)
 }
 
 // Gets the latest stylus version
