@@ -41,11 +41,11 @@ func init() {
 
 	nodeInterfaceImpl := &NodeInterface{Address: types.NodeInterfaceAddress}
 	nodeInterfaceMeta := node_interfacegen.NodeInterfaceMetaData
-	_, nodeInterface := precompiles.MakePrecompile(nodeInterfaceMeta, nodeInterfaceImpl)
+	_, nodeInterface := precompiles.MakePrecompile(nodeInterfaceMeta, nodeInterfaceImpl, 1)
 
 	nodeInterfaceDebugImpl := &NodeInterfaceDebug{Address: types.NodeInterfaceDebugAddress}
 	nodeInterfaceDebugMeta := node_interfacegen.NodeInterfaceDebugMetaData
-	_, nodeInterfaceDebug := precompiles.MakePrecompile(nodeInterfaceDebugMeta, nodeInterfaceDebugImpl)
+	_, nodeInterfaceDebug := precompiles.MakePrecompile(nodeInterfaceDebugMeta, nodeInterfaceDebugImpl, 1)
 
 	core.InterceptRPCMessage = func(
 		msg *core.Message,

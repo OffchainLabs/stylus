@@ -69,6 +69,10 @@ type Precompile struct {
 	arbosVersion  uint64
 }
 
+func (p *Precompile) ArbOSVersion() uint64 {
+	return p.arbosVersion
+}
+
 type PrecompileMethod struct {
 	name         string
 	template     abi.Method
@@ -118,7 +122,7 @@ func (e *SolError) Error() string {
 
 // MakePrecompile makes a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
 // supports each method.
-func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Precompile) {
+func MakePrecompile(metadata *bind.MetaData, implementer interface{}, arbOSVer uint64) (addr, *Precompile) {
 	source, err := abi.JSON(strings.NewReader(metadata.ABI))
 	if err != nil {
 		log.Crit("Bad ABI")
@@ -159,7 +163,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 	methods := make(map[[4]byte]*PrecompileMethod)
 	methodsByName := make(map[string]*PrecompileMethod)
 	events := make(map[string]PrecompileEvent)
-	errors := make(map[string]PrecompileError)
+	errs := make(map[string]PrecompileError)
 
 	for _, method := range source.Methods {
 
@@ -498,7 +502,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 
 		errorReturnPointer.Set(reflect.MakeFunc(field.Type, errorReturn))
 
-		errors[name] = PrecompileError{
+		errs[name] = PrecompileError{
 			name,
 			solErr,
 		}
@@ -508,15 +512,25 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 		methods,
 		methodsByName,
 		events,
-		errors,
+		errs,
 		contract,
 		reflect.ValueOf(implementer),
 		address,
-		0,
+		arbOSVer,
 	}
 }
 
-func Precompiles() map[addr]ArbosPrecompile {
+func ArbOSVersionPrecompileAddresses(chainConfig *params.ChainConfig) map[uint64][]common.Address {
+	arbOSVersionPrecompileAddresses := make(map[uint64][]common.Address)
+	for addr, precompile := range Precompiles(chainConfig) {
+		arbOSVersionPrecompileAddresses[precompile.Precompile().ArbOSVersion()] =
+			append(arbOSVersionPrecompileAddresses[precompile.Precompile().ArbOSVersion()], addr)
+	}
+
+	return arbOSVersionPrecompileAddresses
+}
+
+func Precompiles(chainConfig *params.ChainConfig) map[addr]ArbosPrecompile {
 
 	//nolint:gocritic
 	hex := func(s string) addr {
@@ -530,17 +544,17 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return impl.Precompile()
 	}
 
-	insert(MakePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}))
-	insert(MakePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}))
-	insert(MakePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
-	insert(MakePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
-	insert(MakePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
-	ArbGasInfo := insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
+	insert(MakePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}, 1))
+	insert(MakePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}, 1))
+	insert(MakePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}, 1))
+	insert(MakePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}, 1))
+	insert(MakePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}, 1))
+	ArbGasInfo := insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}, 1))
 	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = 10
 	ArbGasInfo.methodsByName["GetL1RewardRate"].arbosVersion = 11
 	ArbGasInfo.methodsByName["GetL1RewardRecipient"].arbosVersion = 11
-	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
-	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
+	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}, 1))
+	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}, 1))
 
 	eventCtx := func(gasLimit uint64, err error) *Context {
 		if err != nil {
@@ -552,19 +566,20 @@ func Precompiles() map[addr]ArbosPrecompile {
 		}
 	}
 
-	ArbOwnerPublic := insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
+	ArbOwnerPublic := insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}, 1))
 	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = 11
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
-	ArbWasm := insert(MakePrecompile(templates.ArbWasmMetaData, ArbWasmImpl))
-	ArbWasm.arbosVersion = 10
+	// TODO: Change to first version Stylus is an option in ArbOS
+	insert(stylusWrapper(MakePrecompile(templates.ArbWasmMetaData, ArbWasmImpl, chainConfig.ArbitrumChainParams.StylusArbOSVersion)))
 	programs.ProgramNotActivatedError = ArbWasmImpl.ProgramNotActivatedError
 	programs.ProgramOutOfDateError = ArbWasmImpl.ProgramOutOfDateError
 	programs.ProgramUpToDateError = ArbWasmImpl.ProgramUpToDateError
+	programs.ProgramStylusDisabledError = ArbWasmImpl.ProgramStylusDisabledError
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
-	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
+	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl, 1))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
 	arbos.EmitReedeemScheduledEvent = func(
@@ -582,7 +597,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
 	}
 
-	ArbSys := insert(MakePrecompile(templates.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
+	ArbSys := insert(MakePrecompile(templates.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}, 1))
 	arbos.ArbSysAddress = ArbSys.address
 	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
 	arbos.L2ToL1TxEventID = ArbSys.events["L2ToL1Tx"].template.ID
@@ -592,16 +607,16 @@ func Precompiles() map[addr]ArbosPrecompile {
 		context := eventCtx(ArbOwnerImpl.OwnerActsGasCost(method, owner, data))
 		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
 	}
-	_, ArbOwner := MakePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
+	_, ArbOwner := MakePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl, 1)
 	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
 	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = 11
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
-	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
+	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")}, 1)))
 
-	ArbosActs := insert(MakePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
+	ArbosActs := insert(MakePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}, 1))
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
 	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
 

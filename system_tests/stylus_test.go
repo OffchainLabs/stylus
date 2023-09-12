@@ -55,3 +55,22 @@ func TestProgramArbitratorActivateFails(t *testing.T) {
 	t.Parallel()
 	testActivateFails(t, false)
 }
+
+func TestProgramArbitratorSdkStorage(t *testing.T) {
+	t.Parallel()
+	testSdkStorage(t, false)
+}
+
+func TestProgramArbitratorPreStylus(t *testing.T) {
+	t.Parallel()
+	testPreStylus(t, false)
+}
+func TestProgramArbitratorStylusDisabled(t *testing.T) {
+	t.Parallel()
+	testStylusDisabled(t, false)
+}
+
+func TestProgramArbitratorStylusEnabled(t *testing.T) {
+	t.Parallel()
+	testStylusEnabled(t, false)
+}

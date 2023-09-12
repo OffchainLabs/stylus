@@ -7,9 +7,10 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbos/storage"
-
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbos/storage"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -44,7 +45,7 @@ func TestRetryableRedeem(t *testing.T) {
 	Require(t, err)
 
 	retryAddress := common.HexToAddress("6e")
-	_, gasLeft, err := Precompiles()[retryAddress].Call(
+	_, gasLeft, err := Precompiles(params.ArbitrumDevTestChainConfig())[retryAddress].Call(
 		redeemCalldata,
 		retryAddress,
 		retryAddress,

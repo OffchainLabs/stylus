@@ -10,6 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/precompiles"
 )
@@ -56,7 +58,8 @@ func init() {
 	}
 
 	precompileErrors := make(map[[4]byte]abi.Error)
-	for addr, precompile := range precompiles.Precompiles() {
+	// Precompile ArbOS version ignored during init, so specific ChainConfig version doesn't matter
+	for addr, precompile := range precompiles.Precompiles(params.ArbitrumOneChainConfig()) {
 		for _, errABI := range precompile.Precompile().GetErrorABIs() {
 			var id [4]byte
 			copy(id[:], errABI.ID[:4])

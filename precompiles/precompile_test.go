@@ -25,7 +25,7 @@ func TestEvents(t *testing.T) {
 	evm.Context.BlockNumber = big.NewInt(int64(blockNumber))
 
 	debugContractAddr := common.HexToAddress("ff")
-	contract := Precompiles()[debugContractAddr]
+	contract := Precompiles(params.ArbitrumDevTestChainConfig())[debugContractAddr]
 
 	var method *PrecompileMethod
 	for _, available := range contract.Precompile().methods {
@@ -130,7 +130,7 @@ func TestEvents(t *testing.T) {
 
 func TestEventCosts(t *testing.T) {
 	debugContractAddr := common.HexToAddress("ff")
-	contract := Precompiles()[debugContractAddr]
+	contract := Precompiles(params.ArbitrumDevTestChainConfig())[debugContractAddr]
 
 	//nolint:errcheck
 	impl := contract.Precompile().implementer.Interface().(*ArbDebug)

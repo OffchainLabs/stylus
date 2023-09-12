@@ -934,9 +934,9 @@ func deployContractInitCode(code []byte, revert bool) []byte {
 	return deploy
 }
 
-func deployContract(
+func deployContractImpl(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
-) common.Address {
+) (common.Address, error) {
 	deploy := deployContractInitCode(code, false)
 	basefee := GetBaseFee(t, client, ctx)
 	nonce, err := client.NonceAt(ctx, auth.From, nil)
@@ -948,26 +948,45 @@ func deployContract(
 		Value:     big.NewInt(0),
 		Data:      deploy,
 	})
-	Require(t, err)
+	if err != nil {
+		return common.Address{}, err
+	}
+
 	tx := types.NewContractCreation(nonce, big.NewInt(0), gas, basefee, deploy)
 	tx, err = auth.Signer(auth.From, tx)
 	Require(t, err)
 	Require(t, client.SendTransaction(ctx, tx))
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
-	return crypto.CreateAddress(auth.From, nonce)
+	return crypto.CreateAddress(auth.From, nonce), nil
 }
 
-func sendContractCall(
+func deployContract(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
+) common.Address {
+	addr, err := deployContractImpl(t, ctx, auth, client, code)
+	Require(t, err)
+
+	return addr
+}
+
+func sendContractCallImpl(
 	t *testing.T, ctx context.Context, to common.Address, client *ethclient.Client, data []byte,
-) []byte {
+) ([]byte, error) {
 	t.Helper()
 	msg := ethereum.CallMsg{
 		To:    &to,
 		Value: big.NewInt(0),
 		Data:  data,
 	}
-	res, err := client.CallContract(ctx, msg, nil)
+	return client.CallContract(ctx, msg, nil)
+}
+
+func sendContractCall(
+	t *testing.T, ctx context.Context, to common.Address, client *ethclient.Client, data []byte,
+) []byte {
+	t.Helper()
+	res, err := sendContractCallImpl(t, ctx, to, client, data)
 	Require(t, err)
 	return res
 }

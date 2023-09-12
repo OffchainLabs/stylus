@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/precompiles"
 )
 
 // ArbosState contains ArbOS-related state. It is backed by ArbOS's storage in the persistent stateDB.
@@ -158,27 +159,6 @@ var (
 	programsSubspace     SubspaceID = []byte{8}
 )
 
-// Returns a list of precompiles that only appear in Arbitrum chains (i.e. ArbOS precompiles) at the genesis block
-func getArbitrumOnlyGenesisPrecompiles(chainConfig *params.ChainConfig) []common.Address {
-	rules := chainConfig.Rules(big.NewInt(0), false, 0, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
-	arbPrecompiles := vm.ActivePrecompiles(rules)
-	rules.IsArbitrum = false
-	ethPrecompiles := vm.ActivePrecompiles(rules)
-
-	ethPrecompilesSet := make(map[common.Address]bool)
-	for _, addr := range ethPrecompiles {
-		ethPrecompilesSet[addr] = true
-	}
-
-	var arbOnlyPrecompiles []common.Address
-	for _, addr := range arbPrecompiles {
-		if !ethPrecompilesSet[addr] {
-			arbOnlyPrecompiles = append(arbOnlyPrecompiles, addr)
-		}
-	}
-	return arbOnlyPrecompiles
-}
-
 func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
@@ -192,12 +172,6 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	desiredArbosVersion := chainConfig.ArbitrumChainParams.InitialArbOSVersion
 	if desiredArbosVersion == 0 {
 		return nil, errors.New("cannot initialize to ArbOS version 0")
-	}
-
-	// Solidity requires call targets have code, but precompiles don't.
-	// To work around this, we give precompiles fake code.
-	for _, genesisPrecompile := range getArbitrumOnlyGenesisPrecompiles(chainConfig) {
-		stateDB.SetCode(genesisPrecompile, []byte{byte(vm.INVALID)})
 	}
 
 	// may be the zero address
@@ -272,6 +246,12 @@ func (state *ArbosState) UpgradeArbosVersion(
 			}
 		}
 
+		// Solidity requires call targets have code, but precompiles don't.
+		// To work around this, we give precompiles fake code.
+		for _, genesisPrecompile := range precompiles.ArbOSVersionPrecompileAddresses(chainConfig)[state.arbosVersion] {
+			stateDB.SetCode(genesisPrecompile, []byte{byte(vm.INVALID)})
+		}
+
 		switch state.arbosVersion {
 		case 1:
 			ensure(state.l1PricingState.SetLastSurplus(common.Big0, 1))
@@ -294,9 +274,6 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
 				l1pricing.L1PricerFundsPoolAddress,
 			)))
-
-			// TODO: move to the first version that introduces stylus
-			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
 		case 10:
 			if !chainConfig.DebugMode() {
 				// This upgrade isn't finalized so we only want to support it for testing
@@ -334,6 +311,9 @@ func (state *ArbosState) UpgradeArbosVersion(
 	if firstTime && upgradeTo >= 6 {
 		if upgradeTo < 11 {
 			state.Restrict(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV6))
+		}
+		if chainConfig.ArbitrumStylusEnabled(upgradeTo) {
+			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
 		}
 		state.Restrict(state.l1PricingState.SetEquilibrationUnits(l1pricing.InitialEquilibrationUnitsV6))
 		state.Restrict(state.l2PricingState.SetSpeedLimitPerSecond(l2pricing.InitialSpeedLimitPerSecondV6))

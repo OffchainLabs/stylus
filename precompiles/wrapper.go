@@ -50,6 +50,38 @@ func (wrapper *DebugPrecompile) Precompile() *Precompile {
 	return wrapper.precompile.Precompile()
 }
 
+// StylusPrecompile is a precompile wrapper to ensure precompile reverts until enabled
+type StylusPrecompile struct {
+	precompile ArbosPrecompile
+}
+
+// create a Stylus precompile wrapper
+func stylusWrapper(address addr, impl ArbosPrecompile) (addr, ArbosPrecompile) {
+	return address, &StylusPrecompile{impl}
+}
+
+func (wrapper *StylusPrecompile) Call(
+	input []byte,
+	precompileAddress common.Address,
+	actingAsAddress common.Address,
+	caller common.Address,
+	value *big.Int,
+	readOnly bool,
+	gasSupplied uint64,
+	evm *vm.EVM,
+) ([]byte, uint64, error) {
+	if evm.ChainConfig().ArbitrumStylusEnabled(evm.Context.ArbOSVersion) {
+		con := wrapper.precompile
+		return con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+	}
+	// Take all gas.
+	return nil, 0, errors.New("stylus precompiles are disabled")
+}
+
+func (wrapper *StylusPrecompile) Precompile() *Precompile {
+	return wrapper.precompile.Precompile()
+}
+
 // OwnerPrecompile is a precompile wrapper for those only chain owners may use
 type OwnerPrecompile struct {
 	precompile  ArbosPrecompile
