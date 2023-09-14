@@ -3,13 +3,14 @@
 
 use arbutil::{
     evm::{api::EvmApi, EvmData},
-    pricing, Bytes20, Bytes32, Color,
+    pricing, Bytes20, Bytes32,
 };
+use core::fmt::Display;
 use derivative::Derivative;
 use eyre::{eyre, ErrReport};
 use prover::programs::{config::PricingParams, meter::OutOfInkError, prelude::*};
 use std::{
-    fmt::{Debug, Display},
+    fmt::Debug,
     io,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
@@ -86,7 +87,7 @@ impl<E: EvmApi> WasmEnv<E> {
     }
 
     pub fn say<D: Display>(&self, text: D) {
-        println!("{} {text}", "Stylus says:".yellow());
+        self.evm_api.debug_print(text);
     }
 }
 

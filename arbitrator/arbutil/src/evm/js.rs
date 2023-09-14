@@ -2,12 +2,14 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
+    color::Color,
     evm::{
         api::{EvmApi, EvmApiMethod, EvmApiStatus},
         user::UserOutcomeKind,
     },
     Bytes20, Bytes32,
 };
+use core::fmt::Display;
 use eyre::{bail, eyre, Result};
 use std::fmt::Debug;
 
@@ -306,5 +308,9 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
     fn add_pages(&mut self, pages: u16) -> u64 {
         let [cost] = call!(self, 1, AddPages, pages);
         cost.assert_u64()
+    }
+
+    fn debug_print<D: Display>(&self, text: D) {
+        println!("{} {text}", "JIT Stylus says:".yellow());
     }
 }

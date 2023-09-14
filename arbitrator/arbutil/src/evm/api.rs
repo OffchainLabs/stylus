@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
+use core::fmt::Display;
 use eyre::Result;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -133,4 +134,6 @@ pub trait EvmApi: Send + 'static {
     /// Note: has the side effect of updating Geth's memory usage tracker.
     /// Not analogous to any EVM opcode.
     fn add_pages(&mut self, pages: u16) -> u64;
+
+    fn debug_print<D: Display>(&self, text: D);
 }
