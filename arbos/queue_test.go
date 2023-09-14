@@ -6,14 +6,15 @@ package arbos
 import (
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 func TestQueue(t *testing.T) {
-	state, statedb := arbosState.NewArbosMemoryBackedArbOSState()
+	state, statedb := arbosState.NewArbosMemoryBackedArbOSState(make(map[uint64][]common.Address))
 	sto := state.BackingStorage().OpenSubStorage([]byte{})
 	Require(t, storage.InitializeQueue(sto))
 	q := storage.OpenQueue(sto)

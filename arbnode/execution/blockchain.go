@@ -18,10 +18,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/gethhook"
+	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/statetransfer"
 )
 
@@ -104,7 +106,15 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 		}
 		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData, chainConfig, initMessage, timestamp, accountsPerSync)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(
+		chainDb,
+		initData,
+		chainConfig,
+		initMessage,
+		timestamp,
+		accountsPerSync,
+		precompiles.ArbOSVersionPrecompileAddresses(chainConfig),
+	)
 	if err != nil {
 		return err
 	}

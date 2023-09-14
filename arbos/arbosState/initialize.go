@@ -50,7 +50,15 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
 }
 
-func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (common.Hash, error) {
+func InitializeArbosInDatabase(
+	db ethdb.Database,
+	initData statetransfer.InitDataReader,
+	chainConfig *params.ChainConfig,
+	initMessage *arbostypes.ParsedInitMessage,
+	timestamp uint64,
+	accountsPerSync uint,
+	arbosVersionPrecompileAddresses map[uint64][]common.Address,
+) (common.Hash, error) {
 	stateDatabase := state.NewDatabase(db)
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
@@ -74,7 +82,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	}
 
 	burner := burn.NewSystemBurner(nil, false)
-	arbosState, err := InitializeArbosState(statedb, burner, chainConfig, initMessage)
+	arbosState, err := InitializeArbosState(statedb, burner, chainConfig, initMessage, arbosVersionPrecompileAddresses)
 	if err != nil {
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}

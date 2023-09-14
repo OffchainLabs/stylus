@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -54,7 +55,7 @@ var testChainConfig = &params.ChainConfig{
 
 func TestEthDepositMessage(t *testing.T) {
 
-	_, statedb := arbosState.NewArbosMemoryBackedArbOSState()
+	_, statedb := arbosState.NewArbosMemoryBackedArbOSState(precompiles.ArbOSVersionPrecompileAddresses(params.ArbitrumDevTestChainConfig()))
 	addr := common.HexToAddress("0x32abcdeffffff")
 	balance := common.BigToHash(big.NewInt(789789897789798))
 	balance2 := common.BigToHash(big.NewInt(98))

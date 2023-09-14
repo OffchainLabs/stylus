@@ -20,12 +20,14 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/statetransfer"
 )
 
@@ -140,6 +142,7 @@ func FuzzStateTransition(f *testing.F) {
 			initMessage,
 			0,
 			0,
+			precompiles.ArbOSVersionPrecompileAddresses(chainConfig),
 		)
 		if err != nil {
 			panic(err)

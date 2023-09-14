@@ -23,7 +23,7 @@ import (
 )
 
 func TestOpenNonexistentRetryable(t *testing.T) {
-	state, _ := arbosState.NewArbosMemoryBackedArbOSState()
+	state, _ := arbosState.NewArbosMemoryBackedArbOSState(make(map[uint64][]common.Address))
 	id := common.BigToHash(big.NewInt(978645611142))
 	retryable, err := state.RetryableState().OpenRetryable(id, 0)
 	Require(t, err)
@@ -34,7 +34,7 @@ func TestOpenNonexistentRetryable(t *testing.T) {
 
 func TestRetryableLifecycle(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
-	state, statedb := arbosState.NewArbosMemoryBackedArbOSState()
+	state, statedb := arbosState.NewArbosMemoryBackedArbOSState(make(map[uint64][]common.Address))
 	retryableState := state.RetryableState()
 
 	lifetime := uint64(retryables.RetryableLifetimeSeconds)
@@ -155,7 +155,7 @@ func TestRetryableLifecycle(t *testing.T) {
 
 func TestRetryableCleanup(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
-	state, statedb := arbosState.NewArbosMemoryBackedArbOSState()
+	state, statedb := arbosState.NewArbosMemoryBackedArbOSState(make(map[uint64][]common.Address))
 	retryableState := state.RetryableState()
 
 	id := common.BigToHash(big.NewInt(rand.Int63n(1 << 32)))
@@ -184,7 +184,7 @@ func TestRetryableCleanup(t *testing.T) {
 }
 
 func TestRetryableCreate(t *testing.T) {
-	state, _ := arbosState.NewArbosMemoryBackedArbOSState()
+	state, _ := arbosState.NewArbosMemoryBackedArbOSState(make(map[uint64][]common.Address))
 	id := common.BigToHash(big.NewInt(978645611142))
 	lastTimestamp := uint64(0)
 

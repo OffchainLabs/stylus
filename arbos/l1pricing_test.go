@@ -313,7 +313,7 @@ func _withinOnePercent(v1, v2 *big.Int) bool {
 
 func newMockEVMForTesting() *vm.EVM {
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	_, statedb := arbosState.NewArbosMemoryBackedArbOSState()
+	_, statedb := arbosState.NewArbosMemoryBackedArbOSState(make(map[uint64][]common.Address))
 	context := vm.BlockContext{
 		BlockNumber: big.NewInt(0),
 		GasLimit:    ^uint64(0),

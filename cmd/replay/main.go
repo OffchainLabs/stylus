@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/gethhook"
+	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/wavmio"
 )
 
@@ -257,7 +258,13 @@ func main() {
 			}
 		}
 
-		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, initMessage)
+		_, err = arbosState.InitializeArbosState(
+			statedb,
+			burn.NewSystemBurner(nil, false),
+			chainConfig,
+			initMessage,
+			precompiles.ArbOSVersionPrecompileAddresses(chainConfig),
+		)
 		if err != nil {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
 		}

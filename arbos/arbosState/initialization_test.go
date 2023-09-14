@@ -60,7 +60,15 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	stateroot, err := InitializeArbosInDatabase(raw, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
+	stateroot, err := InitializeArbosInDatabase(
+		raw,
+		initReader,
+		chainConfig,
+		arbostypes.TestInitMessage,
+		0,
+		0,
+		make(map[uint64][]common.Address),
+	)
 	Require(t, err)
 
 	stateDb, err := state.New(stateroot, state.NewDatabase(raw), nil)

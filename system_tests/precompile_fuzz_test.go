@@ -33,7 +33,13 @@ func FuzzPrecompiles(f *testing.F) {
 		}
 		burner := burn.NewSystemBurner(nil, false)
 		chainConfig := params.ArbitrumDevTestChainConfig()
-		_, err = arbosState.InitializeArbosState(sdb, burner, chainConfig, arbostypes.TestInitMessage)
+		_, err = arbosState.InitializeArbosState(
+			sdb,
+			burner,
+			chainConfig,
+			arbostypes.TestInitMessage,
+			precompiles.ArbOSVersionPrecompileAddresses(chainConfig),
+		)
 		if err != nil {
 			panic(err)
 		}

@@ -156,7 +156,7 @@ func newMockEVMForTesting() *vm.EVM {
 
 func newMockEVMForTestingWithVersionAndRunMode(version *uint64, runMode core.MessageRunMode) *vm.EVM {
 	evm := newMockEVMForTestingWithVersion(version)
-	evm.ProcessingHook = arbos.NewTxProcessor(evm, &core.Message{TxRunMode: runMode})
+	evm.ProcessingHook = arbos.NewTxProcessor(evm, &core.Message{TxRunMode: runMode}, ArbOSVersionPrecompileAddresses(evm.ChainConfig()))
 	return evm
 }
 
@@ -165,7 +165,7 @@ func newMockEVMForTestingWithVersion(version *uint64) *vm.EVM {
 	if version != nil {
 		chainConfig.ArbitrumChainParams.InitialArbOSVersion = *version
 	}
-	_, statedb := arbosState.NewArbosMemoryBackedArbOSState()
+	_, statedb := arbosState.NewArbosMemoryBackedArbOSState(ArbOSVersionPrecompileAddresses(chainConfig))
 	context := vm.BlockContext{
 		BlockNumber: big.NewInt(0),
 		GasLimit:    ^uint64(0),

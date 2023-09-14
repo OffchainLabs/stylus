@@ -28,7 +28,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/precompiles"
 )
 
 // ArbosState contains ArbOS-related state. It is backed by ArbOS's storage in the persistent stateDB.
@@ -107,7 +106,9 @@ func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingIn
 }
 
 // NewArbosMemoryBackedArbOSState creates and initializes a memory-backed ArbOS state (for testing only)
-func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
+func NewArbosMemoryBackedArbOSState(
+	arbosVersionPrecompileAddresses map[uint64][]common.Address,
+) (*ArbosState, *state.StateDB) {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
@@ -116,7 +117,7 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	}
 	burner := burn.NewSystemBurner(nil, false)
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	newState, err := InitializeArbosState(statedb, burner, chainConfig, arbostypes.TestInitMessage)
+	newState, err := InitializeArbosState(statedb, burner, chainConfig, arbostypes.TestInitMessage, arbosVersionPrecompileAddresses)
 	if err != nil {
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
@@ -159,7 +160,13 @@ var (
 	programsSubspace     SubspaceID = []byte{8}
 )
 
-func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage) (*ArbosState, error) {
+func InitializeArbosState(
+	stateDB vm.StateDB,
+	burner burn.Burner,
+	chainConfig *params.ChainConfig,
+	initMessage *arbostypes.ParsedInitMessage,
+	arbosVersionPrecompileAddresses map[uint64][]common.Address,
+) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
@@ -210,7 +217,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 	if desiredArbosVersion > 1 {
-		err = aState.UpgradeArbosVersion(desiredArbosVersion, true, stateDB, chainConfig)
+		err = aState.UpgradeArbosVersion(desiredArbosVersion, true, stateDB, chainConfig, arbosVersionPrecompileAddresses)
 		if err != nil {
 			return nil, err
 		}
@@ -219,13 +226,16 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 }
 
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(
-	currentTimestamp uint64, stateDB vm.StateDB, chainConfig *params.ChainConfig,
+	currentTimestamp uint64,
+	stateDB vm.StateDB,
+	chainConfig *params.ChainConfig,
+	arbosVersionPrecompileAddresses map[uint64][]common.Address,
 ) error {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if state.arbosVersion < upgradeTo && currentTimestamp >= flagday {
-		return state.UpgradeArbosVersion(upgradeTo, false, stateDB, chainConfig)
+		return state.UpgradeArbosVersion(upgradeTo, false, stateDB, chainConfig, arbosVersionPrecompileAddresses)
 	}
 	return nil
 }
@@ -233,7 +243,11 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(
 var ErrFatalNodeOutOfDate = errors.New("please upgrade to the latest version of the node software")
 
 func (state *ArbosState) UpgradeArbosVersion(
-	upgradeTo uint64, firstTime bool, stateDB vm.StateDB, chainConfig *params.ChainConfig,
+	upgradeTo uint64,
+	firstTime bool,
+	stateDB vm.StateDB,
+	chainConfig *params.ChainConfig,
+	arbosVersionPrecompileAddresses map[uint64][]common.Address,
 ) error {
 	for state.arbosVersion < upgradeTo {
 		ensure := func(err error) {
@@ -248,7 +262,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 
 		// Solidity requires call targets have code, but precompiles don't.
 		// To work around this, we give precompiles fake code.
-		for _, genesisPrecompile := range precompiles.ArbOSVersionPrecompileAddresses(chainConfig)[state.arbosVersion] {
+		for _, genesisPrecompile := range arbosVersionPrecompileAddresses[state.arbosVersion] {
 			stateDB.SetCode(genesisPrecompile, []byte{byte(vm.INVALID)})
 		}
 

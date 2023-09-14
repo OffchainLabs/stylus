@@ -43,7 +43,12 @@ func InternalTxStartBlock(
 	}
 }
 
-func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) error {
+func ApplyInternalTxUpdate(
+	tx *types.ArbitrumInternalTx,
+	state *arbosState.ArbosState,
+	evm *vm.EVM,
+	arbosVersionPrecompileAddresses map[uint64][]common.Address,
+) error {
 	if len(tx.Data) < 4 {
 		return fmt.Errorf("internal tx data is too short (only %v bytes, at least 4 required)", len(tx.Data))
 	}
@@ -88,7 +93,12 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 
 		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
 
-		return state.UpgradeArbosVersionIfNecessary(currentTime, evm.StateDB, evm.ChainConfig())
+		return state.UpgradeArbosVersionIfNecessary(
+			currentTime,
+			evm.StateDB,
+			evm.ChainConfig(),
+			arbosVersionPrecompileAddresses,
+		)
 	case InternalTxBatchPostingReportMethodID:
 		inputs, err := util.UnpackInternalTxDataBatchPostingReport(tx.Data)
 		if err != nil {

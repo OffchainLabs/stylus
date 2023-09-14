@@ -8,14 +8,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbos/programs"
-	"github.com/offchainlabs/nitro/arbos/retryables"
-	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util/arbmath"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -23,6 +15,14 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	glog "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/programs"
+	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var arbosAddress = types.ArbosAddress
@@ -33,18 +33,19 @@ const GasEstimationL1PricePadding arbmath.Bips = 11000 // pad estimates by 10%
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
 // Public fields are accessible in precompiles.
 type TxProcessor struct {
-	msg              *core.Message
-	state            *arbosState.ArbosState
-	PosterFee        *big.Int // set once in GasChargingHook to track L1 calldata costs
-	posterGas        uint64
-	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
-	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
-	Contracts        []*vm.Contract
-	Programs         map[common.Address]uint // # of distinct context spans for each program
-	TopTxType        *byte                   // set once in StartTxHook
-	evm              *vm.EVM
-	CurrentRetryable *common.Hash
-	CurrentRefundTo  *common.Address
+	msg                             *core.Message
+	state                           *arbosState.ArbosState
+	PosterFee                       *big.Int // set once in GasChargingHook to track L1 calldata costs
+	posterGas                       uint64
+	computeHoldGas                  uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
+	delayedInbox                    bool   // whether this tx was submitted through the delayed inbox
+	Contracts                       []*vm.Contract
+	Programs                        map[common.Address]uint // # of distinct context spans for each program
+	TopTxType                       *byte                   // set once in StartTxHook
+	evm                             *vm.EVM
+	CurrentRetryable                *common.Hash
+	CurrentRefundTo                 *common.Address
+	arbosVersionPrecompileAddresses map[uint64][]common.Address
 
 	// Caches for the latest L1 block number and hash,
 	// for the NUMBER and BLOCKHASH opcodes.
@@ -52,23 +53,24 @@ type TxProcessor struct {
 	cachedL1BlockHashes map[uint64]common.Hash
 }
 
-func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
+func NewTxProcessor(evm *vm.EVM, msg *core.Message, arbosVersionPrecompileAddresses map[uint64][]common.Address) *TxProcessor {
 	tracingInfo := util.NewTracingInfo(evm, msg.From, arbosAddress, util.TracingBeforeEVM)
-	arbosState := arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
+	state := arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 	return &TxProcessor{
-		msg:                 msg,
-		state:               arbosState,
-		PosterFee:           new(big.Int),
-		posterGas:           0,
-		delayedInbox:        evm.Context.Coinbase != l1pricing.BatchPosterAddress,
-		Contracts:           []*vm.Contract{},
-		Programs:            make(map[common.Address]uint),
-		TopTxType:           nil,
-		evm:                 evm,
-		CurrentRetryable:    nil,
-		CurrentRefundTo:     nil,
-		cachedL1BlockNumber: nil,
-		cachedL1BlockHashes: make(map[uint64]common.Hash),
+		msg:                             msg,
+		state:                           state,
+		PosterFee:                       new(big.Int),
+		posterGas:                       0,
+		delayedInbox:                    evm.Context.Coinbase != l1pricing.BatchPosterAddress,
+		Contracts:                       []*vm.Contract{},
+		Programs:                        make(map[common.Address]uint),
+		TopTxType:                       nil,
+		evm:                             evm,
+		CurrentRetryable:                nil,
+		CurrentRefundTo:                 nil,
+		arbosVersionPrecompileAddresses: arbosVersionPrecompileAddresses,
+		cachedL1BlockNumber:             nil,
+		cachedL1BlockHashes:             make(map[uint64]common.Hash),
 	}
 }
 
@@ -187,7 +189,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From != arbosAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
-		err = ApplyInternalTxUpdate(tx, p.state, evm)
+		err = ApplyInternalTxUpdate(tx, p.state, evm, p.arbosVersionPrecompileAddresses)
 		return true, 0, err, nil
 	case *types.ArbitrumSubmitRetryableTx:
 		defer (startTracer())()
