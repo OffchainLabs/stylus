@@ -42,11 +42,53 @@ func (wrapper *DebugPrecompile) Call(
 		con := wrapper.precompile
 		return con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
 	}
+	// Need version check since con.Call skipped
+	if wrapper.Precompile().ArbOSVersion() > evm.Context.ArbOSVersion {
+		// precompile isn't yet active, so treat this call as if it were to a contract that doesn't exist
+		return []byte{}, gasSupplied, nil
+	}
 	// Take all gas.
 	return nil, 0, errors.New("debug precompiles are disabled")
 }
 
 func (wrapper *DebugPrecompile) Precompile() *Precompile {
+	return wrapper.precompile.Precompile()
+}
+
+// StylusPrecompile is a precompile wrapper to ensure precompile reverts until enabled
+type StylusPrecompile struct {
+	precompile ArbosPrecompile
+}
+
+// create a Stylus precompile wrapper
+func stylusWrapper(address addr, impl ArbosPrecompile) (addr, ArbosPrecompile) {
+	return address, &StylusPrecompile{impl}
+}
+
+func (wrapper *StylusPrecompile) Call(
+	input []byte,
+	precompileAddress common.Address,
+	actingAsAddress common.Address,
+	caller common.Address,
+	value *big.Int,
+	readOnly bool,
+	gasSupplied uint64,
+	evm *vm.EVM,
+) ([]byte, uint64, error) {
+	if evm.ChainConfig().ArbitrumStylusEnabled(evm.Context.ArbOSVersion) {
+		con := wrapper.precompile
+		return con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+	}
+	// Need version check since con.Call skipped
+	if wrapper.Precompile().ArbOSVersion() > evm.Context.ArbOSVersion {
+		// precompile isn't yet active, so treat this call as if it were to a contract that doesn't exist
+		return []byte{}, gasSupplied, nil
+	}
+	// Take all gas.
+	return nil, 0, errors.New("stylus is not enabled")
+}
+
+func (wrapper *StylusPrecompile) Precompile() *Precompile {
 	return wrapper.precompile.Precompile()
 }
 
@@ -74,6 +116,12 @@ func (wrapper *OwnerPrecompile) Call(
 	evm *vm.EVM,
 ) ([]byte, uint64, error) {
 	con := wrapper.precompile
+
+	// Check that precompile enabled since check in con.Call would be too late
+	if wrapper.Precompile().ArbOSVersion() > evm.Context.ArbOSVersion {
+		// precompile isn't yet active, so treat this call as if it were to a contract that doesn't exist
+		return []byte{}, gasSupplied, nil
+	}
 
 	burner := &Context{
 		gasSupplied: gasSupplied,

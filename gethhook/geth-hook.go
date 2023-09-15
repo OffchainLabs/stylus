@@ -65,6 +65,8 @@ func init() {
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
 		vm.PrecompiledContractsArbitrum[addr] = wrapped
 		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, addr)
+		vm.ArbosVersionPrecompiledAddresses[precompile.Precompile().ArbOSVersion()] =
+			append(vm.ArbosVersionPrecompiledAddresses[precompile.Precompile().ArbOSVersion()], addr)
 	}
 
 	core.RenderRPCError = func(data []byte) error {

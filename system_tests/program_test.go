@@ -993,15 +993,84 @@ func testSdkStorage(t *testing.T, jit bool) {
 	check()
 }
 
-func setupProgramTest(t *testing.T, jit bool) (
+func TestPreStylus(t *testing.T) {
+	t.Parallel()
+	testPreStylus(t, true)
+}
+
+func testPreStylus(t *testing.T, jit bool) {
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
+	chainConfig.ArbitrumChainParams.StylusArbOSVersion = 11
+	ctx, _, _, l2client, auth, cleanup := setupProgramTestAdvanced(t, jit, chainConfig)
+	defer cleanup()
+	_, _, _, _, err := deployWasmImpl(t, ctx, auth, l2client, rustFile("keccak"))
+	if err == nil || !strings.Contains(err.Error(), "invalid code: must not begin with 0xef") {
+		Fatal(t, "deploy should have failed", err)
+	}
+
+	code, err := l2client.CodeAt(ctx, types.ArbWasmAddress, nil)
+	Require(t, err)
+	if len(code) != 0 {
+		Fatal(t, "code found at ArbWasm address")
+	}
+	nonce, err := l2client.NonceAt(ctx, types.ArbWasmAddress, nil)
+	Require(t, err)
+	if nonce != 0 {
+		Fatal(t, "ArbWasm nonce is not 0", nonce)
+	}
+
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+	_, err = arbWasm.StylusVersion(nil)
+	if err == nil || !strings.Contains(err.Error(), "no contract code at given address") {
+		Fatal(t, "stylus precompiles not disabled", err)
+	}
+
+	// validateBlocks(t, 1, jit, ctx, node, l2client)
+}
+
+func TestStylusDisabled(t *testing.T) {
+	t.Parallel()
+	testStylusDisabled(t, true)
+}
+
+func testStylusDisabled(t *testing.T, jit bool) {
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.StylusArbOSVersion = 0
+	ctx, _, _, l2client, auth, cleanup := setupProgramTestAdvanced(t, jit, chainConfig)
+	defer cleanup()
+	_, _, _, _, err := deployWasmImpl(t, ctx, auth, l2client, rustFile("keccak"))
+	if err == nil || !strings.Contains(err.Error(), "invalid code: must not begin with 0xef") {
+		Fatal(t, "deploy should have failed", err)
+	}
+
+	code, err := l2client.CodeAt(ctx, types.ArbWasmAddress, nil)
+	Require(t, err)
+	if len(code) == 0 {
+		Fatal(t, "code not found at ArbWasm address")
+	}
+	nonce, err := l2client.NonceAt(ctx, types.ArbWasmAddress, nil)
+	Require(t, err)
+	if nonce != 0 {
+		Fatal(t, "ArbWasm nonce is not 0", nonce)
+	}
+
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+	_, err = arbWasm.StylusVersion(nil)
+	if err == nil || !strings.Contains(err.Error(), "stylus is not enabled") {
+		Fatal(t, "stylus precompiles not disabled", err)
+	}
+
+	// validateBlocks(t, 1, jit, ctx, node, l2client)
+}
+
+func setupProgramTestAdvanced(t *testing.T, jit bool, chainConfig *params.ChainConfig) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 	rand.Seed(time.Now().UTC().UnixNano())
-
-	// TODO: track latest ArbOS version
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
 
 	l2config := arbnode.ConfigDefaultL1Test()
 	l2config.BlockValidator.Enable = false
@@ -1047,6 +1116,12 @@ func setupProgramTest(t *testing.T, jit bool) (
 	return ctx, node, l2info, l2client, auth, cleanup
 }
 
+func setupProgramTest(t *testing.T, jit bool) (
+	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, func(),
+) {
+	return setupProgramTestAdvanced(t, jit, params.ArbitrumDevTestChainConfig())
+}
+
 func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 	source, err := os.ReadFile(file)
@@ -1064,15 +1139,26 @@ func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 	return wasm, wasmSource
 }
 
-func deployWasm(
+func deployWasmImpl(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
-) common.Address {
+) (string, []byte, []byte, common.Address, error) {
 	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 	wasm, uncompressed := readWasmFile(t, file)
 	auth.GasLimit = 32000000 // skip gas estimation
-	program := deployContract(t, ctx, auth, l2client, wasm)
-	colors.PrintGrey(name, ": deployed to ", program.Hex())
-	activateWasm(t, ctx, auth, l2client, program, name)
+	program, err := deployContractImpl(t, ctx, auth, l2client, wasm)
+	if err == nil {
+		colors.PrintGrey(name, ": deployed to ", program.Hex())
+		activateWasm(t, ctx, auth, l2client, program, name)
+	}
+
+	return name, wasm, uncompressed, program, err
+}
+
+func deployWasm(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
+) common.Address {
+	name, wasm, uncompressed, program, err := deployWasmImpl(t, ctx, auth, l2client, file)
+	Require(t, err)
 
 	// check that program size matches
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
