@@ -59,6 +59,7 @@ var ErrProgramActivation = errors.New("program activation failed")
 var ProgramNotActivatedError func() error
 var ProgramOutOfDateError func(version uint16) error
 var ProgramUpToDateError func() error
+var ProgramStylusDisabledError func() error
 
 const MaxWasmSize = 128 * 1024
 const initialFreePages = 2
