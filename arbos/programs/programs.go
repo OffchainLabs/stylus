@@ -60,13 +60,13 @@ var ProgramNotActivatedError func() error
 var ProgramOutOfDateError func(version uint16) error
 var ProgramUpToDateError func() error
 
-const MaxWasmSize = 128 * 1024
+const MaxWasmSize = 128 * 1024 * 1024
 const initialFreePages = 2
 const initialPageGas = 1000
 const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
 const initialPageLimit = 128      // reject wasms with memories larger than 8MB
 const initialInkPrice = 10000     // 1 evm gas buys 10k ink
-const initialCallScalar = 8       // call cost per half kb.
+const initialCallScalar = 0       // call cost per half kb.
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedUint24(inkPriceOffset)
