@@ -884,18 +884,18 @@ func TestProgramAcivationLogs(t *testing.T) {
 	if len(receipt.Logs) != 1 {
 		Fatal(t, "expected 1 log while activating, got ", len(receipt.Logs))
 	}
-	parsed, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
+	log, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
 	if err != nil {
 		Fatal(t, "parsing activated log: ", err)
 	}
-	if parsed.Version == 0 {
+	if log.Version == 0 {
 		Fatal(t, "activated program with version 0")
 	}
-	if parsed.Program != programAddress {
-		Fatal(t, "unexpected program in activation log: ", parsed.Program)
+	if log.Program != programAddress {
+		Fatal(t, "unexpected program in activation log: ", log.Program)
 	}
-	if !bytes.Equal(crypto.Keccak256(wasm), parsed.Codehash[:]) {
-		Fatal(t, "unexpected codehash in activation log: ", parsed.Codehash)
+	if crypto.Keccak256Hash(wasm) != log.Codehash {
+		Fatal(t, "unexpected codehash in activation log: ", log.Codehash)
 	}
 }
 
