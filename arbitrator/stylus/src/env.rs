@@ -70,15 +70,24 @@ impl<E: EvmApi> WasmEnv<E> {
         env: &'a mut WasmEnvMut<'_, E>,
         ink: u64,
     ) -> Result<HostioInfo<'a, E>, Escape> {
-        let mut info = Self::start_free(env);
+        let mut info = Self::start_free(env)?;
         info.buy_ink(pricing::HOSTIO_INK + ink)?;
         Ok(info)
     }
 
-    pub fn start_free<'a>(env: &'a mut WasmEnvMut<'_, E>) -> HostioInfo<'a, E> {
+    pub fn start_free<'a>(env: &'a mut WasmEnvMut<'_, E>) -> Result<HostioInfo<'a, E>, Escape> {
         let (env, store) = env.data_and_store_mut();
         let memory = env.memory.clone().unwrap();
-        HostioInfo { env, memory, store }
+        let mut info = HostioInfo {
+            env,
+            memory,
+            store,
+            start_ink: 0,
+        };
+        if info.env.evm_data.tracing {
+            info.start_ink = info.ink_ready()?;
+        }
+        Ok(info)
     }
 
     pub fn meter(&mut self) -> &mut MeterData {
@@ -125,6 +134,7 @@ pub struct HostioInfo<'a, E: EvmApi> {
     pub env: &'a mut WasmEnv<E>,
     pub memory: Memory,
     pub store: StoreMut<'a>,
+    pub start_ink: u64,
 }
 
 impl<'a, E: EvmApi> HostioInfo<'a, E> {
@@ -197,6 +207,11 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
     pub fn write_bytes32(&self, ptr: u32, src: Bytes32) -> eyre::Result<()> {
         self.write_slice(ptr, &src.0)?;
         Ok(())
+    }
+
+    pub fn trace(&self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64) {
+        self.evm_api
+            .capture_hostio(name, args, outs, start_ink, end_ink);
     }
 }
 

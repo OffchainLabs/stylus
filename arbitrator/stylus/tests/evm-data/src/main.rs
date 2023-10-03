@@ -42,7 +42,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     // Call burnArbGas
     let gas_left_before = evm::gas_left();
     let ink_left_before = evm::ink_left();
-    unsafe { RawCall::new().call(arb_test_addr, burn_call_data)? };
+    RawCall::new().call(arb_test_addr, burn_call_data)?;
     let gas_left_after = evm::gas_left();
     let ink_left_after = evm::ink_left();
 
@@ -61,9 +61,9 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(origin.into_word());
     output.extend(coinbase.into_word());
 
-    output.extend(contract_codehash.unwrap_or_default());
-    output.extend(arb_precompile_codehash.unwrap_or_default());
-    output.extend(eth_precompile_codehash.unwrap_or_default());
+    output.extend(contract_codehash);
+    output.extend(arb_precompile_codehash);
+    output.extend(eth_precompile_codehash);
 
     output.extend(ink_price.to_be_bytes());
     output.extend(gas_left_before.to_be_bytes());
