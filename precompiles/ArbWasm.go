@@ -15,20 +15,14 @@ type ArbWasm struct {
 
 // Compile a wasm program with the latest instrumentation
 func (con ArbWasm) ActivateProgram(c ctx, evm mech, program addr) (uint16, error) {
-	codeHash, version, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, evm.ChainConfig().DebugMode())
+	programs := c.State.Programs()
+	codeHash, version, takeAllGas, err := programs.ActivateProgram(evm, program, evm.ChainConfig().DebugMode())
 	if takeAllGas {
 		_ = c.BurnOut()
 		return version, err
 	}
 	if err != nil {
 		return version, err
-	}
-	eventGas, err := con.ProgramActivatedGasCost(codeHash, program, version)
-	if err != nil {
-		return version, err
-	}
-	if c.gasLeft < eventGas {
-		return version, c.Burn(eventGas)
 	}
 	return version, con.ProgramActivated(c, evm, codeHash, program, version)
 }

@@ -176,36 +176,36 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 
 	version, err := p.StylusVersion()
 	if err != nil {
-		return common.Hash{}, 0, false, err
+		return codeHash, 0, false, err
 	}
 	latest, err := p.CodehashVersion(codeHash)
 	if err != nil {
-		return common.Hash{}, 0, false, err
+		return codeHash, 0, false, err
 	}
 	// Already compiled and found in the machine versions mapping.
 	if latest >= version {
-		return common.Hash{}, 0, false, ProgramUpToDateError()
+		return codeHash, 0, false, ProgramUpToDateError()
 	}
 	wasm, err := getWasm(statedb, address)
 	if err != nil {
-		return common.Hash{}, 0, false, err
+		return codeHash, 0, false, err
 	}
 
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit, err := p.PageLimit()
 	if err != nil {
-		return common.Hash{}, 0, false, err
+		return codeHash, 0, false, err
 	}
 	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
 
 	// charge 3 million up front to begin compilation
 	burner := p.programs.Burner()
 	if err := burner.Burn(3000000); err != nil {
-		return common.Hash{}, 0, false, err
+		return codeHash, 0, false, err
 	}
 	info, compiledHash, err := compileUserWasm(statedb, address, wasm, pageLimit, version, debugMode, burner)
 	if err != nil {
-		return common.Hash{}, 0, true, err
+		return codeHash, 0, true, err
 	}
 
 	// wasmSize is stored as half kb units, rounding up
