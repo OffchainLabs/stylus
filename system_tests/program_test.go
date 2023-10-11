@@ -250,6 +250,44 @@ func errorTest(t *testing.T, jit bool) {
 	validateBlocks(t, 6, jit, ctx, node, l2client)
 }
 
+func TestReentry(t *testing.T) {
+	t.Parallel()
+	reentryTest(t, true)
+}
+
+func reentryTest(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	defer cleanup()
+
+	enterAddress := deployWasm(t, ctx, auth, l2client, rustFile("reentrant-enter"))
+	reenterAddress := deployWasm(t, ctx, auth, l2client, rustFile("reentrant-reenter"))
+	counter := byte(2)
+
+	var callData []byte
+	callData = append(callData, enterAddress.Bytes()...)
+	callData = append(callData, reenterAddress.Bytes()...)
+	callData = append(callData, counter)
+
+	// ensure tx passes
+	tx := l2info.PrepareTxTo("Owner", &enterAddress, l2info.TransferGas, nil, callData)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	/*
+		// ensure tx fails
+		tx = l2info.PrepareTxTo("Owner", &enterAddress, l2info.TransferGas, nil, []byte{0x00})
+		Require(t, l2client.SendTransaction(ctx, tx))
+		receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
+		Require(t, err)
+		if receipt.Status != types.ReceiptStatusFailed {
+			Fatal(t, "call should have failed")
+		}
+	*/
+
+	validateBlocks(t, 6, jit, ctx, node, l2client)
+}
+
 func TestProgramStorage(t *testing.T) {
 	t.Parallel()
 	storageTest(t, true)
@@ -707,7 +745,7 @@ func testEvmData(t *testing.T, jit bool) {
 	ethPrecompile := common.BigToAddress(big.NewInt(1))
 	arbTestAddress := types.ArbosTestAddress
 
-	evmDataData := []byte{}
+	var evmDataData []byte
 	evmDataData = append(evmDataData, fundedAddr.Bytes()...)
 	evmDataData = append(evmDataData, ethPrecompile.Bytes()...)
 	evmDataData = append(evmDataData, arbTestAddress.Bytes()...)
