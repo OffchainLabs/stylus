@@ -261,7 +261,7 @@ func reentryTest(t *testing.T, jit bool) {
 
 	enterAddress := deployWasm(t, ctx, auth, l2client, rustFile("reentrant-enter"))
 	reenterAddress := deployWasm(t, ctx, auth, l2client, rustFile("reentrant-reenter"))
-	counter := byte(2)
+	counter := byte(16)
 
 	var callData []byte
 	callData = append(callData, enterAddress.Bytes()...)
@@ -285,7 +285,7 @@ func reentryTest(t *testing.T, jit bool) {
 		}
 	*/
 
-	validateBlocks(t, 6, jit, ctx, node, l2client)
+	validateBlocks(t, 7, jit, ctx, node, l2client)
 }
 
 func TestProgramStorage(t *testing.T) {
