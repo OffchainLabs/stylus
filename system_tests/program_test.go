@@ -274,16 +274,19 @@ func reentryTest(t *testing.T, jit bool) {
 	_, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	/*
-		// ensure tx fails
-		tx = l2info.PrepareTxTo("Owner", &enterAddress, l2info.TransferGas, nil, []byte{0x00})
-		Require(t, l2client.SendTransaction(ctx, tx))
-		receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
-		Require(t, err)
-		if receipt.Status != types.ReceiptStatusFailed {
-			Fatal(t, "call should have failed")
-		}
-	*/
+	// ensure tx fails
+	var callData2 []byte
+	counter2 := byte(100)
+	callData2 = append(callData2, enterAddress.Bytes()...)
+	callData2 = append(callData2, reenterAddress.Bytes()...)
+	callData2 = append(callData2, counter2)
+	tx = l2info.PrepareTxTo("Owner", &enterAddress, l2info.TransferGas, nil, callData2)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusFailed {
+		Fatal(t, "call should have failed")
+	}
 
 	validateBlocks(t, 7, jit, ctx, node, l2client)
 }
