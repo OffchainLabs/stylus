@@ -20,5 +20,5 @@ use stylus_sdk::{
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let dest = Address::from_slice(input[0..20].try_into().unwrap());
 
-    RawCall::new().call(dest, input.as_slice())
+    unsafe{RawCall::new().call(dest, input.as_slice())}
 }
