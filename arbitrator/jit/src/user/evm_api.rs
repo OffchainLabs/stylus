@@ -44,8 +44,13 @@ impl JsCallIntoGo for ApiCaller {
     fn call_go(&mut self, func: u32, args: Vec<ApiValue>) -> Vec<ApiValue> {
         let (tx, rx) = mpsc::sync_channel(0);
         let msg = EvmMsg::Call(func, args, tx);
-        self.parent.send(msg).unwrap();
-        rx.recv().unwrap()
+        if let Err(err) = self.parent.send(msg) {
+            panic!("{}", err.to_string())
+        }
+        match rx.recv() {
+            Ok(result) => result,
+            Err(err) => panic!("{}", err.to_string()),
+        }
     }
 }
 
