@@ -4,7 +4,7 @@
 #![allow(clippy::useless_transmute)]
 
 use crate::{
-    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
+    machine::{Escape::{self, Failure}, MaybeEscape, WasmEnv, WasmEnvMut},
     syscall::JsValue,
     wavmio::{Bytes20, Bytes32},
 };
@@ -150,52 +150,80 @@ impl GoStack {
         (!ptr.is_null()).then(|| unsafe { *Box::from_raw(ptr) })
     }
 
-    pub fn write_u8(&mut self, x: u8) -> &mut Self {
+    pub fn try_write_u8(&mut self, x: u8) -> Result<&mut Self, Escape> {
         let ptr = self.advance(1);
         self.write_u8_raw(ptr, x)
     }
 
-    pub fn write_u16(&mut self, x: u16) -> &mut Self {
+    pub fn write_u8(&mut self, x: u8) -> &mut Self {
+        self.try_write_u8(x).unwrap()
+    }
+
+    pub fn try_write_u16(&mut self, x: u16) -> Result<&mut Self, Escape> {
         let ptr = self.advance(2);
         self.write_u16_raw(ptr, x)
     }
 
-    pub fn write_u32(&mut self, x: u32) -> &mut Self {
+    pub fn write_u16(&mut self, x: u16) -> &mut Self {
+        self.try_write_u16(x).unwrap()
+    }
+
+    pub fn try_write_u32(&mut self, x: u32) -> Result<&mut Self, Escape> {
         let ptr = self.advance(4);
         self.write_u32_raw(ptr, x)
     }
 
-    pub fn write_u64(&mut self, x: u64) -> &mut Self {
+    pub fn write_u32(&mut self, x: u32) -> &mut Self {
+        self.try_write_u32(x).unwrap()
+    }
+
+    pub fn try_write_u64(&mut self, x: u64) -> Result<&mut Self, Escape> {
         let ptr = self.advance(8);
         self.write_u64_raw(ptr, x)
     }
 
-    pub fn write_u8_raw(&mut self, ptr: u32, x: u8) -> &mut Self {
+    pub fn write_u64(&mut self, x: u64) -> &mut Self {
+        self.try_write_u64(x).unwrap()
+    }
+
+    pub fn write_u8_raw(&mut self, ptr: u32, x: u8) -> Result<&mut Self, Escape> {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).write(x).unwrap();
-        self
+        match ptr.deref(self.view()).write(x) {
+            Err(err) => Err(Failure(err.to_string())),
+            Ok(_) => Ok(self),
+        }
     }
 
-    pub fn write_u16_raw(&mut self, ptr: u32, x: u16) -> &mut Self {
+    pub fn write_u16_raw(&mut self, ptr: u32, x: u16) -> Result<&mut Self, Escape> {
         let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).write(x).unwrap();
-        self
+        match ptr.deref(self.view()).write(x) {
+            Err(err) => Err(Failure(err.to_string())),
+            Ok(_) => Ok(self),
+        }
     }
 
-    pub fn write_u32_raw(&mut self, ptr: u32, x: u32) -> &mut Self {
+    pub fn write_u32_raw(&mut self, ptr: u32, x: u32) -> Result<&mut Self, Escape> {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).write(x).unwrap();
-        self
+        match ptr.deref(self.view()).write(x) {
+            Err(err) => Err(Failure(err.to_string())),
+            Ok(_) => Ok(self),
+        }
     }
 
-    pub fn write_u64_raw(&mut self, ptr: u32, x: u64) -> &mut Self {
+    pub fn write_u64_raw(&mut self, ptr: u32, x: u64) -> Result<&mut Self, Escape> {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
-        ptr.deref(self.view()).write(x).unwrap();
-        self
+        match ptr.deref(self.view()).write(x) {
+            Err(err) => Err(Failure(err.to_string())),
+            Ok(_) => Ok(self),
+        }
+    }
+
+    pub fn try_write_ptr<T>(&mut self, ptr: *const T) -> Result<&mut Self, Escape> {
+        self.try_write_u64(ptr as u64)
     }
 
     pub fn write_ptr<T>(&mut self, ptr: *const T) -> &mut Self {
-        self.write_u64(ptr as u64)
+        self.try_write_ptr(ptr).unwrap()
     }
 
     pub fn write_nullptr(&mut self) -> &mut Self {

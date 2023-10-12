@@ -104,9 +104,9 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
         Ok(outcome) => outcome,
     };
     let (kind, outs) = outcome.into_data();
-    sp.write_u8(kind.into()).skip_space();
-    sp.write_ptr(heapify(outs));
-    sp.write_u64_raw(gas, pricing.ink_to_gas(ink_left));
+    sp.try_write_u8(kind.into())?.skip_space();
+    sp.try_write_ptr(heapify(outs))?;
+    sp.write_u64_raw(gas, pricing.ink_to_gas(ink_left))?;
     Ok(())
 }
 
