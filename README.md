@@ -26,7 +26,7 @@ This repo is a fork of [Arbitrum Nitro][Nitro] and is designed as an upgrade for
 [Nitro]: https://github.com/OffchainLabs/nitro
 [Orbit]: https://docs.arbitrum.io/launch-orbit-chain/orbit-gentle-introduction
 
-Stylus is entirely opt-in. Devs familiar with Solidity can continue to enjoy Arbitrum's EVM-equivalent experience without any changes. This is because Stylus is entirely additive &mdash; a model we call EVM+. Stylus introduces a second, fully composible virtual machine for executing WebAssembly that coordinates with the EVM to produce state transitions. And since the Stylus SDK uses solidity ABIs, a contract written in one language can call out to any other.
+Stylus is entirely opt-in. Devs familiar with Solidity can continue to enjoy Arbitrum's EVM-equivalent experience without any changes. This is because Stylus is entirely additive &mdash; a model we call EVM+. Stylus introduces a second, fully composable virtual machine for executing WebAssembly that coordinates with the EVM to produce state transitions. And since the Stylus SDK uses solidity ABIs, a contract written in one language can call out to any other.
 
 For example, existing Solidity DEXs can &mdash; without modifications &mdash; list Rust ERC20 tokens, which might call out to C programs to do cryptography. Everything is fully interoperable, so users never have to care about the specific language or implementation details of the contracts they call.
 
