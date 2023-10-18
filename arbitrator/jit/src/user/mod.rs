@@ -47,7 +47,7 @@ pub fn stylus_activate(env: WasmEnvMut, sp: u32) {
     macro_rules! error {
         ($error:expr) => {{
             let error = $error.wrap_err("failed to activate").debug_bytes();
-            sp.write_u64_raw(gas, 0);
+            sp.write_u64_raw(gas, 0).unwrap();
             sp.write_slice(module_hash, &Bytes32::default());
             sp.skip_space();
             sp.write_ptr(heapify(error));
@@ -60,7 +60,7 @@ pub fn stylus_activate(env: WasmEnvMut, sp: u32) {
         Ok(result) => result,
         Err(error) => error!(error),
     };
-    sp.write_u64_raw(gas, *gas_left);
+    sp.write_u64_raw(gas, *gas_left).unwrap();
     sp.write_slice(module_hash, &module.hash().0);
     sp.write_u16(pages).skip_space();
     sp.write_nullptr();

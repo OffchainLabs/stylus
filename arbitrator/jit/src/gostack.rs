@@ -4,7 +4,10 @@
 #![allow(clippy::useless_transmute)]
 
 use crate::{
-    machine::{Escape::{self, Failure}, MaybeEscape, WasmEnv, WasmEnvMut},
+    machine::{
+        Escape::{self, Failure},
+        MaybeEscape, WasmEnv, WasmEnvMut,
+    },
     syscall::JsValue,
     wavmio::{Bytes20, Bytes32},
 };
