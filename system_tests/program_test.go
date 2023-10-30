@@ -255,40 +255,48 @@ func TestReentry(t *testing.T) {
 	reentryTest(t, true)
 }
 
+func reentryCallData(enter *common.Address, reenter *common.Address, counter byte) []byte {
+	var callData []byte
+	callData = append(callData, enter.Bytes()...)
+	callData = append(callData, reenter.Bytes()...)
+	return append(callData, counter)
+}
+
 func reentryTest(t *testing.T, jit bool) {
 	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
 	defer cleanup()
 
+	nonEnterAddress := deployWasm(t, ctx, auth, l2client, rustFile("nonreentrant-enter"))
 	enterAddress := deployWasm(t, ctx, auth, l2client, rustFile("reentrant-enter"))
 	reenterAddress := deployWasm(t, ctx, auth, l2client, rustFile("reentrant-reenter"))
-	counter := byte(16)
-
-	var callData []byte
-	callData = append(callData, enterAddress.Bytes()...)
-	callData = append(callData, reenterAddress.Bytes()...)
-	callData = append(callData, counter)
 
 	// ensure tx passes
+	callData := reentryCallData(&enterAddress, &reenterAddress, 1)
 	tx := l2info.PrepareTxTo("Owner", &enterAddress, l2info.TransferGas, nil, callData)
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	// ensure tx fails
-	var callData2 []byte
-	counter2 := byte(100)
-	callData2 = append(callData2, enterAddress.Bytes()...)
-	callData2 = append(callData2, reenterAddress.Bytes()...)
-	callData2 = append(callData2, counter2)
-	tx = l2info.PrepareTxTo("Owner", &enterAddress, l2info.TransferGas, nil, callData2)
+	// ensure tx fails, recursive depth too deep
+	callData = reentryCallData(&enterAddress, &reenterAddress, 100)
+	tx = l2info.PrepareTxTo("Owner", &enterAddress, l2info.TransferGas, nil, callData)
 	Require(t, l2client.SendTransaction(ctx, tx))
-	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
-	Require(t, err)
-	if receipt.Status != types.ReceiptStatusFailed {
-		Fatal(t, "call should have failed")
-	}
+	_ = EnsureTxFailed(t, ctx, l2client, tx)
 
-	validateBlocks(t, 7, jit, ctx, node, l2client)
+	// ensure tx fails, reentry disabled
+	callData = reentryCallData(&nonEnterAddress, &reenterAddress, 1)
+	tx = l2info.PrepareTxTo("Owner", &nonEnterAddress, l2info.TransferGas, nil, callData)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_ = EnsureTxFailed(t, ctx, l2client, tx)
+
+	// ensure tx succeeds, delegate call with reentry disabled
+	callData = reentryCallData(&nonEnterAddress, &reenterAddress, 0)
+	tx = l2info.PrepareTxTo("Owner", &nonEnterAddress, l2info.TransferGas, nil, callData)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	validateBlocks(t, 10, jit, ctx, node, l2client)
 }
 
 func TestProgramStorage(t *testing.T) {

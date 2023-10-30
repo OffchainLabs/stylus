@@ -13,15 +13,20 @@ use alloc::vec::Vec;
 use stylus_sdk::{
     alloy_primitives::Address,
     call::RawCall,
+    console,
     stylus_proc::entrypoint,
 };
 
 #[entrypoint]
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
-    let dest = Address::from_slice(input[0..20].try_into().unwrap());
+    let dest = Address::from_slice(input[20..40].try_into().unwrap());
 
     if input[40] == 0 {
-        return unsafe{RawCall::new_delegate().call(dest, input.as_slice())}
+        return Ok(input)
     }
-    unsafe{RawCall::new().call(dest, input.as_slice())}
+    console!("counter: {}", input[40]);
+
+    let mut input = input.to_vec();
+    input[40] -= 1;
+    RawCall::new().call(dest, input.as_slice())
 }
