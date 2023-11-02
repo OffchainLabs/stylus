@@ -44,6 +44,7 @@ RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5 wabt
     # pinned rust 1.65.0
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.68.2 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
+COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
@@ -223,6 +224,7 @@ WORKDIR /home/user
 COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/nitro-val /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/seq-coordinator-manager /usr/local/bin/
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
 USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \

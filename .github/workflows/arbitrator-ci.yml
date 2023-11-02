@@ -9,6 +9,7 @@ on:
         description: 'Enable tmate'
         required: false
         default: false
+  merge_group:
   pull_request:
     paths:
       - 'arbitrator/**'

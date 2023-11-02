@@ -1,15 +1,17 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use arbutil::wavm;
+use arbutil::{wavm, PreimageType};
 use go_abi::*;
+use std::convert::TryInto;
 
 extern "C" {
     pub fn wavm_get_globalstate_bytes32(idx: u32, ptr: *mut u8);
     pub fn wavm_set_globalstate_bytes32(idx: u32, ptr: *const u8);
     pub fn wavm_get_globalstate_u64(idx: u32) -> u64;
     pub fn wavm_set_globalstate_u64(idx: u32, val: u64);
-    pub fn wavm_read_pre_image(ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_read_keccak_256_preimage(ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_read_sha2_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_inbox_message(msg_num: u64, ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_delayed_inbox_message(seq_num: u64, ptr: *mut u8, offset: usize) -> usize;
 }
@@ -130,28 +132,41 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readDelayedInb
 }
 
 /// Retrieves the preimage of the given hash.
-/// Safety: λ(hash []byte, offset uint32, output []byte) uint32
+/// Safety: λ(preimage_type byte, hash []byte, offset uint32, output []byte) uint32
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_resolvePreImage(sp: usize) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_resolveTypedPreimage(sp: usize) {
     let mut sp = GoStack::new(sp);
+    let preimage_type = sp.read_u8();
     let (hash_ptr, hash_len) = sp.read_go_slice();
     let offset = sp.read_u64();
     let (out_ptr, out_len) = sp.read_go_slice();
 
     if hash_len != 32 || out_len != 32 {
         eprintln!(
-            "Go attempting to resolve pre image with hash len {} and out len {}",
+            "Go attempting to resolve preimage with hash len {} and out len {}",
             hash_len, out_len,
         );
         sp.write_u64(0);
         return;
     }
+    let Ok(preimage_type) = preimage_type.try_into() else {
+        eprintln!(
+            "Go trying to resolve preimage with unknown type {}",
+            preimage_type
+        );
+        sp.write_u64(0);
+        return;
+    };
     let mut our_buf = MemoryLeaf([0u8; 32]);
     let hash = wavm::read_slice(hash_ptr, hash_len);
     our_buf.0.copy_from_slice(&hash);
     let our_ptr = our_buf.0.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
-    let read = wavm_read_pre_image(our_ptr, offset as usize);
+    let preimage_reader = match preimage_type {
+        PreimageType::Keccak256 => wavm_read_keccak_256_preimage,
+        PreimageType::Sha2_256 => wavm_read_sha2_256_preimage,
+    };
+    let read = preimage_reader(our_ptr, offset as usize);
     assert!(read <= 32);
     wavm::write_slice(&our_buf.0[..read], out_ptr);
     sp.write_u64(read as u64);

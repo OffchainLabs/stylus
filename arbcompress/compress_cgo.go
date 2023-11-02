@@ -34,7 +34,7 @@ func Decompress(input []byte, maxSize int) ([]byte, error) {
 	return outbuf[:outsize], nil
 }
 
-func compressLevel(input []byte, level int) ([]byte, error) {
+func compressLevel(input []byte, level uint32) ([]byte, error) {
 	maxOutSize := compressedBufferSizeFor(len(input))
 	outbuf := make([]byte, maxOutSize)
 	outSize := C.size_t(maxOutSize)

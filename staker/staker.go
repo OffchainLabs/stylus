@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -254,6 +255,27 @@ type Staker struct {
 	fatalErr                chan<- error
 }
 
+type ValidatorWalletInterface interface {
+	Initialize(context.Context) error
+	// Address must be able to be called concurrently with other functions
+	Address() *common.Address
+	// Address must be able to be called concurrently with other functions
+	AddressOrZero() common.Address
+	TxSenderAddress() *common.Address
+	RollupAddress() common.Address
+	ChallengeManagerAddress() common.Address
+	L1Client() arbutil.L1Interface
+	TestTransactions(context.Context, []*types.Transaction) error
+	ExecuteTransactions(context.Context, *txbuilder.Builder, common.Address) (*types.Transaction, error)
+	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
+	CanBatchTxs() bool
+	AuthIfEoa() *bind.TransactOpts
+	Start(context.Context)
+	StopAndWait()
+	// May be nil
+	DataPoster() *dataposter.DataPoster
+}
+
 func NewStaker(
 	l1Reader L1ReaderInterface,
 	wallet ValidatorWalletInterface,
@@ -372,11 +394,15 @@ func (s *Staker) getLatestStakedState(ctx context.Context, staker common.Address
 
 func (s *Staker) StopAndWait() {
 	s.StopWaiter.StopAndWait()
-	s.wallet.StopAndWait()
+	if s.Strategy() != WatchtowerStrategy {
+		s.wallet.StopAndWait()
+	}
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
-	s.wallet.Start(ctxIn)
+	if s.Strategy() != WatchtowerStrategy {
+		s.wallet.Start(ctxIn)
+	}
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
@@ -548,11 +574,11 @@ func (s *Staker) confirmDataPosterIsReady(ctx context.Context) error {
 }
 
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
-	err := s.confirmDataPosterIsReady(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if s.config.strategy != WatchtowerStrategy {
+		err := s.confirmDataPosterIsReady(ctx)
+		if err != nil {
+			return nil, err
+		}
 		whitelisted, err := s.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("error checking if whitelisted: %w", err)
@@ -773,8 +799,8 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 		newChallengeManager, err := NewChallengeManager(
 			ctx,
 			s.builder,
-			s.builder.builderAuth,
-			*s.builder.wallet.Address(),
+			s.builder.BuilderAuth(),
+			*s.builder.WalletAddress(),
 			s.wallet.ChallengeManagerAddress(),
 			*info.CurrentChallenge,
 			s.statelessBlockValidator,

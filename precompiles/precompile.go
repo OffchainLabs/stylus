@@ -555,6 +555,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic := insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
 	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = 11
+	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = 12
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(templates.ArbWasmMetaData, ArbWasmImpl))
@@ -597,6 +598,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
 	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = 11
+	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = 12
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))

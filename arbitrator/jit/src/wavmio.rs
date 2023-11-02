@@ -7,10 +7,10 @@ use crate::{
     socket,
 };
 
-use arbutil::Color;
+use arbutil::{Color, PreimageType};
 use std::{
     io,
-    io::{BufReader, BufWriter, ErrorKind, Write},
+    io::{BufReader, BufWriter, ErrorKind},
     net::TcpStream,
     time::Instant,
 };
@@ -156,20 +156,25 @@ fn inbox_message_impl(sp: &mut GoStack, inbox: &Inbox, name: &str) -> MaybeEscap
 }
 
 /// Retrieves the preimage of the given hash.
-/// go side: λ(hash []byte, offset uint32, output []byte) uint32
-pub fn resolve_preimage(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+/// go side: λ(preimage_type byte, hash []byte, offset uint32, output []byte) uint32
+pub fn resolve_typed_preimage(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let (mut sp, env) = GoStack::new(sp, &mut env);
-
-    let name = "wavmio.resolvePreImage";
+    let preimage_type = sp.read_u8();
     let (hash_ptr, hash_len) = sp.read_go_slice();
     let offset = sp.read_u64();
     let (out_ptr, out_len) = sp.read_go_slice();
-
+    let name = "wavmio.ResolveTypedPreimage";
     if hash_len != 32 || out_len != 32 {
         eprintln!("Go trying to resolve pre image with hash len {hash_len} and out len {out_len}");
         sp.write_u64(0);
         return Ok(());
     }
+
+    let Ok(preimage_type) = preimage_type.try_into() else {
+        eprintln!("Go trying to resolve pre image with unknown type {preimage_type}");
+        sp.write_u64(0);
+        return Ok(());
+    };
 
     macro_rules! error {
         ($text:expr $(,$args:expr)*) => {{
@@ -182,40 +187,10 @@ pub fn resolve_preimage(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let hash: &[u8; 32] = &hash.try_into().unwrap();
     let hash_hex = hex::encode(hash);
 
-    let mut preimage = None;
-    let temporary; // makes the borrow checker happy
-
-    // see if we've cached the preimage
-    if let Some((key, cached)) = &env.process.last_preimage {
-        if key == hash {
-            preimage = Some(cached);
-        }
-    }
-
-    // see if this is a known preimage
-    if preimage.is_none() {
-        preimage = env.preimages.get(hash);
-    }
-
-    // see if Go has the preimage
-    if preimage.is_none() {
-        if let Some((writer, reader)) = &mut env.process.socket {
-            socket::write_u8(writer, socket::PREIMAGE)?;
-            socket::write_bytes32(writer, hash)?;
-            writer.flush()?;
-
-            if socket::read_u8(reader)? == socket::SUCCESS {
-                temporary = socket::read_bytes(reader)?;
-                env.process.last_preimage = Some((*hash, temporary.clone()));
-                preimage = Some(&temporary);
-            }
-        }
-    }
-
-    let preimage = match preimage {
-        Some(preimage) => preimage,
-        None => error!("Missing requested preimage for hash {hash_hex} in {name}"),
+    let Some(preimage) = env.preimages.get(&preimage_type).and_then(|m| m.get(hash)) else {
+        error!("Missing requested preimage for preimage type {preimage_type:?} hash {hash_hex} in {name}");
     };
+
     let offset = match u32::try_from(offset) {
         Ok(offset) => offset as usize,
         Err(_) => error!("bad offset {offset} in {name}"),
@@ -305,11 +280,17 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         env.delayed_messages.insert(position, message);
     }
 
-    let preimage_count = socket::read_u32(stream)?;
-    for _ in 0..preimage_count {
-        let hash = socket::read_bytes32(stream)?;
-        let preimage = socket::read_bytes(stream)?;
-        env.preimages.insert(hash, preimage);
+    let preimage_types_count = socket::read_u32(stream)?;
+    for _ in 0..preimage_types_count {
+        let preimage_ty = PreimageType::try_from(socket::read_u8(stream)?)
+            .map_err(|e| Escape::Failure(e.to_string()))?;
+        let map = env.preimages.entry(preimage_ty).or_default();
+        let preimage_count = socket::read_u32(stream)?;
+        for _ in 0..preimage_count {
+            let hash = socket::read_bytes32(stream)?;
+            let preimage = socket::read_bytes(stream)?;
+            map.insert(hash, preimage);
+        }
     }
 
     let programs_count = socket::read_u32(stream)?;

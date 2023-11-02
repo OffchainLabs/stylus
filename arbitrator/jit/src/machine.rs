@@ -5,7 +5,8 @@ use crate::{
     arbcompress, gostack::GoRuntimeState, runtime, socket, syscall, syscall::JsRuntimeState, user,
     wavmio, wavmio::Bytes32, Opts,
 };
-use arbutil::Color;
+
+use arbutil::{Color, PreimageType};
 use eyre::{bail, ErrReport, Result, WrapErr};
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
@@ -113,7 +114,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             github!("wavmio.setGlobalStateU64") => func!(wavmio::set_global_state_u64),
             github!("wavmio.readInboxMessage") => func!(wavmio::read_inbox_message),
             github!("wavmio.readDelayedInboxMessage") => func!(wavmio::read_delayed_inbox_message),
-            github!("wavmio.resolvePreImage") => func!(wavmio::resolve_preimage),
+            github!("wavmio.resolveTypedPreimage") => func!(wavmio::resolve_typed_preimage),
 
             github!("arbos/programs.activateProgramRustImpl") => func!(user::stylus_activate),
             github!("arbos/programs.callProgramRustImpl") => func!(user::stylus_call),
@@ -192,7 +193,7 @@ impl From<RuntimeError> for Escape {
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
-pub type Oracle = BTreeMap<Bytes32, Vec<u8>>;
+pub type Preimages = BTreeMap<PreimageType, BTreeMap<[u8; 32], Vec<u8>>>;
 pub type ModuleAsm = Arc<[u8]>;
 
 #[derive(Default)]
@@ -208,7 +209,7 @@ pub struct WasmEnv {
     /// An ordered list of the 32-byte globals
     pub large_globals: [Bytes32; 2],
     /// An oracle allowing the prover to reverse keccak256
-    pub preimages: Oracle,
+    pub preimages: Preimages,
     /// A collection of programs called during the course of execution
     pub module_asms: HashMap<Bytes32, ModuleAsm>,
     /// The sequencer inbox's messages
@@ -259,11 +260,12 @@ impl WasmEnv {
                 file.read_exact(&mut buf)?;
                 preimages.push(buf);
             }
+            let keccak_preimages = env.preimages.entry(PreimageType::Keccak256).or_default();
             for preimage in preimages {
                 let mut hasher = Keccak256::new();
                 hasher.update(&preimage);
                 let hash = hasher.finalize().into();
-                env.preimages.insert(hash, preimage);
+                keccak_preimages.insert(hash, preimage);
             }
         }
 
@@ -328,8 +330,6 @@ pub struct ProcessEnv {
     pub debug: bool,
     /// Mechanism for asking for preimages and returning results
     pub socket: Option<(BufWriter<TcpStream>, BufReader<TcpStream>)>,
-    /// The last preimage received over the socket
-    pub last_preimage: Option<([u8; 32], Vec<u8>)>,
     /// A timestamp that helps with printing at various moments
     pub timestamp: Instant,
     /// How long to wait on any child threads to compute a result
@@ -344,7 +344,6 @@ impl Default for ProcessEnv {
             forks: false,
             debug: false,
             socket: None,
-            last_preimage: None,
             timestamp: Instant::now(),
             child_timeout: Duration::from_secs(15),
             reached_wavmio: false,

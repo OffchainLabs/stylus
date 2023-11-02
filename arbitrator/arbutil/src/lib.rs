@@ -12,7 +12,7 @@ pub mod pricing;
 pub mod types;
 
 pub use color::{Color, DebugColor};
-pub use types::{Bytes20, Bytes32};
+pub use types::{Bytes20, Bytes32, PreimageType};
 
 #[cfg(feature = "wavm")]
 pub mod wavm;
