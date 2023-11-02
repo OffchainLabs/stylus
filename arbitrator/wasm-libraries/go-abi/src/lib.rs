@@ -12,8 +12,8 @@ extern "C" {
 
 #[derive(Clone)]
 pub struct GoStack {
-    sp: usize,
-    top: usize,
+    pub sp: usize,
+    pub top: usize,
 }
 
 impl GoStack {
@@ -23,7 +23,7 @@ impl GoStack {
     }
 
     /// returns the pointer at which a value may be accessed, moving the offset past the value
-    fn advance(&mut self, bytes: usize) -> usize {
+    pub fn advance(&mut self, bytes: usize) -> usize {
         let before = self.top;
         self.top += bytes;
         before
@@ -136,36 +136,25 @@ impl GoStack {
         wavm::read_slice(ptr, len)
     }
 
-    pub unsafe fn read_js_string(&mut self) -> Vec<u8> {
+    pub unsafe fn read_string(&mut self) -> String {
         let ptr = self.read_u64();
         let len = self.read_u64();
-        wavm::read_slice(ptr, len)
-    }
-
-    /// Saves the stack pointer for later calls to `restore_stack`.
-    pub fn save_stack(&self) -> usize {
-        self.top - (self.sp + 8)
+        let bytes = wavm::read_slice(ptr, len);
+        match String::from_utf8(bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                let bytes = e.as_bytes();
+                eprintln!("Go string {bytes:?} is not valid utf8: {e:?}");
+                String::from_utf8_lossy(bytes).into_owned()
+            }
+        }
     }
 
     /// Writes the stack pointer.
-    ///
-    /// # Safety
-    ///
-    /// `saved` must come from `save_stack`, with no calls to `advance` in between.
-    pub unsafe fn restore_stack(&mut self, saved: usize) {
+    pub unsafe fn restore_stack(&mut self) {
+        let saved = self.top - (self.sp + 8);
         *self = Self::new(wavm_guest_call__getsp());
         self.advance(saved);
-    }
-
-    /// Resumes the go runtime, updating the stack pointer.
-    ///
-    /// # Safety
-    ///
-    /// The caller must cut lifetimes before this call.
-    pub unsafe fn resume(&mut self) {
-        let saved = self.save_stack();
-        wavm_guest_call__resume();
-        self.restore_stack(saved);
     }
 }
 
