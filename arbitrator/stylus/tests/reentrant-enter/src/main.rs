@@ -26,7 +26,5 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     }
     console!("counter: {}", input[40]);
 
-    let mut input = input.to_vec();
-    input[40] -= 1;
     unsafe{RawCall::new().call(dest, input.as_slice())}
 }

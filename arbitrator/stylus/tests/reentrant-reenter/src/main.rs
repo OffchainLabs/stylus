@@ -23,5 +23,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     if input[40] == 0 {
         return unsafe{RawCall::new_delegate().call(dest, input.as_slice())}
     }
+    let mut input = input;
+    input[40] -= 1;
     unsafe{RawCall::new().call(dest, input.as_slice())}
 }
