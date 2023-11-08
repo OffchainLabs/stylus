@@ -44,6 +44,8 @@ type bytes32 = C.Bytes32
 type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
 
+const maxNativeContractGasConsumption = 200_000
+
 func activateProgram(
 	db vm.StateDB,
 	program common.Address,
@@ -111,6 +113,20 @@ func callProgram(
 	defer dropApi(id)
 
 	output := &rustBytes{}
+
+	initialActualGas := scope.Contract.Gas
+
+	// provide the stylus program the full
+	// gas limit for a block. 
+	baseGas := evm.blockGasLimit
+	// if the program would result in negative gas from consuming the
+	// maxNativeGas, instead only only provide the regular gas for execution, 
+	if initialActualGas < maxNativeContractGasConsumption {
+		baseGas = initialActualGas
+	} 
+
+	scope.Contract.Gas = baseGas
+
 	status := userStatus(C.stylus_call(
 		goSlice(asm),
 		goSlice(calldata),
@@ -122,6 +138,21 @@ func callProgram(
 		(*u64)(&scope.Contract.Gas),
 	))
 
+	/// compute the actual gas consumption. 
+	gasConsumption := baseGas - scope.Contract.Gas
+	
+	// if the gas was not exhausted from an out-of-stack, out-of-ink, failure, or revert,
+	// update the gas consumption to be capped at 200_000.
+	if status == userSuccess && gasConsumption > maxNativeContractGasConsumption {
+		scope.Contract.Gas = initialActualGas - maxNativeContractGasConsumption;
+	} else if (gasConsumption > initialActualGas) {
+		// if more gas was consumed than is available (e.g. in an out-of-stack), 
+		// set the gas to 0. 
+		scope.Contract.Gas = 0
+	} else {
+		// if less than the max gas was consumed, just consume that much. 
+		scope.Contract.Gas = initialActualGas - gasConsumption
+	}
 	debug := stylusParams.debugMode != 0
 	data, msg, err := status.toResult(output.intoBytes(), debug)
 	if status == userFailure && debug {
