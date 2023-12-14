@@ -134,14 +134,14 @@ pub trait UserHost: GasMeteredMachine {
     /// previously set. The semantics, then, are equivalent to that of the EVM's [`TLOAD`] opcode.
     ///
     /// [`TLOAD`]: https://www.evm.codes/#5c
-    fn storage_transient_load_bytes32(&mut self, key: u32, dest: u32) -> Result<(), Self::Err> {
+    fn transient_load_bytes32(&mut self, key: u32, dest: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
         let key = self.read_bytes32(key)?;
 
         let value = self.evm_api().transient_get_bytes32(key);
         self.buy_gas(TRANSIENT_BYTES32_GAS)?;
         self.write_bytes32(dest, value)?;
-        trace!("storage_transient_load_bytes32", self, key, value)
+        trace!("transient_load_bytes32", self, key, value)
     }
 
     /// Stores a 32-byte value to transient storage. Stylus's storage format is identical to that
@@ -150,7 +150,7 @@ pub trait UserHost: GasMeteredMachine {
     /// the EVM. The semantics, then, are equivalent to that of the EVM's [`TSTORE`] opcode.
     ///
     /// [`TSTORE`]: https://www.evm.codes/#5d
-    fn storage_transient_store_bytes32(&mut self, key: u32, value: u32) -> Result<(), Self::Err> {
+    fn transient_store_bytes32(&mut self, key: u32, value: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
         self.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
 
@@ -159,7 +159,7 @@ pub trait UserHost: GasMeteredMachine {
 
         self.evm_api().transient_set_bytes32(key, value)?;
         self.buy_gas(TRANSIENT_BYTES32_GAS)?;
-        trace!("storage_transient_store_bytes32", self, [key, value], &[])
+        trace!("transient_store_bytes32", self, [key, value], &[])
     }
 
     /// Calls the contract at the given address with options for passing value and to limit the

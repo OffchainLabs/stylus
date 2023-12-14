@@ -117,20 +117,20 @@ pub(crate) fn storage_store_bytes32<E: EvmApi>(
     hostio!(env, storage_store_bytes32(key, value))
 }
 
-pub(crate) fn storage_transient_load_bytes32<E: EvmApi>(
+pub(crate) fn transient_load_bytes32<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     key: u32,
     dest: u32,
 ) -> MaybeEscape {
-    hostio!(env, storage_transient_load_bytes32(key, dest))
+    hostio!(env, transient_load_bytes32(key, dest))
 }
 
-pub(crate) fn storage_transient_store_bytes32<E: EvmApi>(
+pub(crate) fn transient_store_bytes32<E: EvmApi>(
     mut env: WasmEnvMut<E>,
     key: u32,
     value: u32,
 ) -> MaybeEscape {
-    hostio!(env, storage_transient_store_bytes32(key, value))
+    hostio!(env, transient_store_bytes32(key, value))
 }
 
 pub(crate) fn call_contract<E: EvmApi>(

@@ -241,6 +241,8 @@ clean:
 	rm -rf $(output_root)
 	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
 	rm -rf arbitrator/target
+	rm -f $(forward_dir)/forward.wat
+	rm -f $(forward_dir)/forward_stub.wat
 	rm -rf arbitrator/wasm-libraries/target
 	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
 	rm -f arbitrator/wasm-libraries/soft-float/*.o

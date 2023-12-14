@@ -42,13 +42,13 @@ pub unsafe extern "C" fn user_host__storage_store_bytes32(key: u32, value: u32) 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__storage_transient_load_bytes32(key: u32, dest: u32) {
-    hostio!(storage_transient_load_bytes32(key, dest))
+pub unsafe extern "C" fn user_host__transient_load_bytes32(key: u32, dest: u32) {
+    hostio!(transient_load_bytes32(key, dest))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__storage_transient_store_bytes32(key: u32, value: u32) {
-    hostio!(storage_transient_store_bytes32(key, value))
+pub unsafe extern "C" fn user_host__transient_store_bytes32(key: u32, value: u32) {
+    hostio!(transient_store_bytes32(key, value))
 }
 
 #[no_mangle]
