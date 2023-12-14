@@ -3,7 +3,7 @@
 
 use arbutil::{
     crypto,
-    evm::{self, api::EvmApi, user::UserOutcomeKind, EvmData, TRANSIENT_BYTES32_GAS},
+    evm::{self, api::EvmApi, user::UserOutcomeKind, EvmData, TRANSIENT_OP_GAS},
     pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
     Bytes20, Bytes32,
 };
@@ -133,13 +133,13 @@ pub trait UserHost: GasMeteredMachine {
     /// value stored in the EVM transient storage at offset `key`, which will be `0` when not
     /// previously set. The semantics, then, are equivalent to that of the EVM's [`TLOAD`] opcode.
     ///
-    /// [`TLOAD`]: https://www.evm.codes/#5c
+    /// [`TLOAD`]: https://eips.ethereum.org/EIPS/eip-1153
     fn transient_load_bytes32(&mut self, key: u32, dest: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
         let key = self.read_bytes32(key)?;
 
         let value = self.evm_api().transient_get_bytes32(key);
-        self.buy_gas(TRANSIENT_BYTES32_GAS)?;
+        self.buy_gas(TRANSIENT_OP_GAS)?;
         self.write_bytes32(dest, value)?;
         trace!("transient_load_bytes32", self, key, value)
     }
@@ -149,7 +149,7 @@ pub trait UserHost: GasMeteredMachine {
     /// the EVM transient storage at offset `key`. Furthermore, refunds are tabulated exactly as in
     /// the EVM. The semantics, then, are equivalent to that of the EVM's [`TSTORE`] opcode.
     ///
-    /// [`TSTORE`]: https://www.evm.codes/#5d
+    /// [`TSTORE`]: https://eips.ethereum.org/EIPS/eip-1153
     fn transient_store_bytes32(&mut self, key: u32, value: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
         self.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
@@ -158,7 +158,7 @@ pub trait UserHost: GasMeteredMachine {
         let value = self.read_bytes32(value)?;
 
         self.evm_api().transient_set_bytes32(key, value)?;
-        self.buy_gas(TRANSIENT_BYTES32_GAS)?;
+        self.buy_gas(TRANSIENT_OP_GAS)?;
         trace!("transient_store_bytes32", self, [key, value], &[])
     }
 

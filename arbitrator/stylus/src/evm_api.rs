@@ -125,8 +125,7 @@ impl EvmApi for GoEvmApi {
     }
 
     fn transient_get_bytes32(&mut self, key: Bytes32) -> Bytes32 {
-        let value = call!(self, transient_get_bytes32, key);
-        value
+        call!(self, transient_get_bytes32, key)
     }
 
     fn transient_set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<()> {

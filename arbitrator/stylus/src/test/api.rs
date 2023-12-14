@@ -17,7 +17,6 @@ use super::TestInstance;
 pub(crate) struct TestEvmApi {
     contracts: Arc<Mutex<HashMap<Bytes20, Vec<u8>>>>,
     storage: Arc<Mutex<HashMap<Bytes20, HashMap<Bytes32, Bytes32>>>>,
-    transient_storage: Arc<Mutex<HashMap<Bytes20, HashMap<Bytes32, Bytes32>>>>,
     program: Bytes20,
     write_result: Arc<Mutex<Vec<u8>>>,
     compile: CompileConfig,
@@ -34,12 +33,9 @@ impl TestEvmApi {
         let mut storage = HashMap::new();
         storage.insert(program, HashMap::new());
 
-        let mut transient_storage = HashMap::new();
-
         let api = TestEvmApi {
             contracts: Arc::new(Mutex::new(HashMap::new())),
             storage: Arc::new(Mutex::new(storage)),
-            transient_storage: Arc::new(Mutex::new(transient_storage)),
             program,
             write_result: Arc::new(Mutex::new(vec![])),
             compile,

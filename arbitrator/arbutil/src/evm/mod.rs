@@ -11,7 +11,7 @@ pub mod user;
 pub const SSTORE_SENTRY_GAS: u64 = 2300;
 
 // params.WarmStorageReadCostEIP2929
-pub const TRANSIENT_BYTES32_GAS: u64 = 100;
+pub const TRANSIENT_OP_GAS: u64 = 100;
 
 // params.LogGas and params.LogDataGas
 pub const LOG_TOPIC_GAS: u64 = 375;
