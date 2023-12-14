@@ -78,17 +78,11 @@ impl EvmApi for TestEvmApi {
     }
 
     fn transient_get_bytes32(&mut self, key: Bytes32) -> Bytes32 {
-        let transient_storage = &mut self.transient_storage.lock();
-        let transient_storage = transient_storage.get_mut(&self.program).unwrap();
-        let value = transient_storage.get(&key).cloned().unwrap_or_default();
-        value
+        unimplemented!()
     }
 
     fn transient_set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<()> {
-        let transient_storage = &mut self.transient_storage.lock();
-        let transient_storage = transient_storage.get_mut(&self.program).unwrap();
-        transient_storage.insert(key, value);
-        Ok(())
+        unimplemented!()
     }
 
     /// Simulates a contract call.
