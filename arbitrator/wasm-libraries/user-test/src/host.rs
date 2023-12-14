@@ -3,7 +3,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::{Program, ARGS, EVER_PAGES, KEYS, TRANSIENT_KEYS, LOGS, OPEN_PAGES, OUTS};
+use crate::{Program, ARGS, EVER_PAGES, KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{
     crypto, evm,
     pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
