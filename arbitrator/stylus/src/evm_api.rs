@@ -21,6 +21,13 @@ pub struct GoEvmApi {
         gas_cost: *mut u64,
         error: *mut RustBytes,
     ) -> EvmApiStatus,
+    pub transient_get_bytes32: unsafe extern "C" fn(id: usize, key: Bytes32) -> Bytes32, // value
+    pub transient_set_bytes32: unsafe extern "C" fn(
+        id: usize,
+        key: Bytes32,
+        value: Bytes32,
+        error: *mut RustBytes,
+    ) -> EvmApiStatus,
     pub contract_call: unsafe extern "C" fn(
         id: usize,
         contract: Bytes20,
@@ -113,6 +120,21 @@ impl EvmApi for GoEvmApi {
         let error = into_vec!(error); // done here to always drop
         match api_status {
             EvmApiStatus::Success => Ok(cost),
+            EvmApiStatus::Failure => Err(error!(error)),
+        }
+    }
+
+    fn transient_get_bytes32(&mut self, key: Bytes32) -> Bytes32 {
+        let value = call!(self, transient_get_bytes32, key);
+        value
+    }
+
+    fn transient_set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<()> {
+        let mut error = RustBytes::new(vec![]);
+        let api_status = call!(self, transient_set_bytes32, key, value, ptr!(error));
+        let error = into_vec!(error); // done here to always drop
+        match api_status {
+            EvmApiStatus::Success => Ok(()),
             EvmApiStatus::Failure => Err(error!(error)),
         }
     }

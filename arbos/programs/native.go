@@ -157,6 +157,25 @@ func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustBytes)
 	return apiSuccess
 }
 
+//export transientGetBytes32Impl
+func transientGetBytes32Impl(api usize, key bytes32) bytes32 {
+	closures := getApi(api)
+	value := closures.transientGetBytes32(key.toHash())
+	return hashToBytes32(value)
+}
+
+//export transientSetBytes32Impl
+func transientSetBytes32Impl(api usize, key, value bytes32, errVec *rustBytes) apiStatus {
+	closures := getApi(api)
+
+	err := closures.transientSetBytes32(key.toHash(), value.toHash())
+	if err != nil {
+		errVec.setString(err.Error())
+		return apiFailure
+	}
+	return apiSuccess
+}
+
 //export contractCallImpl
 func contractCallImpl(api usize, contract bytes20, data *rustSlice, evmGas *u64, value bytes32, len *u32) apiStatus {
 	closures := getApi(api)

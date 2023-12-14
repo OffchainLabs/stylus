@@ -3,7 +3,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::{Program, ARGS, EVER_PAGES, KEYS, LOGS, OPEN_PAGES, OUTS};
+use crate::{Program, ARGS, EVER_PAGES, KEYS, TRANSIENT_KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{
     crypto, evm,
     pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
@@ -47,6 +47,26 @@ pub unsafe extern "C" fn vm_hooks__storage_store_bytes32(key: u32, value: u32) {
     let key = wavm::read_bytes32(key);
     let value = wavm::read_bytes32(value);
     KEYS.lock().insert(key, value);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__transient_storage_load_bytes32(key: u32, dest: u32) {
+    let mut program = Program::start(2 * PTR_INK + EVM_API_INK);
+    let key = wavm::read_bytes32(key);
+
+    let value = TRANSIENT_KEYS.lock().get(&key).cloned().unwrap_or_default();
+    program.buy_gas(evm::TRANSIENT_BYTES32_GAS).unwrap();
+    wavm::write_bytes32(dest, value);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__transient_storage_store_bytes32(key: u32, value: u32) {
+    let mut program = Program::start(2 * PTR_INK + EVM_API_INK);
+    program.buy_gas(evm::TRANSIENT_BYTES32_GAS).unwrap(); // pretend the worst case
+
+    let key = wavm::read_bytes32(key);
+    let value = wavm::read_bytes32(value);
+    TRANSIENT_KEYS.lock().insert(key, value);
 }
 
 #[no_mangle]

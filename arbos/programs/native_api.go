@@ -26,6 +26,16 @@ EvmApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, R
     return setBytes32Impl(api, key, value, cost, error);
 }
 
+Bytes32 transientGetBytes32Impl(usize api, Bytes32 key);
+Bytes32 transientGetBytes32Wrap(usize api, Bytes32 key) {
+    return transientGetBytes32Impl(api, key);
+}
+
+EvmApiStatus transientSetBytes32Impl(usize api, Bytes32 key, Bytes32 value, RustBytes * error);
+EvmApiStatus transientSetBytes32Wrap(usize api, Bytes32 key, Bytes32 value, RustBytes * error) {
+    return transientSetBytes32Impl(api, key, value, error);
+}
+
 EvmApiStatus contractCallImpl(usize api, Bytes20 contract, RustSlice * calldata, u64 * gas, Bytes32 value, u32 * len);
 EvmApiStatus contractCallWrap(usize api, Bytes20 contract, RustSlice * calldata, u64 * gas, Bytes32 value, u32 * len) {
     return contractCallImpl(api, contract, calldata, gas, value, len);
@@ -105,20 +115,22 @@ func newApi(
 	apiClosures.Store(apiId, closures)
 	id := usize(apiId)
 	return C.GoEvmApi{
-		get_bytes32:      (*[0]byte)(C.getBytes32Wrap),
-		set_bytes32:      (*[0]byte)(C.setBytes32Wrap),
-		contract_call:    (*[0]byte)(C.contractCallWrap),
-		delegate_call:    (*[0]byte)(C.delegateCallWrap),
-		static_call:      (*[0]byte)(C.staticCallWrap),
-		create1:          (*[0]byte)(C.create1Wrap),
-		create2:          (*[0]byte)(C.create2Wrap),
-		get_return_data:  (*[0]byte)(C.getReturnDataWrap),
-		emit_log:         (*[0]byte)(C.emitLogWrap),
-		account_balance:  (*[0]byte)(C.accountBalanceWrap),
-		account_codehash: (*[0]byte)(C.accountCodeHashWrap),
-		add_pages:        (*[0]byte)(C.addPagesWrap),
-		capture_hostio:   (*[0]byte)(C.captureHostioWrap),
-		id:               id,
+		get_bytes32:           (*[0]byte)(C.getBytes32Wrap),
+		set_bytes32:           (*[0]byte)(C.setBytes32Wrap),
+		transient_get_bytes32: (*[0]byte)(C.transientGetBytes32Wrap),
+		transient_set_bytes32: (*[0]byte)(C.transientSetBytes32Wrap),
+		contract_call:         (*[0]byte)(C.contractCallWrap),
+		delegate_call:         (*[0]byte)(C.delegateCallWrap),
+		static_call:           (*[0]byte)(C.staticCallWrap),
+		create1:               (*[0]byte)(C.create1Wrap),
+		create2:               (*[0]byte)(C.create2Wrap),
+		get_return_data:       (*[0]byte)(C.getReturnDataWrap),
+		emit_log:              (*[0]byte)(C.emitLogWrap),
+		account_balance:       (*[0]byte)(C.accountBalanceWrap),
+		account_codehash:      (*[0]byte)(C.accountCodeHashWrap),
+		add_pages:             (*[0]byte)(C.addPagesWrap),
+		capture_hostio:        (*[0]byte)(C.captureHostioWrap),
+		id:                    id,
 	}, id
 }
 

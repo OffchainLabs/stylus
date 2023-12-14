@@ -75,6 +75,30 @@ func (info *TracingInfo) RecordStorageSet(key, value common.Hash) {
 	}
 }
 
+func (info *TracingInfo) RecordTransientStorageGet(key common.Hash) {
+	tracer := info.Tracer
+	if info.Scenario == TracingDuringEVM {
+		scope := &vm.ScopeContext{
+			Memory:   vm.NewMemory(),
+			Stack:    TracingStackFromArgs(HashToUint256(key)),
+			Contract: info.Contract,
+		}
+		tracer.CaptureState(0, vm.TLOAD, 0, 0, scope, []byte{}, info.Depth, nil)
+	}
+}
+
+func (info *TracingInfo) RecordTransientStorageSet(key, value common.Hash) {
+	tracer := info.Tracer
+	if info.Scenario == TracingDuringEVM {
+		scope := &vm.ScopeContext{
+			Memory:   vm.NewMemory(),
+			Stack:    TracingStackFromArgs(HashToUint256(key), HashToUint256(value)),
+			Contract: info.Contract,
+		}
+		tracer.CaptureState(0, vm.TSTORE, 0, 0, scope, []byte{}, info.Depth, nil)
+	}
+}
+
 func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Address, amount *big.Int) {
 	tracer := info.Tracer
 	depth := info.Depth

@@ -3,7 +3,7 @@
 
 use arbutil::{
     crypto,
-    evm::{self, api::EvmApi, user::UserOutcomeKind, EvmData},
+    evm::{self, api::EvmApi, user::UserOutcomeKind, EvmData, TRANSIENT_BYTES32_GAS},
     pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
     Bytes20, Bytes32,
 };
@@ -126,6 +126,40 @@ pub trait UserHost: GasMeteredMachine {
         let gas_cost = self.evm_api().set_bytes32(key, value)?;
         self.buy_gas(gas_cost)?;
         trace!("storage_store_bytes32", self, [key, value], &[])
+    }
+
+    /// Reads a 32-byte value from transient storage. Stylus's storage format is identical to
+    /// that of the EVM. This means that, under the hood, this hostio is accessing the 32-byte
+    /// value stored in the EVM transient storage at offset `key`, which will be `0` when not
+    /// previously set. The semantics, then, are equivalent to that of the EVM's [`TLOAD`] opcode.
+    ///
+    /// [`TLOAD`]: https://www.evm.codes/#5c
+    fn storage_transient_load_bytes32(&mut self, key: u32, dest: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        let key = self.read_bytes32(key)?;
+
+        let value = self.evm_api().transient_get_bytes32(key);
+        self.buy_gas(TRANSIENT_BYTES32_GAS)?;
+        self.write_bytes32(dest, value)?;
+        trace!("storage_transient_load_bytes32", self, key, value)
+    }
+
+    /// Stores a 32-byte value to transient storage. Stylus's storage format is identical to that
+    /// of the EVM. This means that, under the hood, this hostio is storing a 32-byte value into
+    /// the EVM transient storage at offset `key`. Furthermore, refunds are tabulated exactly as in
+    /// the EVM. The semantics, then, are equivalent to that of the EVM's [`TSTORE`] opcode.
+    ///
+    /// [`TSTORE`]: https://www.evm.codes/#5d
+    fn storage_transient_store_bytes32(&mut self, key: u32, value: u32) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        self.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
+
+        let key = self.read_bytes32(key)?;
+        let value = self.read_bytes32(value)?;
+
+        self.evm_api().transient_set_bytes32(key, value)?;
+        self.buy_gas(TRANSIENT_BYTES32_GAS)?;
+        trace!("storage_transient_store_bytes32", self, [key, value], &[])
     }
 
     /// Calls the contract at the given address with options for passing value and to limit the

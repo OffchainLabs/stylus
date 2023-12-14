@@ -34,6 +34,8 @@ impl From<u8> for EvmApiStatus {
 pub enum EvmApiMethod {
     GetBytes32,
     SetBytes32,
+    TransientGetBytes32,
+    TransientSetBytes32,
     ContractCall,
     DelegateCall,
     StaticCall,
@@ -56,6 +58,17 @@ pub trait EvmApi: Send + 'static {
     /// Returns the access cost on success.
     /// Analogous to `vm.SSTORE`.
     fn set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<u64>;
+
+    /// Reads the 32-byte value in the EVM state trie at offset `key`.
+    /// Storage is discarded after every transaction
+    /// Returns the value.
+    /// Analogous to `vm.TLOAD`.
+    fn transient_get_bytes32(&mut self, key: Bytes32) -> Bytes32;
+
+    /// Stores the given value at the given key in the EVM state trie.
+    /// Storage is discarded after every transaction
+    /// Analogous to `vm.TSTORE`.
+    fn transient_set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<()>;
 
     /// Calls the contract at the given address.
     /// Returns the EVM return data's length, the gas cost, and whether the call succeeded.
