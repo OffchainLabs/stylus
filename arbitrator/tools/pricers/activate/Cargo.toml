@@ -7,9 +7,18 @@ edition = "2021"
 affinity.workspace = true
 arbitrary.workspace = true
 arbutil.workspace = true
+bincode.workspace = true
+brotli2.workspace = true
 eyre.workspace = true
+hex.workspace = true
 prover.workspace = true
 rand.workspace = true
+serde.workspace = true
+structopt.workspace = true
+stylus.workspace = true
 wasmer.workspace = true
 wasm-smith.workspace = true
 wasmprinter.workspace = true
+
+[profile.release]
+debug = true
