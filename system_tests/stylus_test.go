@@ -18,6 +18,10 @@ func TestProgramArbitratorErrors(t *testing.T) {
 	errorTest(t, false)
 }
 
+func TestProgramArbitratorReentry(t *testing.T) {
+	reentryTest(t, false)
+}
+
 func TestProgramArbitratorStorage(t *testing.T) {
 	storageTest(t, false)
 }

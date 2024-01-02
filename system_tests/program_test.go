@@ -259,6 +259,55 @@ func errorTest(t *testing.T, jit bool) {
 	validateBlocks(t, 7, jit, ctx, node, l2client)
 }
 
+func TestReentry(t *testing.T) {
+	t.Parallel()
+	reentryTest(t, true)
+}
+
+func reentryCallData(enter *common.Address, reenter *common.Address, counter byte) []byte {
+	var callData []byte
+	callData = append(callData, enter.Bytes()...)
+	callData = append(callData, reenter.Bytes()...)
+	return append(callData, counter)
+}
+
+func reentryTest(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	defer cleanup()
+
+	nonEnterAddress := deployWasm(t, ctx, auth, l2client, rustFile("nonreentrant-enter"))
+	enterAddress := deployWasm(t, ctx, auth, l2client, rustFile("reentrant-enter"))
+	reenterAddress := deployWasm(t, ctx, auth, l2client, rustFile("reentrant-reenter"))
+
+	// ensure tx passes
+	callData := reentryCallData(&enterAddress, &reenterAddress, 1)
+	tx := l2info.PrepareTxTo("Owner", &enterAddress, l2info.TransferGas, nil, callData)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	// ensure tx fails, recursive depth too deep
+	callData = reentryCallData(&enterAddress, &reenterAddress, 100)
+	tx = l2info.PrepareTxTo("Owner", &enterAddress, l2info.TransferGas, nil, callData)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_ = EnsureTxFailed(t, ctx, l2client, tx)
+
+	// ensure tx fails, reentry disabled
+	callData = reentryCallData(&nonEnterAddress, &reenterAddress, 1)
+	tx = l2info.PrepareTxTo("Owner", &nonEnterAddress, l2info.TransferGas, nil, callData)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_ = EnsureTxFailed(t, ctx, l2client, tx)
+
+	// ensure tx succeeds, delegate call with reentry disabled
+	callData = reentryCallData(&nonEnterAddress, &reenterAddress, 0)
+	tx = l2info.PrepareTxTo("Owner", &nonEnterAddress, l2info.TransferGas, nil, callData)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	validateBlocks(t, 10, jit, ctx, node, l2client)
+}
+
 func TestProgramStorage(t *testing.T) {
 	t.Parallel()
 	storageTest(t, true)
@@ -723,7 +772,7 @@ func testEvmData(t *testing.T, jit bool) {
 	ethPrecompile := common.BigToAddress(big.NewInt(1))
 	arbTestAddress := types.ArbosTestAddress
 
-	evmDataData := []byte{}
+	var evmDataData []byte
 	evmDataData = append(evmDataData, fundedAddr.Bytes()...)
 	evmDataData = append(evmDataData, ethPrecompile.Bytes()...)
 	evmDataData = append(evmDataData, arbTestAddress.Bytes()...)
