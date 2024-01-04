@@ -1150,6 +1150,7 @@ dependencies = [
  "arbutil",
  "bincode",
  "brotli2",
+ "cfg-if",
  "derivative",
  "digest",
  "eyre",

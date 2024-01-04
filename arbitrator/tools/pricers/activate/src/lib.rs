@@ -116,7 +116,7 @@ impl Trial {
                     let pred = format!("{:.0}", pred * margin).red();
                     bail!("missed {}, {} > {pred}", $name, actual.red());
                 }
-            }
+            };
         }
 
         check!("parse", pred_parse_us, parse_time);
@@ -125,6 +125,30 @@ impl Trial {
         check!("brotli", pred_brotli_us, brotli_time);
         check!("asm", pred_asm_us, asm_time);
         Ok(())
+    }
+
+    pub fn accuracy(&self) -> (&str, i64) {
+        let mut diff: i64 = i64::MIN;
+        let mut name = "";
+
+        macro_rules! check {
+            ($name:expr, $pred:ident, $actual:ident) => {
+                let pred = self.$pred() as i64;
+                let actual = self.$actual.as_micros() as i64;
+                let specific = actual as i64 - pred as i64;
+                if specific > diff {
+                    diff = specific;
+                    name = $name;
+                }
+            };
+        }
+
+        check!("parse", pred_parse_us, parse_time);
+        check!("module", pred_module_us, module_time);
+        check!("hash", pred_hash_us, hash_time);
+        check!("brotli", pred_brotli_us, brotli_time);
+        check!("asm", pred_asm_us, asm_time);
+        (name, diff)
     }
 
     pub fn pred_parse_us(&self) -> u64 {
@@ -176,6 +200,17 @@ impl Trial {
         let m = 2216.903;
 
         let pred = s + m * info.mem_size as f64 + d * info.data as f64 + l * self.wasm_len as f64;
+        pred.ceil() as u64
+    }
+    
+    pub fn pred_asm_len(&self) -> u64 {
+        let info = &self.info;
+        let s = 393216.;
+        let m = 1.679;
+        let f = 432.32;
+        let l = 3.952;
+
+        let pred = s + m * self.module_len as f64 + f * info.funcs as f64 + l * self.wasm_len as f64;
         pred.ceil() as u64
     }
 

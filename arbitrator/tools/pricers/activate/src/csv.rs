@@ -9,33 +9,27 @@ use std::{
     path::PathBuf,
 };
 
-pub fn csv(path: PathBuf, field: String) -> Result<()> {
+pub fn csv(path: PathBuf) -> Result<()> {
     let file = BufReader::new(File::open(path)?);
 
-    println!("{field},wasm_len,funcs,code,data,mem_size");
-    //println!("init,wasm_len,funcs,code,data,mem_size");
-    //println!("asm,wasm_len,funcs,code,data,mem_size");
-    //println!("mod,wasm_len,funcs,code,data,mem_size");
-    //println!("parse,wasm_len");
+    println!("parse,mod,hash,brotli,asm,init,wasm_len,mod_len,brotli_len,asm_len,funcs,code,data,mem_size");
 
     for line in file.lines() {
         let t: Trial = line?.parse()?;
         let i = t.info;
-
-        let time = match field.as_str() {
-            "parse" => t.parse_time,
-            "mod" => t.module_time,
-            "hash" => t.hash_time,
-            "brotli" => t.brotli_time,
-            "asm" => t.asm_time,
-            "init" => t.init_time,
-            x => panic!("unknown field {field}"),
-        };
-
+        
         println!(
-            "{},{},{},{},{},{}",
-            time.as_micros(),
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            t.parse_time.as_micros(),
+            t.module_time.as_micros(),
+            t.hash_time.as_micros(),
+            t.brotli_time.as_micros(),
+            t.asm_time.as_micros(),
+            t.init_time.as_micros(),
             t.wasm_len,
+            t.module_len,
+            t.brotli_len,
+            t.asm_len,
             i.funcs,
             i.code,
             i.data,

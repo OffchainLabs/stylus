@@ -1,5 +1,5 @@
 [workspace]
-members = ["activate", "benchmarks", "runtime"]
+members = ["activate", "activate/hfuzz", "benchmarks", "runtime"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -12,6 +12,7 @@ hex = "0.4.3"
 serde = "1.0.193"
 structopt = "0.3.23"
 rand = "0.8.5"
+rayon = "1.5.1"
 
 arbutil = { path = "../../arbutil" }
 prover = { path = "../../prover" }

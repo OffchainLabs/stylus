@@ -12,38 +12,44 @@ use std::{
 };
 
 pub fn verify(path: &Path) -> Result<()> {
-    verify_impl(path, "parse", |trial| {
+    verify_impl(path, "parse", true, |trial| {
         let pred = trial.pred_parse_us() as f64;
         let actual = trial.parse_time.as_micros() as f64;
         (pred, actual)
     })?;
 
-    verify_impl(path, "module", |trial| {
+    verify_impl(path, "module", true, |trial| {
         let pred = trial.pred_module_us() as f64;
         let actual = trial.module_time.as_micros() as f64;
         (pred, actual)
     })?;
 
-    verify_impl(path, "asm", |trial| {
+    verify_impl(path, "asm", true, |trial| {
         let pred = trial.pred_asm_us() as f64;
         let actual = trial.asm_time.as_micros() as f64;
         (pred, actual)
     })?;
 
-    verify_impl(path, "brotli", |trial| {
+    verify_impl(path, "brotli", true, |trial| {
         let pred = trial.pred_brotli_us() as f64;
         let actual = trial.brotli_time.as_micros() as f64;
         (pred, actual)
     })?;
 
-    verify_impl(path, "hash", |trial| {
+    verify_impl(path, "hash", true, |trial| {
         let pred = trial.pred_hash_us() as f64;
         let actual = trial.hash_time.as_micros() as f64;
+        (pred, actual)
+    })?;
+
+    verify_impl(path, "disk", false, |trial| {
+        let pred = trial.pred_asm_len() as f64;
+        let actual = trial.asm_len as f64;
         (pred, actual)
     })
 }
 
-pub fn verify_impl(path: &Path, name: &str, apply: fn(Trial) -> (f64, f64)) -> Result<()> {
+pub fn verify_impl(path: &Path, name: &str, gas: bool, apply: fn(Trial) -> (f64, f64)) -> Result<()> {
     let file = BufReader::new(File::open(path)?);
 
     let mut high: f64 = f64::MIN;
@@ -84,23 +90,28 @@ pub fn verify_impl(path: &Path, name: &str, apply: fn(Trial) -> (f64, f64)) -> R
     println!("avg:   {:.1}%", avg);
     println!("count: {count}");
 
+    let print = |x| match gas {
+        true => format::gas(util::gas(Duration::from_micros(x), 2.)),
+        false => {
+            let wei = 50. * x as f64 * 0.1 * 1e9;
+            let usd = 2300. * wei / 1e18;
+            format!("${usd:.2}")
+        },
+    };
+    
     println!(
-        "naive: {}",
-        format::gas(util::gas(Duration::from_micros(naive), 2.))
+        "naive: {}", print(naive)
     );
     println!(
-        "model: {}",
-        format::gas(util::gas(Duration::from_micros(model), 2.))
-    );
+        "model: {}", print(model));
+
     if model < naive {
         println!(
-            "saved: {} ^.^",
-            format::gas(util::gas(Duration::from_micros(naive - model), 2.))
+            "saved: {} ^.^", print(naive - model)
         );
     }
     println!(
-        "oppt:  {}",
-        format::gas(util::gas(Duration::from_micros(model - load), 2.))
+        "oppt:  {}", print(model - load)
     );
     println!();
     Ok(())

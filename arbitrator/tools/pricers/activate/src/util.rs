@@ -4,7 +4,12 @@
 use arbutil::evm::api::EvmApi;
 use eyre::Result;
 use rand::{distributions::Standard, prelude::Distribution, Rng};
-use std::{io::{Write, Read}, time::Duration, path::Path, fs::File};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+    time::Duration,
+};
 
 pub fn random_vec<T>(len: usize) -> Vec<T>
 where

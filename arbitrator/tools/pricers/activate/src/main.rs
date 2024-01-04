@@ -6,11 +6,12 @@ use eyre::Result;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
+mod attack;
 mod check;
 mod csv;
+mod record;
 mod verify;
 
-mod record;
 mod util;
 mod wasm;
 
@@ -23,6 +24,9 @@ struct Opts {
 
 #[derive(StructOpt)]
 enum Command {
+    #[structopt(name = "attack")]
+    Attack,
+
     #[structopt(name = "record")]
     Record {
         #[structopt(short, long)]
@@ -41,8 +45,6 @@ enum Command {
     Csv {
         #[structopt(short, long)]
         path: PathBuf,
-        #[structopt(short, long)]
-        field: String,
     },
 
     #[structopt(name = "verify")]
@@ -55,8 +57,9 @@ enum Command {
 fn main() -> Result<()> {
     let opts = Opts::from_args();
     match opts.cmd {
+        Command::Attack => attack::attack(),
         Command::Check { path } => check::check(path),
-        Command::Csv { path, field } => csv::csv(path, field),
+        Command::Csv { path } => csv::csv(path),
         Command::Record { path, count } => record::record(path, count),
         Command::Verify { path } => verify::verify(&path),
     }
