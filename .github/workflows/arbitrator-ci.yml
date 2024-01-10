@@ -36,7 +36,7 @@ jobs:
           detached: true
 
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: recursive
@@ -61,28 +61,10 @@ jobs:
           cache-dependency-path: '**/yarn.lock'
 
       - name: Install rust stable
-        uses: actions-rs/toolchain@v1
-        id: install-rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: "1.70"
-          override: true
-          components: 'llvm-tools-preview, rustfmt'
-
-      - name: Install rust nightly
-        uses: actions-rs/toolchain@v1
-        id: install-rust-nightly
-        with:
-          profile: minimal
-          toolchain: "nightly"
-
-      - name: Install rust wasm targets
-        run: rustup target add wasm32-wasi wasm32-unknown-unknown
-
-      - name: Install nightly wasm targets
-        run: |
-          rustup component add rust-src --toolchain nightly
-          rustup target add wasm32-unknown-unknown --toolchain nightly
+          components: 'llvm-tools-preview, rustfmt, clippy'
+          targets: 'wasm32-wasi, wasm32-unknown-unknown'
 
       - name: Cache Rust intermediate build products
         uses: actions/cache@v3
@@ -182,7 +164,7 @@ jobs:
         run: make test-js-runtime
 
       - name: Make proofs from test cases
-        run: make -j8 test-gen-proofs
+        run: make -j test-gen-proofs
 
       - name: Start geth server
         run: |
