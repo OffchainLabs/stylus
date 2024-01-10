@@ -60,6 +60,12 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
+      - name: Install rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: 'llvm-tools-preview, rustfmt, clippy'
+          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
