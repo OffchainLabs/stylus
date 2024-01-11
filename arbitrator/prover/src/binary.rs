@@ -10,6 +10,7 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 use arbutil::{math::SaturatingSum, Color, DebugColor};
+use cfg_if::cfg_if;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
@@ -26,6 +27,9 @@ use wasmparser::{
     Naming, Operator, Parser, Payload, SectionReader, SectionWithLimitedItems, TableType, Type,
     TypeRef, ValType, Validator, WasmFeatures,
 };
+
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FloatType {
@@ -527,7 +531,7 @@ impl<'a> WasmBinary<'a> {
             count.update_module(self)?;
         }
 
-        for (index, code) in self.codes.iter_mut().enumerate() {
+        let process = |(index, code): (usize, &mut Code)| -> Result<()> {
             let index = LocalFunctionIndex::from_u32(index as u32);
             let locals: Vec<ValType> = code.locals.iter().map(|x| x.value.into()).collect();
 
@@ -562,6 +566,33 @@ impl<'a> WasmBinary<'a> {
             }
 
             code.expr = build;
+            Ok(())
+        };
+
+        /*let mut rayons = Vec::with_capacity(self.codes.len());
+        let mut series = Vec::with_capacity(self.codes.len());
+        let mut work = self.codes.as_mut_slice();
+        for index in 0..work.len() {
+            let (code, rest) = work.split_first_mut().unwrap();
+            work = rest;
+            
+            match code.expr.len() > 4096 {
+                true => rayons.push((index, code)),
+                false => series.push((index, code)),
+            }
+        }*/
+
+
+        cfg_if! {
+            if #[cfg(feature = "rayon")] {
+                //println!("{} {}", rayons.len(), series.len());
+                //rayons.into_par_iter().try_for_each(process)?;
+                //series.into_iter().try_for_each(process)?;
+                
+                self.codes.par_iter_mut().enumerate().try_for_each(process)?;
+            } else {
+                self.codes.iter_mut().enumerate().try_for_each(process)?;
+            }
         }
 
         // 4GB maximum implies `footprint` fits in a u16
@@ -611,20 +642,21 @@ impl<'a> WasmBinary<'a> {
             };
         }
         limit!(1, bin.memories.len(), "memories");
-        limit!(100, bin.datas.len(), "datas");
-        limit!(100, bin.elements.len(), "elements");
-        limit!(1_000, bin.exports.len(), "exports");
-        limit!(1_000, bin.tables.len(), "tables");
-        limit!(10_000, bin.codes.len(), "functions");
-        limit!(50_000, bin.globals.len(), "globals");
-        for function in &bin.codes {
-            limit!(4096, function.locals.len(), "locals")
+        limit!(1, bin.tables.len(), "tables");
+        limit!(128, bin.datas.len(), "datas");
+        limit!(128, bin.elements.len(), "elements");
+        limit!(1024, bin.exports.len(), "exports");
+        limit!(4096, bin.codes.len(), "functions");
+        limit!(32768, bin.globals.len(), "globals");
+        for code in &bin.codes {
+            limit!(1024, code.locals.len(), "locals");
+            limit!(65536, code.expr.len(), "opcodes in func body");
         }
 
         let table_entries = bin.tables.iter().map(|x| x.initial).saturating_sum();
-        limit!(10_000, table_entries, "table entries");
+        limit!(8192, table_entries, "table entries");
 
-        let max_len = 500;
+        let max_len = 512;
         macro_rules! too_long {
             ($name:expr, $len:expr) => {
                 bail!(

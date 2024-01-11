@@ -51,7 +51,7 @@ pub fn activate() -> Result<()> {
     decompress(&b2_mod)?;
     let inflate_time = timer.elapsed();
 
-    let fudge = 2.;
+    let fudge = 3.;
     let sync = 2.;
     let block_time = 1e9 / sync;
     let speed_limit = 7e6;
@@ -76,8 +76,6 @@ pub fn activate() -> Result<()> {
     println!("  asm    {}kb => {:.1}m", asm.len() / 1024, storage(asm.len()) / 1e6);
     println!("  b2 asm {}kb => {:.1}m", b2_asm.len() / 1024, storage(b2_asm.len()) / 1e6);
 
-    // Do ChrisCo feedback
-    
     Ok(())
 }
 

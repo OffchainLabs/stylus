@@ -719,6 +719,7 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "bincode",
+ "cfg-if",
  "derivative",
  "digest",
  "eyre",

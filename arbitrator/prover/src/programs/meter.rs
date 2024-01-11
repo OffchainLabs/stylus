@@ -419,7 +419,7 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
             13610 + 650 * ty.inputs.len() as u64
         },
 
-        // we don't support the following, so return u64::MAX
+        // we don't support the following, so return i64::MAX
         dot!(
             Try, Catch, CatchAll, Delegate, Throw, Rethrow,
 

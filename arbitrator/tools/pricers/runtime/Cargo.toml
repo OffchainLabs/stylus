@@ -4,23 +4,23 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-affinity = "0.1.2"
-arbitrary = "1.1.6"
-structopt = "0.3.23"
+affinity.workspace = true
+arbitrary.workspace = true
+structopt.workspace = true
 humantime = "2.1.0"
 thiserror = "1.0.33"
-brotli2 = "0.3.2"
-eyre = "0.6.5"
-rand = "0.8.5"
+brotli2.workspace = true
+eyre.workspace = true
+rand.workspace = true
 wabt = "0.10.0"
 num = "0.4.0"
 wat = "1.0.56"
 hex = "0.4.3"
-arbutil = { path = "../../../arbutil" }
-prover = { path = "../../../prover" }
+arbutil.workspace = true
+prover.workspace = true
 stylus = { path = "../../../stylus" }
-wasmer = { path = "../../wasmer/lib/api" }
+wasmer.workspace = true
 wasmer-compiler-singlepass = { path = "../../wasmer/lib/compiler-singlepass", default-features = false, features = ["std", "unwind", "avx"] }
 wasmer-vm = { path = "../../wasmer/lib/vm/" }
-wasm-smith = { path = "../../wasm-tools/crates/wasm-smith" }
-wasmprinter = { path = "../../wasm-tools/crates/wasmprinter" }
+wasm-smith.workspace = true
+wasmprinter.workspace = true

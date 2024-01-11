@@ -133,11 +133,11 @@ impl Function {
             "Function instruction count doesn't fit in a u32",
         );
 
-        #[cfg(feature = "rayon")]
+        /*#[cfg(feature = "rayon")]
         let code_hashes = code.par_iter().map(|i| i.hash()).collect();
 
-        #[cfg(not(feature = "rayon"))]
-        let code_hashes = code.iter().map(|i| i.hash()).collect();
+        #[cfg(not(feature = "rayon"))]*/
+        let code_hashes = code.iter().step_by(64).map(|i| i.hash()).collect();
 
         Function {
             code,

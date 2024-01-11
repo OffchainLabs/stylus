@@ -287,6 +287,7 @@ impl<'a> FuncDepthChecker<'a> {
         }
 
         let mut scopes = vec![stack];
+        let mut nests = 0;
 
         for op in &self.code {
             #[rustfmt::skip]
@@ -294,15 +295,18 @@ impl<'a> FuncDepthChecker<'a> {
                 Block { blockty } => {
                     block_type!(blockty); // we'll say any return slots have been pre-allocated
                     scopes.push(stack);
+                    nests = nests.max(scopes.len());
                 }
                 Loop { blockty } => {
                     block_type!(blockty); // return slots
                     scopes.push(stack);
+                    nests = nests.max(scopes.len());
                 }
                 If { blockty } => {
                     pop!();               // pop the conditional
                     block_type!(blockty); // return slots
                     scopes.push(stack);
+                    nests = nests.max(scopes.len());
                 }
                 Else => {
                     stack = match scopes.last() {
