@@ -1055,6 +1055,44 @@ func TestProgramActivationLogs(t *testing.T) {
 	}
 }
 
+func TestTransient(t *testing.T) {
+	t.Parallel()
+	testTransient(t, true)
+}
+
+func reentryCallData(enter *common.Address, reenter *common.Address, counter byte) []byte {
+	var callData []byte
+	callData = append(callData, enter.Bytes()...)
+	callData = append(callData, reenter.Bytes()...)
+	return append(callData, counter)
+}
+
+func testTransient(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	defer cleanup()
+
+	enterAddress := deployWasm(t, ctx, auth, l2client, rustFile("transient-enter"))
+	reenterAddress := deployWasm(t, ctx, auth, l2client, rustFile("transient-reenter"))
+	delegateEnterAddress := deployWasm(t, ctx, auth, l2client, rustFile("transient-delegate-enter"))
+	delegateReenterAddress := deployWasm(t, ctx, auth, l2client, rustFile("transient-delegate-reenter"))
+
+	// Test transient works properly with basic reentry call
+	callData := reentryCallData(&enterAddress, &reenterAddress, 1)
+	tx := l2info.PrepareTxTo("Owner", &enterAddress, l2info.TransferGas, nil, callData)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	// Test transient works properly with delegate reentry call
+	callData = reentryCallData(&delegateEnterAddress, &delegateReenterAddress, 1)
+	tx = l2info.PrepareTxTo("Owner", &delegateEnterAddress, l2info.TransferGas, nil, callData)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	validateBlocks(t, 11, jit, ctx, node, l2client)
+}
+
 func setupProgramTest(t *testing.T, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, func(),
 ) {

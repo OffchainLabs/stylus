@@ -77,6 +77,14 @@ impl EvmApi for TestEvmApi {
         Ok(22100) // pretend worst case
     }
 
+    fn transient_get_bytes32(&mut self, key: Bytes32) -> Bytes32 {
+        unimplemented!()
+    }
+
+    fn transient_set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<()> {
+        unimplemented!()
+    }
+
     /// Simulates a contract call.
     /// Note: this call function is for testing purposes only and deviates from onchain behavior.
     fn contract_call(

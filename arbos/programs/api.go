@@ -19,6 +19,8 @@ import (
 
 type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
 type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
+type transientGetBytes32Type func(key common.Hash) (value common.Hash)
+type transientSetBytes32Type func(key, value common.Hash) (err error)
 type contractCallType func(
 	contract common.Address, calldata []byte, gas uint64, value *big.Int) (
 	retdata_len uint32, cost uint64, err error,
@@ -47,19 +49,21 @@ type addPagesType func(pages uint16) (cost uint64)
 type captureHostioType func(name string, args, outs []byte, startInk, endInk uint64)
 
 type goClosures struct {
-	getBytes32      getBytes32Type
-	setBytes32      setBytes32Type
-	contractCall    contractCallType
-	delegateCall    delegateCallType
-	staticCall      staticCallType
-	create1         create1Type
-	create2         create2Type
-	getReturnData   getReturnDataType
-	emitLog         emitLogType
-	accountBalance  accountBalanceType
-	accountCodeHash accountCodehashType
-	addPages        addPagesType
-	captureHostio   captureHostioType
+	getBytes32          getBytes32Type
+	setBytes32          setBytes32Type
+	transientGetBytes32 transientGetBytes32Type
+	transientSetBytes32 transientSetBytes32Type
+	contractCall        contractCallType
+	delegateCall        delegateCallType
+	staticCall          staticCallType
+	create1             create1Type
+	create2             create2Type
+	getReturnData       getReturnDataType
+	emitLog             emitLogType
+	accountBalance      accountBalanceType
+	accountCodeHash     accountCodehashType
+	addPages            addPagesType
+	captureHostio       captureHostioType
 }
 
 func newApiClosures(
@@ -92,6 +96,22 @@ func newApiClosures(
 		cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
 		db.SetState(actingAddress, key, value)
 		return cost, nil
+	}
+	transientGetBytes32 := func(key common.Hash) common.Hash {
+		if tracingInfo != nil {
+			tracingInfo.RecordTransientStorageGet(key)
+		}
+		return db.GetTransientState(actingAddress, key)
+	}
+	transientSetBytes32 := func(key, value common.Hash) error {
+		if tracingInfo != nil {
+			tracingInfo.RecordTransientStorageSet(key, value)
+		}
+		if readOnly {
+			return vm.ErrWriteProtection
+		}
+		db.SetTransientState(actingAddress, key, value)
+		return nil
 	}
 	doCall := func(
 		contract common.Address, opcode vm.OpCode, input []byte, gas uint64, value *big.Int,
@@ -276,18 +296,20 @@ func newApiClosures(
 	}
 
 	return &goClosures{
-		getBytes32:      getBytes32,
-		setBytes32:      setBytes32,
-		contractCall:    contractCall,
-		delegateCall:    delegateCall,
-		staticCall:      staticCall,
-		create1:         create1,
-		create2:         create2,
-		getReturnData:   getReturnData,
-		emitLog:         emitLog,
-		accountBalance:  accountBalance,
-		accountCodeHash: accountCodehash,
-		addPages:        addPages,
-		captureHostio:   captureHostio,
+		getBytes32:          getBytes32,
+		setBytes32:          setBytes32,
+		transientGetBytes32: transientGetBytes32,
+		transientSetBytes32: transientSetBytes32,
+		contractCall:        contractCall,
+		delegateCall:        delegateCall,
+		staticCall:          staticCall,
+		create1:             create1,
+		create2:             create2,
+		getReturnData:       getReturnData,
+		emitLog:             emitLog,
+		accountBalance:      accountBalance,
+		accountCodeHash:     accountCodehash,
+		addPages:            addPages,
+		captureHostio:       captureHostio,
 	}
 }

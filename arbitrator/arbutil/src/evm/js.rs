@@ -215,6 +215,20 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
         }
     }
 
+    fn transient_get_bytes32(&mut self, key: Bytes32) -> Bytes32 {
+        let [value] = call!(self, 1, TransientGetBytes32, key);
+        value.assert_bytes32()
+    }
+
+    fn transient_set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<()> {
+        let [out] = call!(self, 1, TransientSetBytes32, key, value);
+        match out {
+            ApiValueKind::Nil => Ok(()),
+            ApiValueKind::String(err) => bail!(err),
+            _ => unreachable!(),
+        }
+    }
+
     fn contract_call(
         &mut self,
         contract: Bytes20,

@@ -132,6 +132,17 @@ func newApi(
 		cost, err := closures.setBytes32(key, value)
 		return write(maybe(cost, err))
 	})
+	transientGetBytes32 := js.FuncOf(func(this js.Value, args []js.Value) any {
+		key := jsHash(args[0])
+		value := closures.transientGetBytes32(key)
+		return write(value)
+	})
+	transientSetBytes32 := js.FuncOf(func(this js.Value, args []js.Value) any {
+		key := jsHash(args[0])
+		value := jsHash(args[1])
+		err := closures.transientSetBytes32(key, value)
+		return write(err)
+	})
 	contractCall := js.FuncOf(func(this js.Value, args []js.Value) any {
 		contract := jsAddress(args[0])
 		input := jsBytes(args[1])
@@ -198,9 +209,9 @@ func newApi(
 	})
 
 	funcs := []js.Func{
-		getBytes32, setBytes32, contractCall, delegateCall,
-		staticCall, create1, create2, getReturnData, emitLog,
-		addressBalance, addressCodeHash, addPages,
+		getBytes32, setBytes32, transientGetBytes32, transientSetBytes32,
+		contractCall, delegateCall, staticCall, create1, create2,
+		getReturnData, emitLog, addressBalance, addressCodeHash, addPages,
 	}
 	anys := make([]any, len(funcs)) // js.ValueOf() only works on []any
 	for i, fn := range funcs {

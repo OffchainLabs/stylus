@@ -55,3 +55,8 @@ func TestProgramArbitratorActivateFails(t *testing.T) {
 	t.Parallel()
 	testActivateFails(t, false)
 }
+
+func TestProgramArbitratorTransient(t *testing.T) {
+	t.Parallel()
+	testTransient(t, false)
+}

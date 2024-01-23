@@ -21,6 +21,7 @@ pub(crate) static mut EVER_PAGES: u16 = 0;
 
 lazy_static! {
     static ref KEYS: Mutex<HashMap<Bytes32, Bytes32>> = Mutex::new(HashMap::default());
+    static ref TRANSIENT_KEYS: Mutex<HashMap<Bytes32, Bytes32>> = Mutex::new(HashMap::default());
 }
 
 /// Mock type representing a `user_host::Program`

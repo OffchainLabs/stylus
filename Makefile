@@ -122,30 +122,38 @@ get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_d
 get_stylus_test_c    = $(wildcard $(c_sdk)/examples/$(1)/*.c $(c_sdk)/examples/$(1)/*.h) $(stylus_lang_c)
 stylus_test_bfs      = $(wildcard $(stylus_test_dir)/bf/*.b)
 
-stylus_test_keccak_wasm           = $(call get_stylus_test_wasm,keccak)
-stylus_test_keccak_src            = $(call get_stylus_test_rust,keccak)
-stylus_test_keccak-100_wasm       = $(call get_stylus_test_wasm,keccak-100)
-stylus_test_keccak-100_src        = $(call get_stylus_test_rust,keccak-100)
-stylus_test_fallible_wasm         = $(call get_stylus_test_wasm,fallible)
-stylus_test_fallible_src          = $(call get_stylus_test_rust,fallible)
-stylus_test_storage_wasm          = $(call get_stylus_test_wasm,storage)
-stylus_test_storage_src           = $(call get_stylus_test_rust,storage)
-stylus_test_multicall_wasm        = $(call get_stylus_test_wasm,multicall)
-stylus_test_multicall_src         = $(call get_stylus_test_rust,multicall)
-stylus_test_log_wasm              = $(call get_stylus_test_wasm,log)
-stylus_test_log_src               = $(call get_stylus_test_rust,log)
-stylus_test_create_wasm           = $(call get_stylus_test_wasm,create)
-stylus_test_create_src            = $(call get_stylus_test_rust,create)
-stylus_test_evm-data_wasm         = $(call get_stylus_test_wasm,evm-data)
-stylus_test_evm-data_src          = $(call get_stylus_test_rust,evm-data)
-stylus_test_sdk-storage_wasm      = $(call get_stylus_test_wasm,sdk-storage)
-stylus_test_sdk-storage_src       = $(call get_stylus_test_rust,sdk-storage)
-stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
-stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
-stylus_test_read-return-data_wasm = $(call get_stylus_test_wasm,read-return-data)
-stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data)
+stylus_test_keccak_wasm                     = $(call get_stylus_test_wasm,keccak)
+stylus_test_keccak_src                      = $(call get_stylus_test_rust,keccak)
+stylus_test_keccak-100_wasm                 = $(call get_stylus_test_wasm,keccak-100)
+stylus_test_keccak-100_src                  = $(call get_stylus_test_rust,keccak-100)
+stylus_test_fallible_wasm                   = $(call get_stylus_test_wasm,fallible)
+stylus_test_fallible_src                    = $(call get_stylus_test_rust,fallible)
+stylus_test_storage_wasm                    = $(call get_stylus_test_wasm,storage)
+stylus_test_storage_src                     = $(call get_stylus_test_rust,storage)
+stylus_test_multicall_wasm                  = $(call get_stylus_test_wasm,multicall)
+stylus_test_multicall_src                   = $(call get_stylus_test_rust,multicall)
+stylus_test_log_wasm                        = $(call get_stylus_test_wasm,log)
+stylus_test_log_src                         = $(call get_stylus_test_rust,log)
+stylus_test_create_wasm                     = $(call get_stylus_test_wasm,create)
+stylus_test_create_src                      = $(call get_stylus_test_rust,create)
+stylus_test_evm-data_wasm                   = $(call get_stylus_test_wasm,evm-data)
+stylus_test_evm-data_src                    = $(call get_stylus_test_rust,evm-data)
+stylus_test_sdk-storage_wasm                = $(call get_stylus_test_wasm,sdk-storage)
+stylus_test_sdk-storage_src                 = $(call get_stylus_test_rust,sdk-storage)
+stylus_test_erc20_wasm                      = $(call get_stylus_test_wasm,erc20)
+stylus_test_erc20_src                       = $(call get_stylus_test_rust,erc20)
+stylus_test_read-return-data_wasm           = $(call get_stylus_test_wasm,read-return-data)
+stylus_test_read-return-data_src            = $(call get_stylus_test_rust,read-return-data)
+stylus_test_transient-enter_wasm            = $(call get_stylus_test_wasm,transient-enter)
+stylus_test_transient-enter_src             = $(call get_stylus_test_rust,transient-enter)
+stylus_test_transient-reenter_wasm          = $(call get_stylus_test_wasm,transient-reenter)
+stylus_test_transient-reenter_src           = $(call get_stylus_test_rust,transient-reenter)
+stylus_test_transient-delegate-enter_wasm   = $(call get_stylus_test_wasm,transient-delegate-enter)
+stylus_test_transient-delegate-enter_src    = $(call get_stylus_test_rust,transient-delegate-enter)
+stylus_test_transient-delegate-reenter_wasm = $(call get_stylus_test_wasm,transient-delegate-reenter)
+stylus_test_transient-delegate-reenter_src  = $(call get_stylus_test_rust,transient-delegate-reenter)
 
-stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_sdk-storage_wasm) $(stylus_test_erc20_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_bfs:.b=.wasm)
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_sdk-storage_wasm) $(stylus_test_erc20_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_bfs:.b=.wasm) $(stylus_test_transient-enter_wasm) $(stylus_test_transient-reenter_wasm) $(stylus_test_transient-delegate-enter_wasm) $(stylus_test_transient-delegate-reenter_wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 
 # user targets
@@ -233,6 +241,8 @@ clean:
 	rm -rf $(output_root)
 	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
 	rm -rf arbitrator/target
+	rm -f $(forward_dir)/forward.wat
+	rm -f $(forward_dir)/forward_stub.wat
 	rm -rf arbitrator/wasm-libraries/target
 	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
@@ -416,6 +426,22 @@ $(stylus_test_evm-data_wasm): $(stylus_test_evm-data_src)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_read-return-data_wasm): $(stylus_test_read-return-data_src)
+	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_transient-enter_wasm): $(stylus_test_transient-enter_src)
+	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_transient-reenter_wasm): $(stylus_test_transient-reenter_src)
+	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_transient-delegate-enter_wasm): $(stylus_test_transient-delegate-enter_src)
+	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_transient-delegate-reenter_wasm): $(stylus_test_transient-delegate-reenter_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
