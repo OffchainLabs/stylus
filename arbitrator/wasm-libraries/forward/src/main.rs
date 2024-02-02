@@ -6,7 +6,7 @@ use std::{fs::File, io::Write, path::PathBuf};
 use structopt::StructOpt;
 
 /// order matters!
-const HOSTIOS: [[&str; 3]; 33] = [
+const HOSTIOS: [[&str; 3]; 42] = [
     ["read_args", "i32", ""],
     ["write_result", "i32 i32", ""],
     ["storage_load_bytes32", "i32 i32", ""],
@@ -23,6 +23,15 @@ const HOSTIOS: [[&str; 3]; 33] = [
     ["account_code", "i32 i32 i32 i32", "i32"],
     ["account_code_size", "i32", "i32"],
     ["account_codehash", "i32 i32", ""],
+    ["div", "i32 i32 i32", ""],
+    ["sdiv", "i32 i32 i32", ""],
+    ["mod_", "i32 i32 i32", ""],
+    ["smod", "i32 i32 i32", ""],
+    ["exp", "i32 i32 i32", ""],
+    ["addmod", "i32 i32 i32 i32", ""],
+    ["mulmod", "i32 i32 i32 i32", ""],
+    ["expmod", "i32 i32 i32 i32", ""],
+    ["sign_extend", "i32 i32 i32", ""],
     ["evm_gas_left", "", "i64"],
     ["evm_ink_left", "", "i64"],
     ["block_basefee", "i32", ""],

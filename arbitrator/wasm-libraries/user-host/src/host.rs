@@ -140,6 +140,51 @@ pub unsafe extern "C" fn user_host__account_codehash(address: u32, ptr: u32) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn user_host__div(lhs: u32, rhs: u32, dest: u32) {
+    hostio!(div(lhs, rhs, dest))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__sdiv(lhs: u32, rhs: u32, dest: u32) {
+    hostio!(sdiv(lhs, rhs, dest))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__mod_(lhs: u32, rhs: u32, dest: u32) {
+    hostio!(mod_(lhs, rhs, dest))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__smod(lhs: u32, rhs: u32, dest: u32) {
+    hostio!(smod(lhs, rhs, dest))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__exp(lhs: u32, rhs: u32, dest: u32) {
+    hostio!(exp(lhs, rhs, dest))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__addmod(lhs: u32, rhs: u32, n: u32, dest: u32) {
+    hostio!(addmod(lhs, rhs, n, dest))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__mulmod(lhs: u32, rhs: u32, n: u32, dest: u32) {
+    hostio!(mulmod(lhs, rhs, n, dest))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__expmod(lhs: u32, rhs: u32, n: u32, dest: u32) {
+    hostio!(expmod(lhs, rhs, n, dest))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__sign_extend(b: u32, val: u32, dest: u32) {
+    hostio!(sign_extend(b, val, dest))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn user_host__block_basefee(ptr: u32) {
     hostio!(block_basefee(ptr))
 }

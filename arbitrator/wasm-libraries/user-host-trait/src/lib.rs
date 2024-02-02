@@ -1,6 +1,7 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use alloy_primitives::{I256, U256};
 use arbutil::{
     crypto,
     evm::{self, api::EvmApi, user::UserOutcomeKind, EvmData},
@@ -530,6 +531,122 @@ pub trait UserHost: GasMeteredMachine {
         self.write_bytes32(ptr, hash)?;
         trace!("account_codehash", self, address, hash)
     }
+
+    fn div(&mut self, lhs: u32, val: u32, dest: u32) -> Result<(), Self::Err> {
+        let lhs = self.read_bytes32(lhs)?;
+        let val = self.read_bytes32(val)?;
+        let lhs2 = U256::from_le_bytes(*lhs);
+        let val2 = U256::from_le_bytes(*val);
+        let result = lhs2.checked_div(val2).unwrap_or_default();
+        let result_bytes = Bytes32::from(result.to_le_bytes());
+        self.write_bytes32(dest, result_bytes)?;
+        trace!("div", self, [lhs, val], [result_bytes], ())
+    }
+
+    fn sdiv(&mut self, lhs: u32, val: u32, dest: u32) -> Result<(), Self::Err> {
+        let lhs = self.read_bytes32(lhs)?;
+        let val = self.read_bytes32(val)?;
+        let lhs2 = I256::from_le_bytes(*lhs);
+        let val2 = I256::from_le_bytes(*val);
+        let result = if val2.is_zero() {
+            val2
+        } else {
+            lhs2.wrapping_div(val2)
+        };
+        let result_bytes = Bytes32::from(result.to_le_bytes());
+        self.write_bytes32(dest, result_bytes)?;
+        trace!("sdiv", self, [lhs, val], [result_bytes], ())
+    }
+
+    fn mod_(&mut self, lhs: u32, val: u32, dest: u32) -> Result<(), Self::Err> {
+        let lhs = self.read_bytes32(lhs)?;
+        let val = self.read_bytes32(val)?;
+        let lhs2 = U256::from_le_bytes(*lhs);
+        let val2 = U256::from_le_bytes(*val);
+        let result = lhs2.checked_rem(val2).unwrap_or_default();
+        let result_bytes = Bytes32::from(result.to_le_bytes());
+        self.write_bytes32(dest, result_bytes)?;
+        trace!("mod_", self, [lhs, val], [result_bytes], ())
+    }
+
+    fn smod(&mut self, lhs: u32, val: u32, dest: u32) -> Result<(), Self::Err> {
+        let lhs = self.read_bytes32(lhs)?;
+        let val = self.read_bytes32(val)?;
+        let lhs2 = I256::from_le_bytes(*lhs);
+        let val2 = I256::from_le_bytes(*val);
+        let result = if val2.is_zero() {
+            val2
+        } else {
+            lhs2.wrapping_rem(val2)
+        };
+        let result_bytes = Bytes32::from(result.to_le_bytes());
+        self.write_bytes32(dest, result_bytes)?;
+        trace!("smod", self, [lhs, val], [result_bytes], ())
+    }
+
+    fn exp(&mut self, lhs: u32, val: u32, dest: u32) -> Result<(), Self::Err> {
+        let lhs = self.read_bytes32(lhs)?;
+        let val = self.read_bytes32(val)?;
+        let lhs2 = U256::from_le_bytes(*lhs);
+        let val2 = U256::from_le_bytes(*val);
+        let result = lhs2.wrapping_pow(val2);
+        let result_bytes = Bytes32::from(result.to_le_bytes());
+        self.write_bytes32(dest, result_bytes)?;
+        trace!("exp", self, [lhs, val], [result_bytes], ())
+    }
+
+    fn addmod(&mut self, lhs: u32, val: u32, n: u32, dest: u32) -> Result<(), Self::Err> {
+        let lhs = self.read_bytes32(lhs)?;
+        let val = self.read_bytes32(val)?;
+        let n = self.read_bytes32(n)?;
+        let lhs2 = U256::from_le_bytes(*lhs);
+        let val2 = U256::from_le_bytes(*val);
+        let n2 = U256::from_le_bytes(*n);
+        let result = lhs2.add_mod(val2, n2);
+        let result_bytes = Bytes32::from(result.to_le_bytes());
+        self.write_bytes32(dest, result_bytes)?;
+        trace!("addmod", self, [lhs, val, n], [result_bytes], ())
+    }
+
+    fn mulmod(&mut self, lhs: u32, val: u32, n: u32, dest: u32) -> Result<(), Self::Err> {
+        let lhs = self.read_bytes32(lhs)?;
+        let val = self.read_bytes32(val)?;
+        let n = self.read_bytes32(n)?;
+        let lhs2 = U256::from_le_bytes(*lhs);
+        let val2 = U256::from_le_bytes(*val);
+        let n2 = U256::from_le_bytes(*n);
+        let result = lhs2.mul_mod(val2, n2);
+        let result_bytes = Bytes32::from(result.to_le_bytes());
+        self.write_bytes32(dest, result_bytes)?;
+        trace!("mulmod", self, [lhs, val, n], [result_bytes], ())
+    }
+
+    fn expmod(&mut self, lhs: u32, val: u32, n: u32, dest: u32) -> Result<(), Self::Err> {
+        let lhs = self.read_bytes32(lhs)?;
+        let val = self.read_bytes32(val)?;
+        let n = self.read_bytes32(n)?;
+        let lhs2 = U256::from_le_bytes(*lhs);
+        let val2 = U256::from_le_bytes(*val);
+        let n2 = U256::from_le_bytes(*n);
+        let result = lhs2.pow_mod(val2, n2);
+        let result_bytes = Bytes32::from(result.to_le_bytes());
+        self.write_bytes32(dest, result_bytes)?;
+        trace!("expmod", self, &[], &[], ())
+    }
+
+    fn sign_extend(&mut self, b: u32, val: u32, dest: u32) -> Result<(), Self::Err> {
+        let val = self.read_bytes32(val)?;
+        let val2 = U256::from_le_bytes(*val);
+        let result = if val2.bit(b as usize) {
+            val2
+        } else {
+            let mask1 = U256::from(1) << b;
+            val2 | mask1.wrapping_neg()
+        };
+        self.write_bytes32(dest, Bytes32::from(result.to_le_bytes()))?;
+        trace!("sign_extend", self, &[], &[], ())
+    }
+
 
     /// Gets the basefee of the current block. The semantics are equivalent to that of the EVM's
     /// [`BASEFEE`] opcode.

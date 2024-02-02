@@ -244,6 +244,90 @@ pub(crate) fn account_codehash<E: EvmApi>(
     hostio!(env, account_codehash(address, ptr))
 }
 
+pub(crate) fn div<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    lhs: u32,
+    rhs: u32,
+    dest: u32,
+) -> MaybeEscape {
+    hostio!(env, div(lhs, rhs, dest))
+}
+
+pub(crate) fn sdiv<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    lhs: u32,
+    rhs: u32,
+    dest: u32,
+) -> MaybeEscape {
+    hostio!(env, sdiv(lhs, rhs, dest))
+}
+
+pub(crate) fn mod_<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    lhs: u32,
+    rhs: u32,
+    dest: u32,
+) -> MaybeEscape {
+    hostio!(env, mod_(lhs, rhs, dest))
+}
+
+pub(crate) fn smod<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    lhs: u32,
+    rhs: u32,
+    dest: u32,
+) -> MaybeEscape {
+    hostio!(env, smod(lhs, rhs, dest))
+}
+
+pub(crate) fn exp<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    lhs: u32,
+    rhs: u32,
+    dest: u32,
+) -> MaybeEscape {
+    hostio!(env, exp(lhs, rhs, dest))
+}
+
+pub(crate) fn addmod<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    lhs: u32,
+    rhs: u32,
+    n: u32,
+    dest: u32,
+) -> MaybeEscape {
+    hostio!(env, addmod(lhs, rhs, n, dest))
+}
+
+pub(crate) fn mulmod<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    lhs: u32,
+    rhs: u32,
+    n: u32,
+    dest: u32,
+) -> MaybeEscape {
+    hostio!(env, mulmod(lhs, rhs, n, dest))
+}
+
+pub(crate) fn expmod<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    lhs: u32,
+    rhs: u32,
+    n: u32,
+    dest: u32,
+) -> MaybeEscape {
+    hostio!(env, expmod(lhs, rhs, n, dest))
+}
+
+pub(crate) fn sign_extend<E: EvmApi>(
+    mut env: WasmEnvMut<E>,
+    b: u32,
+    val: u32,
+    dest: u32,
+) -> MaybeEscape {
+    hostio!(env, sign_extend(b, val, dest))
+}
+
 pub(crate) fn block_basefee<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
     hostio!(env, block_basefee(ptr))
 }

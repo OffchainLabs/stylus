@@ -26,6 +26,8 @@ fn test_timings() -> Result<()> {
 
     let loops = ["read_args", "write_result", "keccak"];
 
+    let loops2 = ["div", "mod_", "sdiv", "smod", "exp", "addmod", "mulmod", "expmod", "sign_extend"];
+
     macro_rules! run {
         ($rounds:expr, $args:expr, $file:expr) => {{
             let mut native = TestInstance::new_linked(&$file, &compile, config)?;
@@ -45,6 +47,19 @@ fn test_timings() -> Result<()> {
             args
         }};
     }
+
+    let args2 = |rounds: u32, i: usize| {
+        let mut args = rounds.to_le_bytes().to_vec();
+        args.extend([0; 28]);
+        // Push 3 32-byte arguments.
+        for k in 0..3u8 {
+            for j in 0..32 {
+                let val = if j < i { k + j as u8 + 3 } else { 0 };
+                args.push(val);
+            }
+        }
+        args
+    };
 
     println!("Timings hostios. Please note the values derived are machine dependent.\n");
 
@@ -67,6 +82,19 @@ fn test_timings() -> Result<()> {
             let (time, cost, ink) = run!(rounds, args, file);
             let name = format!("{name}({size:03})").grey();
             println!("{name} {time} {cost} {ink}",);
+        }
+    }
+
+    for name in loops2 {
+        println!("\n{}", format!("{name} timings").pink());
+        for i in (0..=30).step_by(5) {
+            let file = format!("tests/timings/{name}.wat");
+            // let rounds: u32 = 10_000_000;
+            let rounds: u32 = 10_000;
+            let args = args2(rounds, i);
+            let (time, cost, ink) = run!(rounds, args, file);
+            let name = format!("{name}({i:03})").grey();
+            println!("{name} {time} {cost} {ink}");
         }
     }
     Ok(())
