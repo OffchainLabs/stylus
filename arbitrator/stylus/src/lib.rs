@@ -29,6 +29,7 @@ mod test;
 
 #[cfg(all(test, feature = "benchmark"))]
 mod benchmarks;
+mod lru_cache;
 
 #[repr(C)]
 pub struct GoSliceData {

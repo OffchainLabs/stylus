@@ -25,6 +25,7 @@ mod wavm;
 
 #[cfg(feature = "timings")]
 mod timings;
+mod lru_cache;
 
 type TestInstance = NativeInstance<TestEvmApi>;
 
