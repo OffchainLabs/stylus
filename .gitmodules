@@ -32,3 +32,6 @@
 [submodule "arbitrator/langs/bf"]
 	path = arbitrator/langs/bf
 	url = https://github.com/OffchainLabs/stylus-sdk-bf.git
+[submodule "arbos/cuckoocache"]
+	path = arbos/cuckoocache
+	url = https://github.com/offchainlabs/cuckoocache

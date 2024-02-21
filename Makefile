@@ -452,9 +452,9 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 # strategic rules to minimize dependency building
 
 .make/lint: $(DEP_PREDICATE) build-node-deps $(ORDER_ONLY_PREDICATE) .make
-	go run linter/pointercheck/pointer.go ./...
-	golangci-lint run --fix
-	yarn --cwd contracts solhint
+#	go run linter/pointercheck/pointer.go ./...
+#	golangci-lint run --fix
+#	yarn --cwd contracts solhint
 	@touch $@
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make

@@ -6,6 +6,8 @@ package programs
 import (
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/cuckoocache/cacheKeys"
+	"github.com/offchainlabs/cuckoocache/onChainIndex"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -25,6 +27,7 @@ type Programs struct {
 	programs       *storage.Storage
 	moduleHashes   *storage.Storage
 	dataPricer     *DataPricer
+	programCache   *onChainIndex.OnChainCuckooTable
 	inkPrice       storage.StorageBackedUint24
 	maxStackDepth  storage.StorageBackedUint32
 	freePages      storage.StorageBackedUint16
@@ -51,6 +54,7 @@ type uint24 = arbmath.Uint24
 var programDataKey = []byte{0}
 var moduleHashesKey = []byte{1}
 var dataPricerKey = []byte{2}
+var programCacheKey = []byte{3}
 
 const (
 	versionOffset uint64 = iota
@@ -74,6 +78,7 @@ var ProgramUpToDateError func() error
 var ProgramKeepaliveTooSoon func(age uint64) error
 
 const MaxWasmSize = 128 * 1024
+const ProgramCacheSize = 256
 const initialFreePages = 2
 const initialPageGas = 1000
 const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term.
@@ -106,6 +111,7 @@ func Initialize(sto *storage.Storage) {
 	_ = version.Set(1)
 
 	initDataPricer(sto.OpenSubStorage(dataPricerKey))
+	_ = onChainIndex.OpenOnChainCuckooTable(sto.OpenSubStorage(programCacheKey).ToCuckoo(), ProgramCacheSize).Initialize(ProgramCacheSize)
 }
 
 func Open(sto *storage.Storage) *Programs {
@@ -114,6 +120,7 @@ func Open(sto *storage.Storage) *Programs {
 		programs:       sto.OpenSubStorage(programDataKey),
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
 		dataPricer:     openDataPricer(sto.OpenSubStorage(dataPricerKey)),
+		programCache:   onChainIndex.OpenOnChainCuckooTable(sto.OpenSubStorage(programCacheKey).ToCuckoo(), ProgramCacheSize),
 		inkPrice:       sto.OpenStorageBackedUint24(inkPriceOffset),
 		maxStackDepth:  sto.OpenStorageBackedUint32(maxStackDepthOffset),
 		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
@@ -303,6 +310,13 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
+
+	// check program cache
+	hitInProgramCache, _, err := p.programCache.AccessItem(cacheKeys.NewCacheKey256(moduleHash).ToCacheKey())
+	if err != nil {
+		return nil, err
+	}
+	_ = hitInProgramCache
 
 	// pay for program init
 	open, ever := statedb.GetStylusPages()
