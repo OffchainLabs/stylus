@@ -80,6 +80,7 @@ var ProgramKeepaliveTooSoon func(age uint64) error
 
 const MaxWasmSize = 128 * 1024
 const ProgramCacheSize = 256
+const ProgramCacheHitDiscountFactor = 10
 const initialFreePages = 2
 const initialPageGas = 1000
 const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term.
@@ -334,6 +335,9 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 	callCost := uint64(program.initGas) + uint64(minInitGas)
+	if hitInProgramCache {
+		callCost = callCost / ProgramCacheHitDiscountFactor
+	}
 	cost := common.SaturatingUAdd(memoryCost, callCost)
 	if err := contract.BurnGas(cost); err != nil {
 		return nil, err
