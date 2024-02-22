@@ -79,6 +79,15 @@ func NewMemoryBackedStateDB() vm.StateDB {
 	return statedb
 }
 
+func (sto *Storage) WithBurner(burner burn.Burner) *Storage {
+	return &Storage{
+		account:    sto.account,
+		db:         sto.db,
+		storageKey: sto.storageKey,
+		burner:     burner,
+	}
+}
+
 // We map addresses using "pages" of 256 storage slots. We hash over the page number but not the offset within
 // a page, to preserve contiguity within a page. This will reduce cost if/when Ethereum switches to storage
 // representations that reward contiguity.

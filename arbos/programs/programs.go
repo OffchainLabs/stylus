@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/offchainlabs/cuckoocache/cacheKeys"
 	"github.com/offchainlabs/cuckoocache/onChainIndex"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -120,17 +121,20 @@ func Open(sto *storage.Storage) *Programs {
 		programs:       sto.OpenSubStorage(programDataKey),
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
 		dataPricer:     openDataPricer(sto.OpenSubStorage(dataPricerKey)),
-		programCache:   onChainIndex.OpenOnChainCuckooTable(sto.OpenSubStorage(programCacheKey).ToCuckoo(), ProgramCacheSize),
-		inkPrice:       sto.OpenStorageBackedUint24(inkPriceOffset),
-		maxStackDepth:  sto.OpenStorageBackedUint32(maxStackDepthOffset),
-		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
-		pageGas:        sto.OpenStorageBackedUint16(pageGasOffset),
-		pageRamp:       sto.OpenStorageBackedUint64(pageRampOffset),
-		pageLimit:      sto.OpenStorageBackedUint16(pageLimitOffset),
-		minInitGas:     sto.OpenStorageBackedUint16(minInitGasOffset),
-		expiryDays:     sto.OpenStorageBackedUint16(expiryDaysOffset),
-		keepaliveDays:  sto.OpenStorageBackedUint16(keepaliveDaysOffset),
-		version:        sto.OpenStorageBackedUint16(versionOffset),
+		programCache: onChainIndex.OpenOnChainCuckooTable(
+			sto.WithBurner(burn.NewSystemBurner(nil, false)).OpenSubStorage(programCacheKey).ToCuckoo(),
+			ProgramCacheSize,
+		),
+		inkPrice:      sto.OpenStorageBackedUint24(inkPriceOffset),
+		maxStackDepth: sto.OpenStorageBackedUint32(maxStackDepthOffset),
+		freePages:     sto.OpenStorageBackedUint16(freePagesOffset),
+		pageGas:       sto.OpenStorageBackedUint16(pageGasOffset),
+		pageRamp:      sto.OpenStorageBackedUint64(pageRampOffset),
+		pageLimit:     sto.OpenStorageBackedUint16(pageLimitOffset),
+		minInitGas:    sto.OpenStorageBackedUint16(minInitGasOffset),
+		expiryDays:    sto.OpenStorageBackedUint16(expiryDaysOffset),
+		keepaliveDays: sto.OpenStorageBackedUint16(keepaliveDaysOffset),
+		version:       sto.OpenStorageBackedUint16(versionOffset),
 	}
 }
 
