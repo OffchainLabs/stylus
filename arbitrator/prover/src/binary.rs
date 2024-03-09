@@ -673,4 +673,8 @@ impl<'a> WasmBinary<'a> {
         }
         Ok(func)
     }
+
+    pub fn name(&self) -> &str {
+        &self.names.module
+    }
 }
