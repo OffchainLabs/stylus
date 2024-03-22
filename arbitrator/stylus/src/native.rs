@@ -128,8 +128,10 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
             "vm_hooks" => {
                 "read_args" => func!(host::read_args),
                 "write_result" => func!(host::write_result),
+                "exit_early" => func!(host::exit_early),
                 "storage_load_bytes32" => func!(host::storage_load_bytes32),
-                "storage_store_bytes32" => func!(host::storage_store_bytes32),
+                "storage_cache_bytes32" => func!(host::storage_cache_bytes32),
+                "storage_flush_cache" => func!(host::storage_flush_cache),
                 "call_contract" => func!(host::call_contract),
                 "delegate_call_contract" => func!(host::delegate_call_contract),
                 "static_call_contract" => func!(host::static_call_contract),
@@ -336,8 +338,10 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
         "vm_hooks" => {
             "read_args" => stub!(|_: u32|),
             "write_result" => stub!(|_: u32, _: u32|),
+            "exit_early" => stub!(|_: u32|),
             "storage_load_bytes32" => stub!(|_: u32, _: u32|),
-            "storage_store_bytes32" => stub!(|_: u32, _: u32|),
+            "storage_cache_bytes32" => stub!(|_: u32, _: u32|),
+            "storage_flush_cache" => stub!(|_: u32|),
             "call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u32, _: u64, _: u32|),
             "delegate_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
             "static_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),

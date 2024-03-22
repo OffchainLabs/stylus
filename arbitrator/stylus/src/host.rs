@@ -110,6 +110,14 @@ pub(crate) fn write_result<D: DataReader, E: EvmApi<D>>(
     hostio!(env, write_result(ptr, len))
 }
 
+pub(crate) fn exit_early<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    status: u32,
+) -> MaybeEscape {
+    hostio!(env, exit_early(status))?;
+    Err(Escape::Exit(status))
+}
+
 pub(crate) fn storage_load_bytes32<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
     key: GuestPtr,
@@ -118,12 +126,19 @@ pub(crate) fn storage_load_bytes32<D: DataReader, E: EvmApi<D>>(
     hostio!(env, storage_load_bytes32(key, dest))
 }
 
-pub(crate) fn storage_store_bytes32<D: DataReader, E: EvmApi<D>>(
+pub(crate) fn storage_cache_bytes32<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
     key: GuestPtr,
     value: GuestPtr,
 ) -> MaybeEscape {
-    hostio!(env, storage_store_bytes32(key, value))
+    hostio!(env, storage_cache_bytes32(key, value))
+}
+
+pub(crate) fn storage_flush_cache<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    clear: u32,
+) -> MaybeEscape {
+    hostio!(env, storage_flush_cache(clear != 0))
 }
 
 pub(crate) fn call_contract<D: DataReader, E: EvmApi<D>>(

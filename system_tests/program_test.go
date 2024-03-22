@@ -1055,6 +1055,37 @@ func TestProgramActivationLogs(t *testing.T) {
 	}
 }
 
+func TestProgramEarlyExit(t *testing.T) {
+	t.Parallel()
+	testEarlyExit(t, true)
+}
+
+func testEarlyExit(t *testing.T, jit bool) {
+	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, jit)
+	defer cleanup()
+
+	earlyAddress := deployWasm(t, ctx, auth, l2client, "../arbitrator/stylus/tests/exit-early/exit-early.wat")
+	panicAddress := deployWasm(t, ctx, auth, l2client, "../arbitrator/stylus/tests/exit-early/panic-after-write.wat")
+
+	ensure := func(tx *types.Transaction, err error) {
+		t.Helper()
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+	}
+
+	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+
+	// revert with the following data
+	data := append([]byte{0x01}, []byte("private key: https://www.youtube.com/watch?v=dQw4w9WgXcQ")...)
+
+	ensure(mock.CheckRevertData(&auth, earlyAddress, data, data))
+	ensure(mock.CheckRevertData(&auth, panicAddress, data, []byte{}))
+
+	validateBlocks(t, 8, jit, ctx, node, l2client)
+}
+
 func setupProgramTest(t *testing.T, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, func(),
 ) {
@@ -1112,15 +1143,18 @@ func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 	source, err := os.ReadFile(file)
 	Require(t, err)
 
+	// chose a random dictionary for testing, but keep the same files consistent
+	randDict := arbcompress.Dictionary((len(file) + len(t.Name())) % 2)
+
 	wasmSource, err := wasmer.Wat2Wasm(string(source))
 	Require(t, err)
-	wasm, err := arbcompress.CompressWell(wasmSource)
+	wasm, err := arbcompress.Compress(wasmSource, arbcompress.LEVEL_WELL, randDict)
 	Require(t, err)
 
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
 	colors.PrintGrey(fmt.Sprintf("%v: len %.2fK vs %.2fK", name, toKb(wasm), toKb(wasmSource)))
 
-	wasm = append(state.StylusPrefix, wasm...)
+	wasm = append(state.NewStylusPrefix(byte(randDict)), wasm...)
 	return wasm, wasmSource
 }
 

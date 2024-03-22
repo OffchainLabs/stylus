@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
@@ -212,10 +212,12 @@ pub enum Escape {
     Memory(MemoryAccessError),
     #[error("internal error: `{0}`")]
     Internal(ErrReport),
-    #[error("Logic error: `{0}`")]
+    #[error("logic error: `{0}`")]
     Logical(ErrReport),
     #[error("out of ink")]
     OutOfInk,
+    #[error("exit early: `{0}`")]
+    Exit(u32),
 }
 
 impl Escape {

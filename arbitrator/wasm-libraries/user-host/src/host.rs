@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::program::Program;
+use arbutil::evm::user::UserOutcomeKind;
 use caller_env::GuestPtr;
 use user_host_trait::UserHost;
 
@@ -28,6 +29,16 @@ pub unsafe extern "C" fn user_host__read_args(ptr: GuestPtr) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn user_host__exit_early(status: u32) {
+    hostio!(exit_early(status));
+    Program::current().early_exit = Some(match status {
+        0 => UserOutcomeKind::Success,
+        _ => UserOutcomeKind::Revert,
+    });
+    set_trap();
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn user_host__write_result(ptr: GuestPtr, len: u32) {
     hostio!(write_result(ptr, len))
 }
@@ -38,8 +49,13 @@ pub unsafe extern "C" fn user_host__storage_load_bytes32(key: GuestPtr, dest: Gu
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__storage_store_bytes32(key: GuestPtr, value: GuestPtr) {
-    hostio!(storage_store_bytes32(key, value))
+pub unsafe extern "C" fn user_host__storage_cache_bytes32(key: GuestPtr, value: GuestPtr) {
+    hostio!(storage_cache_bytes32(key, value))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__storage_flush_cache(clear: u32) {
+    hostio!(storage_flush_cache(clear != 0))
 }
 
 #[no_mangle]

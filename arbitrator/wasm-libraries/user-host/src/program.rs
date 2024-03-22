@@ -5,6 +5,7 @@ use arbutil::{
     evm::{
         api::{EvmApiMethod, VecReader, EVM_API_METHOD_REQ_OFFSET},
         req::{EvmApiRequestor, RequestHandler},
+        user::UserOutcomeKind,
         EvmData,
     },
     Color,
@@ -78,6 +79,8 @@ pub(crate) struct Program {
     pub module: u32,
     /// Call configuration.
     pub config: StylusConfig,
+    /// Whether the program exited early.
+    pub early_exit: Option<UserOutcomeKind>,
 }
 
 #[link(wasm_import_module = "hostio")]
@@ -142,15 +145,15 @@ impl UserHostRequester {
 }
 
 impl RequestHandler<VecReader> for UserHostRequester {
-    fn handle_request(
+    fn request(
         &mut self,
         req_type: EvmApiMethod,
-        req_data: &[u8],
+        req_data: impl AsRef<[u8]>,
     ) -> (Vec<u8>, VecReader, u64) {
         unsafe {
             self.send_request(
                 req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
-                req_data.to_vec(),
+                req_data.as_ref().to_vec(),
             )
         }
     }
@@ -166,6 +169,7 @@ impl Program {
             evm_data,
             module,
             config,
+            early_exit: None,
         };
         unsafe { PROGRAMS.push(Box::new(program)) }
     }
