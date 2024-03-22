@@ -9,7 +9,10 @@ use crate::{
 };
 use eyre::Result;
 use glob::glob;
-use prover::{binary, programs::{prelude::*, start::STYLUS_START}};
+use prover::{
+    binary,
+    programs::{prelude::*, start::STYLUS_START},
+};
 use std::path::Path;
 use wasmer::{imports, Function};
 
@@ -87,12 +90,12 @@ fn test_console() -> Result<()> {
 fn test_wasm_wat() -> Result<()> {
     for filename in glob("../prover/test-cases/*.wat").expect("Failed to find wat files") {
         if filename.is_err() {
-            return Err(filename.err().unwrap().into())
+            return Err(filename.err().unwrap().into());
         }
         let filename = filename.unwrap();
         let filename = match filename.to_str() {
-            Some(filename) => {filename},
-            None => {continue},
+            Some(filename) => filename,
+            None => continue,
         };
         let data = std::fs::read(filename).unwrap();
         let wasm = wasmer::wat2wasm(&data).unwrap();

@@ -28,7 +28,9 @@ impl FunctionType {
     fn wat_string(&self, name_args: bool) -> String {
         let params = if !self.inputs.is_empty() {
             let inputs = self.inputs.iter().enumerate();
-            let params = inputs.fold(String::new(), |acc, (j, ty)| format!("{acc} {}", ty.wat_string(j, name_args)));
+            let params = inputs.fold(String::new(), |acc, (j, ty)| {
+                format!("{acc} {}", ty.wat_string(j, name_args))
+            });
             format!(" ({}{params})", "param".grey())
         } else {
             String::new()
@@ -36,7 +38,9 @@ impl FunctionType {
 
         let results = if !self.outputs.is_empty() {
             let outputs = self.outputs.iter();
-            let results = outputs.fold(String::new(), |acc, t| format!("{acc} {}", t.wat_string(0, false)));
+            let results = outputs.fold(String::new(), |acc, t| {
+                format!("{acc} {}", t.wat_string(0, false))
+            });
             format!(" ({}{})", "result".grey(), results.mint())
         } else {
             String::new()
@@ -316,7 +320,7 @@ impl WasmBinary<'_> {
             Some(func) => format!("${func}"),
             None => format!("$func_{i}"),
         }
-            .pink()
+        .pink()
     }
 
     fn raw_func_name(&self, i: u32) -> String {
@@ -324,7 +328,7 @@ impl WasmBinary<'_> {
             Some(func) => format!("${func}"),
             None => format!("{i}"),
         }
-            .pink()
+        .pink()
     }
 
     fn maybe_func_name(&self, i: u32) -> Option<String> {
@@ -382,14 +386,14 @@ impl<'a> Display for WasmBinary<'a> {
 
         for import in self.imports.iter() {
             wln!(
-                    r#"({} "{}" "{}" ({} {}{}))"#,
-                    "import".grey(),
-                    import.module.pink(),
-                    import.name.pink(),
-                    "func".grey(),
-                    self.func_name(import.offset),
-                    self.func_type(import.offset)
-                );
+                r#"({} "{}" "{}" ({} {}{}))"#,
+                "import".grey(),
+                import.module.pink(),
+                import.name.pink(),
+                "func".grey(),
+                self.func_name(import.offset),
+                self.func_type(import.offset)
+            );
         }
 
         wln!("");
@@ -407,7 +411,7 @@ impl<'a> Display for WasmBinary<'a> {
         }
 
         for elem in &self.elements {
-            let (table_index, mut init) = match elem.kind{
+            let (table_index, mut init) = match elem.kind {
                 ElementKind::Active {
                     table_index,
                     offset_expr,
@@ -469,10 +473,12 @@ impl<'a> Display for WasmBinary<'a> {
             };
 
             let data = String::from_utf8(
-                data.data.iter()
+                data.data
+                    .iter()
                     .flat_map(|b| std::ascii::escape_default(*b))
-                    .collect::<Vec<u8>>()
-            ).unwrap();
+                    .collect::<Vec<u8>>(),
+            )
+            .unwrap();
             wln!(
                 r#"({} (i32.const {}) "{}")"#,
                 "data".grey(),
@@ -484,7 +490,12 @@ impl<'a> Display for WasmBinary<'a> {
         wln!("");
 
         for (i, g) in self.globals.iter().enumerate() {
-            wln!("({} {i} {} ({})", "global".grey(), g.ty().mint(), g.wat_string());
+            wln!(
+                "({} {i} {} ({})",
+                "global".grey(),
+                g.ty().mint(),
+                g.wat_string()
+            );
         }
 
         for (export_name, (index, kind)) in &self.exports {
@@ -496,7 +507,13 @@ impl<'a> Display for WasmBinary<'a> {
                 E::Global => ("global", format!("{index}")),
                 E::Tag => ("tag", format!("{index}")),
             };
-            wln!("({} \"{}\" ({} {}))", "export".grey(), export_name.pink(), kind.grey(), name.pink());
+            wln!(
+                "({} \"{}\" ({} {}))",
+                "export".grey(),
+                export_name.pink(),
+                kind.grey(),
+                name.pink()
+            );
         }
 
         for (i, type_idx) in self.functions.iter().enumerate() {
@@ -518,7 +535,10 @@ impl<'a> Display for WasmBinary<'a> {
             wln!("");
             pad += 4;
             for local in self.codes[i].locals.iter() {
-                wln!("(local {})", local.value.wat_string(local.index as usize, false));
+                wln!(
+                    "(local {})",
+                    local.value.wat_string(local.index as usize, false)
+                );
             }
             for op in &self.codes[i].expr {
                 let op_str = format!("{:?}", op).grey();
