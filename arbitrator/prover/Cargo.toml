@@ -37,6 +37,9 @@ wasmparser.workspace = true
 num-derive = "0.4.1"
 num-traits = "0.2.17"
 
+[dev-dependencies]
+glob = "0.3.1"
+
 [lib]
 name = "prover"
 crate-type = ["staticlib", "lib"]

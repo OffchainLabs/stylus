@@ -27,7 +27,6 @@ hex = "0.4.3"
 
 [dev-dependencies]
 num-bigint = "0.4.4"
-glob = "0.3.1"
 
 [features]
 default = ["rayon", "singlepass_rayon"]

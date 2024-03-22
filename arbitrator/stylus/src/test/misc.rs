@@ -8,12 +8,7 @@ use crate::{
     test::{check_instrumentation, new_test_machine},
 };
 use eyre::Result;
-use glob::glob;
-use prover::{
-    binary,
-    programs::{prelude::*, start::STYLUS_START},
-};
-use std::path::Path;
+use prover::programs::{prelude::*, start::STYLUS_START};
 use wasmer::{imports, Function};
 
 #[test]
@@ -84,29 +79,4 @@ fn test_console() -> Result<()> {
     let mut machine = new_test_machine(filename, &compile)?;
     machine.call_user_func(STYLUS_START, vec![], ink)?;
     check_instrumentation(native, machine)
-}
-
-#[test]
-fn test_wasm_wat() -> Result<()> {
-    for filename in glob("../prover/test-cases/*.wat").expect("Failed to find wat files") {
-        if filename.is_err() {
-            return Err(filename.err().unwrap().into());
-        }
-        let filename = filename.unwrap();
-        let filename = match filename.to_str() {
-            Some(filename) => filename,
-            None => continue,
-        };
-        let data = std::fs::read(filename).unwrap();
-        let wasm = wasmer::wat2wasm(&data).unwrap();
-        let bin = binary::parse(&wasm, Path::new("user")).unwrap();
-        println!();
-        println!("File: {filename}");
-        let data2 = bin.to_string();
-        print!("{}", data2);
-        //let wasm2 = wasmer::wat2wasm(&data2.as_bytes()).unwrap();
-        //let bin2 = binary::parse(&wasm2, Path::new("user")).unwrap();
-        //assert_eq!(bin, bin2);
-    }
-    Ok(())
 }

@@ -326,7 +326,7 @@ impl WasmBinary<'_> {
     fn raw_func_name(&self, i: u32) -> String {
         match self.maybe_func_name(i) {
             Some(func) => format!("${func}"),
-            None => format!("{i}"),
+            None => i.to_string(),
         }
         .pink()
     }
@@ -395,7 +395,6 @@ impl<'a> Display for WasmBinary<'a> {
                 self.func_type(import.offset)
             );
         }
-
         wln!("");
 
         for (i, ty) in self.tables.iter().enumerate() {
@@ -405,7 +404,7 @@ impl<'a> Display for WasmBinary<'a> {
             wln!(
                 "({} {} {initial} {}{type_str})",
                 "table".grey(),
-                format!("{i}").pink(),
+                i.to_string().pink(),
                 max.mint()
             );
         }
@@ -426,14 +425,13 @@ impl<'a> Display for WasmBinary<'a> {
             let Ok(mut item_reader) = elem.items.get_items_reader() else {
                 continue;
             };
-            let item_count = item_reader.get_count();
             w!(
                 "({} {} (i32.const {})",
                 "elem".grey(),
                 format!("{table_index}").pink(),
                 format!("{offset}").mint()
             );
-            for _ in 0..item_count {
+            for _ in 0..item_reader.get_count() {
                 let Ok(item) = item_reader.read() else {
                     continue;
                 };
@@ -445,11 +443,8 @@ impl<'a> Display for WasmBinary<'a> {
             writeln!(f, ")")?;
         }
 
-        for limits in self.memories.iter() {
-            let max = match limits.maximum {
-                Some(max) => format!(" {max}"),
-                None => "".to_string(),
-            };
+        for limits in &self.memories {
+            let max = limits.maximum.map(|x| format!(" {x}")).unwrap_or_default();
             wln!(
                 "({} {}{})",
                 "memory".grey(),
@@ -486,7 +481,6 @@ impl<'a> Display for WasmBinary<'a> {
                 data.mint()
             );
         }
-
         wln!("");
 
         for (i, g) in self.globals.iter().enumerate() {
@@ -541,14 +535,24 @@ impl<'a> Display for WasmBinary<'a> {
                 );
             }
             for op in &self.codes[i].expr {
-                let op_str = format!("{:?}", op).grey();
+                use Operator::*;
+
+                match op {
+                    End | Else => pad = (pad - 4).max(8),
+                    _ => {}
+                }
+
+                let op_str = format!("{op:?}").grey();
                 wln!("{op_str}");
+
+                match op {
+                    Block { .. } | If { .. } | Else | Loop { .. } => pad += 4,
+                    _ => {}
+                }
             }
             pad -= 4;
             wln!(")");
         }
-
-        wln!("");
 
         if let Some(start) = self.start {
             wln!("({} {})", "start".grey(), self.raw_func_name(start));
@@ -575,4 +579,20 @@ impl Value {
             Value::InternalRef(pc) => format!("{pc}"),
         }
     }
+}
+
+#[test]
+fn test_wasm_wat() -> eyre::Result<()> {
+    use crate::binary;
+    use std::{fs, path::Path};
+
+    for file in glob::glob("../prover/test-cases/block.wat")? {
+        let file = file?;
+        let data = fs::read(&file)?;
+        let wasm = wasmer::wat2wasm(&data)?;
+        let bin = binary::parse(&wasm, Path::new("user"))?;
+        println!("{}", file.to_string_lossy().orange());
+        println!("{bin}");
+    }
+    Ok(())
 }
