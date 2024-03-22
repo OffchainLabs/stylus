@@ -19,7 +19,7 @@ impl ArbValueType {
     fn wat_string(&self, index: usize, name_args: bool) -> String {
         match name_args {
             true => format!("{} {}", format!("$arg{index}").pink(), self.mint()),
-            false => format!("{}", self.mint()),
+            false => self.mint(),
         }
     }
 }
@@ -345,7 +345,7 @@ impl WasmBinary<'_> {
     }
 
     fn func_type(&self, i: u32) -> String {
-        if let Some(_) = self.names.functions.get(&i) {
+        if self.names.functions.get(&i).is_some() {
             self.types[i as usize].wat_string(false)
         } else {
             let internals_offset = (self.imports.len() + self.codes.len()) as u32;
@@ -523,7 +523,7 @@ impl<'a> Display for WasmBinary<'a> {
                 Some(name) => {
                     format!(r#" ({} "{}")"#, "export".grey(), name.pink())
                 }
-                None => format!(" ").pink(),
+                None => " ".pink(),
             };
             w!(
                 "({}{}{}",
@@ -570,7 +570,7 @@ impl Value {
             }
             Value::F32(value) => format!("{} {}", "f32.const".mint(), *value),
             Value::F64(value) => format!("{} {}", "f64.const".mint(), *value),
-            Value::RefNull => format!("null").mint(),
+            Value::RefNull => "null".mint(),
             Value::FuncRef(func) => format!("{} {func}", "func".mint()),
             Value::InternalRef(pc) => format!("{pc}"),
         }
