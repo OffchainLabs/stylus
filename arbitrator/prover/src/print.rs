@@ -564,7 +564,7 @@ fn test_wasm_wat() -> eyre::Result<()> {
     use crate::binary;
     use std::{fs, path::Path};
 
-    for file in glob::glob("../prover/test-cases/link.wat")? {
+    for file in glob::glob("../prover/test-cases/*.wat")? {
         let file = file?;
         let data = fs::read(&file)?;
         let wasm = wasmer::wat2wasm(&data)?;
