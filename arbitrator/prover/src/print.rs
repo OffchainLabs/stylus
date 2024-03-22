@@ -10,6 +10,7 @@ use crate::{
 };
 use arbutil::Color;
 use fnv::FnvHashSet as HashSet;
+use itertools::Itertools;
 use num_traits::FromPrimitive;
 use std::fmt::{self, Display};
 use wasmer_types::WASM_PAGE_SIZE;
@@ -67,6 +68,22 @@ impl Module {
         } else {
             None
         }
+    }
+}
+
+impl Display for ExportKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ExportKind::Func => "func",
+                ExportKind::Table => "table",
+                ExportKind::Memory => "memory",
+                ExportKind::Global => "global",
+                ExportKind::Tag => "tag",
+            }
+        )
     }
 }
 
@@ -200,23 +217,17 @@ impl Display for Module {
             let i1 = i as u32;
             let padding = 12;
 
-            let export_str = match self.maybe_func_name(i1) {
+            let export = match self.maybe_func_name(i1) {
                 Some(name) => {
-                    let description = if (i1 as usize) < self.host_call_hooks.len() {
-                        "import"
-                    } else {
-                        "export"
+                    let description = match (i1 as usize) < self.host_call_hooks.len() {
+                        true => "import",
+                        false => "export",
                     };
                     format!(r#" ({} "{}")"#, description.grey(), name.pink())
                 }
                 None => format!(" $func_{i}").pink(),
             };
-            w!(
-                "({}{}{}",
-                "func".grey(),
-                export_str,
-                func.ty.wat_string(true)
-            );
+            w!("({}{}{}", "func".grey(), export, func.ty.wat_string(true));
 
             pad += 4;
             if !func.local_types.is_empty() {
@@ -277,20 +288,13 @@ impl Display for Module {
                     MemoryLoad { .. } | MemoryStore { .. } | ReadInboxMessage => {
                         format!(" {:#x}", op.argument_data).mint()
                     }
-                    _ => {
-                        if op.argument_data == 0 {
-                            String::new()
-                        } else {
-                            format!(" UNEXPECTED_ARG: {}", op.argument_data).mint()
-                        }
-                    }
+                    _ => (op.argument_data != 0)
+                        .then(|| format!(" UNEXPECTED_ARG: {}", op.argument_data).mint())
+                        .unwrap_or_default(),
                 };
 
-                let proof = op
-                    .proving_argument_data
-                    .map(hex::encode)
-                    .unwrap_or_default()
-                    .orange();
+                let proof = op.proving_argument_data;
+                let proof = proof.map(hex::encode).unwrap_or_default().orange();
 
                 match labels.get(&j) {
                     Some(label) => {
@@ -336,11 +340,9 @@ impl WasmBinary<'_> {
             Some(name.to_owned())
         } else {
             let internals_offset = (self.imports.len() + self.codes.len()) as u32;
-            if i >= internals_offset {
-                InternalFunc::from_u32(i - internals_offset).map(|f| format!("{f:?}"))
-            } else {
-                None
-            }
+            (i >= internals_offset)
+                .then(|| InternalFunc::from_u32(i - internals_offset).map(|f| format!("{f:?}")))
+                .flatten()
         }
     }
 
@@ -384,7 +386,7 @@ impl<'a> Display for WasmBinary<'a> {
             wln!("({} ({}{ty}))", "type".grey(), "func".grey());
         }
 
-        for import in self.imports.iter() {
+        for import in &self.imports {
             wln!(
                 r#"({} "{}" "{}" ({} {}{}))"#,
                 "import".grey(),
@@ -432,13 +434,9 @@ impl<'a> Display for WasmBinary<'a> {
                 format!("{offset}").mint()
             );
             for _ in 0..item_reader.get_count() {
-                let Ok(item) = item_reader.read() else {
-                    continue;
+                if let Ok(ElementItem::Func(index)) = item_reader.read() {
+                    write!(f, " {}", self.raw_func_name(index))?;
                 };
-                let ElementItem::Func(index) = item else {
-                    continue;
-                };
-                write!(f, " {}", self.raw_func_name(index))?;
             }
             writeln!(f, ")")?;
         }
@@ -467,13 +465,7 @@ impl<'a> Display for WasmBinary<'a> {
                 _ => continue,
             };
 
-            let data = String::from_utf8(
-                data.data
-                    .iter()
-                    .flat_map(|b| std::ascii::escape_default(*b))
-                    .collect::<Vec<u8>>(),
-            )
-            .unwrap();
+            let data = data.data.iter().map(|x| format!("\\{x:02x}")).join("");
             wln!(
                 r#"({} (i32.const {}) "{}")"#,
                 "data".grey(),
@@ -493,14 +485,9 @@ impl<'a> Display for WasmBinary<'a> {
         }
 
         for (export_name, (index, kind)) in &self.exports {
-            use ExportKind as E;
-            let (kind, name) = match kind {
-                E::Func => ("func", self.raw_func_name(*index)),
-                E::Table => ("table", format!("{index}")),
-                E::Memory => ("memory", format!("{index}")),
-                E::Global => ("global", format!("{index}")),
-                E::Tag => ("tag", format!("{index}")),
-            };
+            let name = (kind == &ExportKind::Func)
+                .then(|| self.raw_func_name(*index))
+                .unwrap_or(index.to_string());
             wln!(
                 "({} \"{}\" ({} {}))",
                 "export".grey(),
@@ -511,22 +498,16 @@ impl<'a> Display for WasmBinary<'a> {
         }
 
         for (i, type_idx) in self.functions.iter().enumerate() {
-            let i1 = i as u32;
-
-            let export_str = match self.maybe_func_name(i1 + 1) {
-                Some(name) => {
-                    format!(r#" ({} "{}")"#, "export".grey(), name.pink())
-                }
-                None => " ".pink(),
+            let export = match self.maybe_func_name(i as u32) {
+                Some(name) => format!(r#" ({} "{}")"#, "export".grey(), name.pink()),
+                None => " ".to_string(),
             };
-            w!(
-                "({}{}{}",
+            wln!(
+                "({}{export}{}",
                 "func".grey(),
-                export_str,
                 self.types[*type_idx as usize].wat_string(true)
             );
 
-            wln!("");
             pad += 4;
             for local in self.codes[i].locals.iter() {
                 wln!(
@@ -537,17 +518,14 @@ impl<'a> Display for WasmBinary<'a> {
             for op in &self.codes[i].expr {
                 use Operator::*;
 
-                match op {
-                    End | Else => pad = (pad - 4).max(8),
-                    _ => {}
+                if let End | Else = op {
+                    pad = (pad - 4).max(8);
                 }
 
-                let op_str = format!("{op:?}").grey();
-                wln!("{op_str}");
+                wln!("{}", format!("{op:?}").grey());
 
-                match op {
-                    Block { .. } | If { .. } | Else | Loop { .. } => pad += 4,
-                    _ => {}
+                if let Block { .. } | If { .. } | Else | Loop { .. } = op {
+                    pad += 4;
                 }
             }
             pad -= 4;
@@ -586,7 +564,7 @@ fn test_wasm_wat() -> eyre::Result<()> {
     use crate::binary;
     use std::{fs, path::Path};
 
-    for file in glob::glob("../prover/test-cases/block.wat")? {
+    for file in glob::glob("../prover/test-cases/link.wat")? {
         let file = file?;
         let data = fs::read(&file)?;
         let wasm = wasmer::wat2wasm(&data)?;
