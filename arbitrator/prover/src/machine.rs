@@ -323,7 +323,7 @@ impl Module {
         let mut memory = Memory::default();
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
-        let bin_name = &bin.names.module;
+        let bin_name = bin.name();
         for import in &bin.imports {
             let module = import.module;
             let have_ty = &bin.types[import.offset as usize];

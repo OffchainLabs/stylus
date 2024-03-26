@@ -2,24 +2,35 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
+    binary::{ExportKind, WasmBinary},
     host::InternalFunc,
     machine::Module,
-    value::{FunctionType, Value},
+    value::{ArbValueType, FunctionType, Value},
     wavm::{self, Opcode},
 };
 use arbutil::Color;
 use fnv::FnvHashSet as HashSet;
+use itertools::Itertools;
 use num_traits::FromPrimitive;
 use std::fmt::{self, Display};
 use wasmer_types::WASM_PAGE_SIZE;
+use wasmparser::{DataKind, ElementItem, ElementKind, Operator};
+
+impl ArbValueType {
+    fn wat_string(&self, index: usize, name_args: bool) -> String {
+        match name_args {
+            true => format!("{} {}", format!("$arg{index}").pink(), self.mint()),
+            false => self.mint(),
+        }
+    }
+}
 
 impl FunctionType {
     fn wat_string(&self, name_args: bool) -> String {
         let params = if !self.inputs.is_empty() {
             let inputs = self.inputs.iter().enumerate();
-            let params = inputs.fold(String::new(), |acc, (j, ty)| match name_args {
-                true => format!("{acc} {} {}", format!("$arg{j}").pink(), ty.mint()),
-                false => format!("{acc} {}", ty.mint()),
+            let params = inputs.fold(String::new(), |acc, (j, ty)| {
+                format!("{acc} {}", ty.wat_string(j, name_args))
             });
             format!(" ({}{params})", "param".grey())
         } else {
@@ -28,7 +39,9 @@ impl FunctionType {
 
         let results = if !self.outputs.is_empty() {
             let outputs = self.outputs.iter();
-            let results = outputs.fold(String::new(), |acc, t| format!("{acc} {t}"));
+            let results = outputs.fold(String::new(), |acc, t| {
+                format!("{acc} {}", t.wat_string(0, false))
+            });
             format!(" ({}{})", "result".grey(), results.mint())
         } else {
             String::new()
@@ -55,6 +68,22 @@ impl Module {
         } else {
             None
         }
+    }
+}
+
+impl Display for ExportKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ExportKind::Func => "func",
+                ExportKind::Table => "table",
+                ExportKind::Memory => "memory",
+                ExportKind::Global => "global",
+                ExportKind::Tag => "tag",
+            }
+        )
     }
 }
 
@@ -188,23 +217,17 @@ impl Display for Module {
             let i1 = i as u32;
             let padding = 12;
 
-            let export_str = match self.maybe_func_name(i1) {
+            let export = match self.maybe_func_name(i1) {
                 Some(name) => {
-                    let description = if (i1 as usize) < self.host_call_hooks.len() {
-                        "import"
-                    } else {
-                        "export"
+                    let description = match (i1 as usize) < self.host_call_hooks.len() {
+                        true => "import",
+                        false => "export",
                     };
                     format!(r#" ({} "{}")"#, description.grey(), name.pink())
                 }
                 None => format!(" $func_{i}").pink(),
             };
-            w!(
-                "({}{}{}",
-                "func".grey(),
-                export_str,
-                func.ty.wat_string(true)
-            );
+            w!("({}{}{}", "func".grey(), export, func.ty.wat_string(true));
 
             pad += 4;
             if !func.local_types.is_empty() {
@@ -265,20 +288,13 @@ impl Display for Module {
                     MemoryLoad { .. } | MemoryStore { .. } | ReadInboxMessage => {
                         format!(" {:#x}", op.argument_data).mint()
                     }
-                    _ => {
-                        if op.argument_data == 0 {
-                            String::new()
-                        } else {
-                            format!(" UNEXPECTED_ARG: {}", op.argument_data).mint()
-                        }
-                    }
+                    _ => (op.argument_data != 0)
+                        .then(|| format!(" UNEXPECTED_ARG: {}", op.argument_data).mint())
+                        .unwrap_or_default(),
                 };
 
-                let proof = op
-                    .proving_argument_data
-                    .map(hex::encode)
-                    .unwrap_or_default()
-                    .orange();
+                let proof = op.proving_argument_data;
+                let proof = proof.map(hex::encode).unwrap_or_default().orange();
 
                 match labels.get(&j) {
                     Some(label) => {
@@ -300,4 +316,261 @@ impl Display for Module {
         wln!(")");
         Ok(())
     }
+}
+
+impl WasmBinary<'_> {
+    fn func_name(&self, i: u32) -> String {
+        match self.maybe_func_name(i) {
+            Some(func) => format!("${func}"),
+            None => format!("$func_{i}"),
+        }
+        .pink()
+    }
+
+    fn raw_func_name(&self, i: u32) -> String {
+        match self.maybe_func_name(i) {
+            Some(func) => format!("${func}"),
+            None => i.to_string(),
+        }
+        .pink()
+    }
+
+    fn maybe_func_name(&self, i: u32) -> Option<String> {
+        if let Some(name) = self.names.functions.get(&i) {
+            Some(name.to_owned())
+        } else {
+            let internals_offset = (self.imports.len() + self.codes.len()) as u32;
+            (i >= internals_offset)
+                .then(|| InternalFunc::from_u32(i - internals_offset).map(|f| format!("{f:?}")))
+                .flatten()
+        }
+    }
+
+    fn func_type(&self, i: u32) -> String {
+        if self.names.functions.get(&i).is_some() {
+            self.types[i as usize].wat_string(false)
+        } else {
+            let internals_offset = (self.imports.len() + self.codes.len()) as u32;
+            if i >= internals_offset {
+                if let Some(internal) = InternalFunc::from_u32(i - internals_offset) {
+                    return internal.ty().wat_string(false);
+                }
+            }
+            String::default()
+        }
+    }
+}
+
+impl<'a> Display for WasmBinary<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut pad = 0;
+
+        macro_rules! w {
+            ($($args:expr),*) => {{
+                let text = format!($($args),*);
+                write!(f, "{:pad$}{text}", "")?;
+            }};
+        }
+        macro_rules! wln {
+            ($($args:expr),*) => {{
+                w!($($args),*);
+                writeln!(f)?;
+            }};
+        }
+
+        wln!("({} {}", "module".grey(), self.name().mint());
+        pad += 4;
+
+        for ty in &*self.types {
+            let ty = ty.wat_string(false);
+            wln!("({} ({}{ty}))", "type".grey(), "func".grey());
+        }
+
+        for import in &self.imports {
+            wln!(
+                r#"({} "{}" "{}" ({} {}{}))"#,
+                "import".grey(),
+                import.module.pink(),
+                import.name.pink(),
+                "func".grey(),
+                self.func_name(import.offset),
+                self.func_type(import.offset)
+            );
+        }
+        wln!("");
+
+        for (i, ty) in self.tables.iter().enumerate() {
+            let initial = format!("{}", ty.initial).mint();
+            let max = ty.maximum.map(|x| format!(" {x}")).unwrap_or_default();
+            let type_str = format!("{:?}", ty.element_type).mint();
+            wln!(
+                "({} {} {initial} {}{type_str})",
+                "table".grey(),
+                i.to_string().pink(),
+                max.mint()
+            );
+        }
+
+        for elem in &self.elements {
+            let (table_index, mut init) = match elem.kind {
+                ElementKind::Active {
+                    table_index,
+                    offset_expr,
+                } => (table_index, offset_expr.get_operators_reader()),
+                _ => continue,
+            };
+            let offset = match (init.read(), init.read(), init.eof()) {
+                (Ok(Operator::I32Const { value }), Ok(Operator::End), true) => value as usize,
+                _ => continue,
+            };
+
+            let Ok(mut item_reader) = elem.items.get_items_reader() else {
+                continue;
+            };
+            w!(
+                "({} {} (i32.const {})",
+                "elem".grey(),
+                format!("{table_index}").pink(),
+                format!("{offset}").mint()
+            );
+            for _ in 0..item_reader.get_count() {
+                if let Ok(ElementItem::Func(index)) = item_reader.read() {
+                    write!(f, " {}", self.raw_func_name(index))?;
+                };
+            }
+            writeln!(f, ")")?;
+        }
+
+        for limits in &self.memories {
+            let max = limits.maximum.map(|x| format!(" {x}")).unwrap_or_default();
+            wln!(
+                "({} {}{})",
+                "memory".grey(),
+                limits.initial.mint(),
+                max.mint()
+            );
+        }
+
+        for data in &self.datas {
+            let (_, mut init) = match data.kind {
+                DataKind::Active {
+                    memory_index,
+                    offset_expr,
+                } => (memory_index, offset_expr.get_operators_reader()),
+                _ => continue,
+            };
+
+            let offset = match (init.read(), init.read(), init.eof()) {
+                (Ok(Operator::I32Const { value }), Ok(Operator::End), true) => value as usize,
+                _ => continue,
+            };
+
+            let data = data.data.iter().map(|x| format!("\\{x:02x}")).join("");
+            wln!(
+                r#"({} (i32.const {}) "{}")"#,
+                "data".grey(),
+                offset.mint(),
+                data.mint()
+            );
+        }
+        wln!("");
+
+        for (i, g) in self.globals.iter().enumerate() {
+            wln!(
+                "({} {i} {} ({})",
+                "global".grey(),
+                g.ty().mint(),
+                g.wat_string()
+            );
+        }
+
+        for (export_name, (index, kind)) in &self.exports {
+            let name = (kind == &ExportKind::Func)
+                .then(|| self.raw_func_name(*index))
+                .unwrap_or(index.to_string());
+            wln!(
+                "({} \"{}\" ({} {}))",
+                "export".grey(),
+                export_name.pink(),
+                kind.grey(),
+                name.pink()
+            );
+        }
+
+        for (i, type_idx) in self.functions.iter().enumerate() {
+            let export = match self.maybe_func_name(i as u32) {
+                Some(name) => format!(r#" ({} "{}")"#, "export".grey(), name.pink()),
+                None => " ".to_string(),
+            };
+            wln!(
+                "({}{export}{}",
+                "func".grey(),
+                self.types[*type_idx as usize].wat_string(true)
+            );
+
+            pad += 4;
+            for local in self.codes[i].locals.iter() {
+                wln!(
+                    "(local {})",
+                    local.value.wat_string(local.index as usize, false)
+                );
+            }
+            for op in &self.codes[i].expr {
+                use Operator::*;
+
+                if let End | Else = op {
+                    pad = (pad - 4).max(8);
+                }
+
+                wln!("{}", format!("{op:?}").grey());
+
+                if let Block { .. } | If { .. } | Else | Loop { .. } = op {
+                    pad += 4;
+                }
+            }
+            pad -= 4;
+            wln!(")");
+        }
+
+        if let Some(start) = self.start {
+            wln!("({} {})", "start".grey(), self.raw_func_name(start));
+        }
+        pad -= 4;
+        wln!(")");
+        Ok(())
+    }
+}
+
+impl Value {
+    fn wat_string(&self) -> String {
+        match self {
+            Value::I32(value) => {
+                format!("{} {}", "i32.const".mint(), *value as i32)
+            }
+            Value::I64(value) => {
+                format!("{} {}", "i64.const".mint(), *value as i64)
+            }
+            Value::F32(value) => format!("{} {}", "f32.const".mint(), *value),
+            Value::F64(value) => format!("{} {}", "f64.const".mint(), *value),
+            Value::RefNull => "null".mint(),
+            Value::FuncRef(func) => format!("{} {func}", "func".mint()),
+            Value::InternalRef(pc) => format!("{pc}"),
+        }
+    }
+}
+
+#[test]
+fn test_wasm_wat() -> eyre::Result<()> {
+    use crate::binary;
+    use std::{fs, path::Path};
+
+    for file in glob::glob("../prover/test-cases/*.wat")? {
+        let file = file?;
+        let data = fs::read(&file)?;
+        let wasm = wasmer::wat2wasm(&data)?;
+        let bin = binary::parse(&wasm, Path::new("user"))?;
+        println!("{}", file.to_string_lossy().orange());
+        println!("{bin}");
+    }
+    Ok(())
 }

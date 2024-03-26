@@ -1,6 +1,8 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![allow(clippy::too_many_arguments)]
+
 use crate::caller_env::{JitEnv, JitExecEnv};
 use crate::machine::Escape;
 use crate::machine::WasmEnvMut;
