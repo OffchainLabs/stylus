@@ -39,6 +39,38 @@ import (
 
 var oneEth = arbmath.UintToBig(1e18)
 
+func TestSelfDestruct(t *testing.T) {
+	t.Parallel()
+
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+	pack := func(data []byte, err error) []byte {
+		Require(t, err)
+		return data
+	}
+
+	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	callSelfDestruct, _ := util.NewCallParser(mocksgen.ProgramTestABI, "callSelfDestruct")
+
+	delegate := argsForMulticall(vm.DELEGATECALL, mockAddr, nil, pack(callSelfDestruct(multiAddr)))
+	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, delegate)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	EnsureTxFailed(t, ctx, l2client, tx)
+}
+
 func TestProgramKeccak(t *testing.T) {
 	t.Parallel()
 	keccakTest(t, true)
